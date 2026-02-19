@@ -14,6 +14,7 @@ CRSS is a compliance readiness system that helps medical device manufacturers pr
 
 ## Folder Structure Reference
 
+```
 crss/
 │
 ├── domain/                    # pure regulatory intelligence model
@@ -59,7 +60,7 @@ crss/
 ├── evaluation/
 │
 └── utils/
-
+```
 ---
 
 ## Architecture Layers
