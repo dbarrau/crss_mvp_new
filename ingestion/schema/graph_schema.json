@@ -1,0 +1,186 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CRSS Regulation Knowledge Graph",
+  "type": "object",
+  "required": ["graph_version", "celex_id", "regulation_id", "provisions", "relations"],
+  "properties": {
+
+    "graph_version": {
+      "type": "string",
+      "description": "Schema version of the graph artifact"
+    },
+
+    "celex_id": {
+      "type": "string",
+      "description": "Primary CELEX identifier of the regulation"
+    },
+
+    "regulation_id": {
+      "type": "string",
+      "description": "Canonical regulation identifier (e.g., MDR_2017_745)"
+    },
+
+    "source_name": {
+      "type": "string"
+    },
+
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+
+    "provisions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/provision"
+      }
+    },
+
+    "relations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/relation"
+      }
+    }
+
+  },
+
+  "definitions": {
+
+    "provision": {
+      "type": "object",
+      "required": [
+        "id",
+        "celex",
+        "lang",
+        "kind",
+        "level",
+        "text",
+        "path",
+        "parent_id"
+      ],
+      "properties": {
+
+        "id": {"type": "string"},
+        "canonical_id": {"type": ["null", "string"]},
+
+        "celex": {"type": "string"},
+        "regulation_id": {"type": "string"},
+        "lang": {"type": "string"},
+        "source": {"type": "string"},
+
+        "kind": {
+          "type": "string",
+          "description": "Structural category: chapter, article, paragraph, annex etc."
+        },
+
+        "level": {"type": "string"},
+        "item_number": {"type": ["null", "string"]},
+
+        "chapter": {"type": ["null", "string"]},
+        "article": {"type": ["null", "string"]},
+        "annex": {"type": ["null", "string"]},
+
+        "title": {"type": ["null", "string"]},
+        "text": {"type": "string"},
+        "intro_text": {"type": "string"},
+
+        "path": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+
+        "parent_id": {"type": ["null", "string"]},
+
+        "semantic_role": {
+          "type": ["null", "string"],
+          "description": "Normalized semantic category used for reasoning (obligation, prohibition, permission, definition, scope, technical_requirement, evidence_requirement)"
+        },
+
+        "is_requirement": {"type": "boolean"},
+        "requirement_type": {"type": "string"},
+
+        "references": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+
+        "concept_refs": {
+          "type": ["null", "array"],
+          "items": {"type": "string"},
+          "description": "Canonical ontology concepts referenced by this provision"
+        },
+
+        "applies_to": {
+          "type": ["null", "array"],
+          "items": {"type": "string"},
+          "description": "Actors, device classes, system types, or entities to which the provision applies"
+        },
+
+        "roles": {
+          "type": ["null", "array"],
+          "items": {"type": "string"}
+        },
+
+        "canonical_tags": {
+          "type": ["null", "array"],
+          "items": {"type": "string"}
+        },
+
+        "obligations": {
+          "type": ["null", "array"],
+          "items": {
+            "type": "object",
+            "properties": {
+              "actors": {"type": "array", "items": {"type": "string"}},
+              "action": {"type": "string"},
+              "modality": {"type": "string"},
+              "timing": {"type": ["null", "string"]}
+            }
+          }
+        },
+
+        "snippet": {"type": ["null", "string"]},
+        "snippet_char_offsets": {
+          "type": ["null", "object"],
+          "properties": {
+            "start": {"type": "integer"},
+            "end": {"type": "integer"}
+          }
+        },
+
+        "embedding_id": {"type": ["null", "string"]},
+
+        "provenance": {
+          "type": ["null", "object"],
+          "properties": {
+            "parser": {"type": "string"},
+            "parser_version": {"type": "string"},
+            "source_path": {"type": "string"},
+            "raw_hash": {"type": "string"},
+            "html_start": {"type": ["null", "integer"]},
+            "html_end": {"type": ["null", "integer"]}
+          }
+        },
+
+        "regulation_metadata": {
+          "type": ["null", "object"],
+          "description": "Regulation-specific extensions (AI Act roles, MDR device classes, etc.)"
+        }
+
+      }
+    },
+
+    "relation": {
+      "type": "object",
+      "required": ["source", "type", "target"],
+      "properties": {
+        "source": {"type": "string"},
+        "type": {"type": "string"},
+        "target": {"type": "string"},
+        "properties": {"type": ["null", "object"]}
+      }
+    }
+
+  }
+}
