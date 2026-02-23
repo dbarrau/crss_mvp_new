@@ -15,10 +15,11 @@ Attributes:
         and values are callable parsing functions.
 """
 
-from .mdr_parser import parse_mdr
-from .eu_ai_parser import parse_eu_ai_act
+## Legacy parser imports removed; only universal parser is used
+
+from .universal_eurlex_parser import parse_eurlex_html
 
 PARSER_REGISTRY = {
-    "32017R0745": parse_mdr,
-    "32024R1689": parse_eu_ai_act,
+    "32017R0745": parse_eurlex_html,
+    "32024R1689": parse_eurlex_html,
 }

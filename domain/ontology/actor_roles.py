@@ -1,3 +1,5 @@
+# domain/ontology/roles.py
+
 """Business-level role vocabularies and detectors for EU regulations."""
 from __future__ import annotations
 

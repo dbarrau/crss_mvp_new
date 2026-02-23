@@ -29,6 +29,12 @@
       "format": "date-time"
     },
 
+    "last_updated": {
+      "type": ["null", "string"],
+      "format": "date-time",
+      "description": "Optional timestamp for last update of the regulation graph"
+    },
+
     "provisions": {
       "type": "array",
       "items": {
@@ -69,28 +75,36 @@
         "lang": {"type": "string"},
         "source": {"type": "string"},
 
-        "kind": {
-          "type": "string",
-          "description": "Structural category: chapter, article, paragraph, annex etc."
-        },
-
+        "kind": {"type": "string"},
         "level": {"type": "string"},
         "item_number": {"type": ["null", "string"]},
 
         "chapter": {"type": ["null", "string"]},
+        "section": {"type": ["null", "string"]},
         "article": {"type": ["null", "string"]},
         "annex": {"type": ["null", "string"]},
 
         "title": {"type": ["null", "string"]},
         "text": {"type": "string"},
+        "text_for_analysis": {"type": ["null", "string"], "description": "Pre-cleaned text for embeddings and NLP analysis"},
         "intro_text": {"type": "string"},
 
-        "path": {
-          "type": "array",
-          "items": {"type": "string"}
-        },
-
+        "path": {"type": "array", "items": {"type": "string"}},
+        "path_string": {"type": ["null", "string"], "description": "Flattened '/'-joined path for quick reference"},
+        "hierarchy_depth": {"type": "integer", "description": "Numeric depth in regulation hierarchy"},
         "parent_id": {"type": ["null", "string"]},
+
+        "context_levels": {
+          "type": ["null", "object"],
+          "properties": {
+            "title": {"type": ["null", "string"]},
+            "chapter": {"type": ["null", "string"]},
+            "section": {"type": ["null", "string"]},
+            "article": {"type": ["null", "string"]},
+            "annex": {"type": ["null", "string"]}
+          },
+          "description": "Explicit context mapping for each hierarchical level"
+        },
 
         "semantic_role": {
           "type": ["null", "string"],
@@ -102,7 +116,18 @@
 
         "references": {
           "type": "array",
-          "items": {"type": "string"}
+          "items": {"type": "string"},
+          "description": "Free-text extracted references"
+        },
+        "internal_refs": {
+          "type": ["null", "array"],
+          "items": {"type": "string"},
+          "description": "Canonical IDs of referenced provisions within the same regulation"
+        },
+        "external_refs": {
+          "type": ["null", "array"],
+          "items": {"type": "string"},
+          "description": "References to external standards, regulations, or documents"
         },
 
         "concept_refs": {
@@ -119,7 +144,8 @@
 
         "roles": {
           "type": ["null", "array"],
-          "items": {"type": "string"}
+          "items": {"type": "string"},
+          "description": "Actors or roles explicitly mentioned in the provision text"
         },
 
         "canonical_tags": {

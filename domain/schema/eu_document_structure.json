@@ -1,0 +1,85 @@
+{
+  "document": {
+    "metadata": {
+      "celex": "32017R0745",
+      "type": "regulation",
+      "title": "Regulation (EU) 2017/745",
+      "date_adopted": "2017-04-05",
+      "language": "en"
+    },
+
+    "preamble": {
+      "citations": [
+        {
+          "id": "cit_1",
+          "text": "Having regard to..."
+        }
+      ],
+      "recitals": [
+        {
+          "number": 1,
+          "text": "The proper functioning of the internal market..."
+        }
+      ]
+    },
+
+    "body": [
+      {
+        "node_type": "chapter",
+        "number": "I",
+        "title": "Scope and Definitions",
+        "children": [
+          {
+            "node_type": "article",
+            "number": "1",
+            "title": "Subject matter",
+            "children": [
+              {
+                "node_type": "paragraph",
+                "number": "1",
+                "text": "This Regulation lays down rules...",
+                "children": []
+              },
+              {
+                "node_type": "paragraph",
+                "number": "2",
+                "text": "",
+                "children": [
+                  {
+                    "node_type": "point",
+                    "label": "a",
+                    "text": "Devices shall...",
+                    "children": [
+                      {
+                        "node_type": "point",
+                        "label": "i",
+                        "text": "be safe...",
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+
+    "annexes": [
+      {
+        "node_type": "annex",
+        "number": "I",
+        "title": "General Safety and Performance Requirements",
+        "children": [
+          {
+            "node_type": "section",
+            "number": "1",
+            "text": "Devices shall be designed...",
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+}

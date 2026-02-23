@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Optional
 
 from .scrape.scrape import scrape_document
-from .parse import parse_document
+from .parse.dispatcher import parse_document
 from domain.regulations_catalog import REGULATIONS
 
 DEFAULT_CELEX = "32017R0745"
