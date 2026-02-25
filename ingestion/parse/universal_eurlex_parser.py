@@ -8,10 +8,10 @@ from typing import Dict
 
 from bs4 import BeautifulSoup
 
-from .annex_parser import parse_annexes
-from .enacting_terms_parser import parse_enacting_terms
+from .structural_layer.annex_parser import parse_annexes
+from .structural_layer.enacting_terms_parser import parse_enacting_terms
 from .final_provisions_parser import parse_final_provisions
-from .preamble_parser import parse_preamble
+from .structural_layer.preamble_parser import parse_preamble
 from .utils import ParserContext
 
 

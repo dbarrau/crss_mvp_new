@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Dict, Optional
 
-from .utils import ParserContext
+from ..utils import ParserContext
 
 
 def parse_preamble(soup, ctx: ParserContext, root: Dict) -> Optional[Dict]:

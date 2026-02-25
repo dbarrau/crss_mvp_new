@@ -5,7 +5,7 @@ from typing import Dict, List
 
 from bs4 import BeautifulSoup
 
-from .utils import ParserContext
+from ..utils import ParserContext
 
 
 def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
@@ -26,10 +26,19 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 			tbl.decompose()
 		return clone.get_text(" ", strip=True)
 
+	def point_text_without_nested_tables(table) -> str:
+		clone = BeautifulSoup(str(table), "html.parser")
+		root_table = clone.find("table")
+		if not root_table:
+			return ""
+		for nested in root_table.find_all("table"):
+			nested.decompose()
+		return root_table.get_text(" ", strip=True)
+
 	def parse_points(parent_paragraph: Dict, para_div) -> None:
 		tables = para_div.find_all("table", width="100%")
 		for table in tables:
-			text = table.get_text(" ", strip=True)
+			text = point_text_without_nested_tables(table)
 			label_match = re.match(r"^\(([^)]+)\)", text)
 			if not label_match:
 				continue

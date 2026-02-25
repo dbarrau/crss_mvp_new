@@ -5,7 +5,7 @@ from typing import Dict, Optional
 
 from bs4 import BeautifulSoup
 
-from .utils import ParserContext
+from ..utils import ParserContext
 
 
 def parse_annexes(soup, ctx: ParserContext, root: Dict) -> Optional[Dict]:
@@ -27,10 +27,10 @@ def parse_annexes(soup, ctx: ParserContext, root: Dict) -> Optional[Dict]:
 		return clone.get_text(" ", strip=True)
 
 	def parse_table(table, current_parent: Dict, current_point: Optional[Dict], counters: Dict[str, int]) -> Optional[Dict]:
-		rows = table.find_all("tr", recursive=False)
+		rows = table.find_all("tr")
 		last_point = current_point
 		for row in rows:
-			cells = row.find_all("td", recursive=False)
+			cells = row.find_all("td")
 			if not cells:
 				continue
 			if len(cells) >= 3:
@@ -91,7 +91,7 @@ def parse_annexes(soup, ctx: ParserContext, root: Dict) -> Optional[Dict]:
 			)
 		return last_point
 
-	def parse_enumeration_spacing(block, current_parent: Dict, counters: Dict[str, int]) -> None:
+	def parse_enumeration_spacing(block, current_parent: Dict, counters: Dict[str, int], last_host: Optional[Dict]) -> Optional[Dict]:
 		items = block.find_all("p", recursive=False) or block.find_all("p")
 		for item in items:
 			text = item.get_text(" ", strip=True)
@@ -100,7 +100,7 @@ def parse_annexes(soup, ctx: ParserContext, root: Dict) -> Optional[Dict]:
 			parts = text.split(None, 1)
 			if len(parts) == 2 and number_token.match(parts[0].rstrip(".")):
 				counters["point"] += 1
-				ctx.make_node(
+				last_host = ctx.make_node(
 					"annex_point",
 					f"{current_parent['id'].split(f'{ctx.celex}_', 1)[-1]}_pt_{counters['point']}",
 					parts[1],
@@ -108,87 +108,92 @@ def parse_annexes(soup, ctx: ParserContext, root: Dict) -> Optional[Dict]:
 					number=parts[0].rstrip("."),
 				)
 			else:
-				counters["para"] += 1
-				ctx.make_node(
-					"annex_paragraph",
-					f"{current_parent['id'].split(f'{ctx.celex}_', 1)[-1]}_p_{counters['para']}",
-					text,
-					current_parent,
-				)
+				if last_host:
+					last_host["text"] = f"{last_host['text']} {text}".strip()
+				else:
+					current_parent["text"] = f"{current_parent.get('text', '')} {text}".strip()
+		return last_host
 
 	def parse_annex_body(annex_node: Dict, annex_div) -> None:
-		counters = {"section": 0, "point": 0, "subpoint": 0, "bullet": 0, "para": 0}
-		current_parent: Dict = annex_node
-		last_point: Optional[Dict] = None
+		counters = {"section": 0, "point": 0, "subpoint": 0, "bullet": 0}
+		current_parent = annex_node
+		current_point: Optional[Dict] = None
+		current_list_type = None  # "numbered", "lettered", "bullet"
 
-		blocks = annex_div.find_all(["p", "div", "table"], recursive=True)
+		# Get all top-level blocks in order
+		blocks = list(annex_div.find_all(["p", "div", "table"], recursive=False))
+
 		for block in blocks:
-			if block.name == "p" and "oj-doc-ti" in (block.get("class") or []):
+			if block.name == "table":
+				current_point = parse_table(block, current_parent, current_point, counters) or current_point
 				continue
-			if block.name == "p" and section_heading_class in (block.get("class") or []):
+
+			text = block.get_text(" ", strip=True)
+			if not text:
+				continue
+
+			# Section headings
+			if block.name == "p" and "oj-ti-grseq-1" in (block.get("class") or []):
 				counters["section"] += 1
-				text = block.get_text(" ", strip=True)
-				number = None
-				section_match = re.match(r"Section\s+([A-Za-z0-9]+)", text, re.IGNORECASE)
-				if section_match:
-					number = section_match.group(1)
+				number = re.search(r"Section\s+([A-Za-z0-9]+)", text, re.I)
 				current_parent = ctx.make_node(
 					"annex_section",
 					f"{annex_node['id'].split(f'{ctx.celex}_', 1)[-1]}_sec_{counters['section']}",
 					text,
 					annex_node,
-					number=number,
+					number=number.group(1) if number else None,
 					title=text,
 				)
-				last_point = None
+				current_point = None
+				current_list_type = None
 				continue
-			if block.name == "div" and "oj-enumeration-spacing" in (block.get("class") or []):
-				parse_enumeration_spacing(block, current_parent, counters)
-				last_point = None
-				continue
-			if block.name == "table":
-				last_point = parse_table(block, current_parent, last_point, counters) or last_point
-				continue
-			if block.name == "p":
-				text = block.get_text(" ", strip=True)
-				if not text:
-					continue
-				lead_parts = text.split(None, 1)
-				if len(lead_parts) == 2 and number_token.match(lead_parts[0].rstrip(".")):
+
+			# Detect new list item
+			lead_match = re.match(r"^(\d+|[a-zA-Z])\.?\s+", text)
+			if lead_match:
+				label = lead_match.group(1)
+				content = text[lead_match.end():].strip()
+
+				if label.isdigit():
 					counters["point"] += 1
-					last_point = ctx.make_node(
+					current_point = ctx.make_node(
 						"annex_point",
 						f"{current_parent['id'].split(f'{ctx.celex}_', 1)[-1]}_pt_{counters['point']}",
-						lead_parts[1],
+						content,
 						current_parent,
-						number=lead_parts[0].rstrip("."),
+						number=label,
 					)
-					continue
-				counters["para"] += 1
-				ctx.make_node(
-					"annex_paragraph",
-					f"{current_parent['id'].split(f'{ctx.celex}_', 1)[-1]}_p_{counters['para']}",
-					text,
-					current_parent,
-				)
-
-		# Fallback: flat row-based extraction over all table rows to ensure items are captured
-		rows = annex_div.find_all("tr")
-		for row in rows:
-			cells = row.find_all("td")
-			if len(cells) == 0:
+					current_list_type = "numbered"
+				else:  # letter
+					counters["subpoint"] += 1
+					host = current_point or current_parent
+					ctx.make_node(
+						"annex_subpoint",
+						f"{host['id'].split(f'{ctx.celex}_', 1)[-1]}_ltr_{counters['subpoint']}",
+						content,
+						host,
+						number=label.lower(),
+					)
+					current_list_type = "lettered"
 				continue
-			if len(cells) >= 2:
-				num_text = cells[0].get_text(" ", strip=True)
-				body_text = cell_text_without_tables(cells[-1])
-				counters["point"] += 1
+
+			# Bullet / continuation
+			if current_point and (text.startswith("—") or text.startswith("-") or text.startswith("•")):
+				counters["bullet"] += 1
+				host = current_point
 				ctx.make_node(
-					"annex_point",
-					f"{annex_node['id'].split(f'{ctx.celex}_', 1)[-1]}_pt_fb_{counters['point']}",
-					body_text,
-					annex_node,
-					number=num_text or str(counters["point"]),
+					"annex_bullet",
+					f"{host['id'].split(f'{ctx.celex}_', 1)[-1]}_blt_{counters['bullet']}",
+					text.lstrip("—-• ").strip(),
+					host,
 				)
+				continue
+
+			# Continuation text (append to current point or section)
+			if current_point:
+				current_point["text"] = f"{current_point['text']} {text}".strip()
+			else:
+				current_parent["text"] = f"{current_parent.get('text', '')} {text}".strip()
 
 	for annex in annex_divs:
 		annex_id = annex.get("id", "")

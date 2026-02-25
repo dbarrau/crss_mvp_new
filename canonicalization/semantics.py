@@ -13,7 +13,7 @@ from typing import Any, Dict, List
 
 from domain.regulations_catalog import REGULATIONS
 from domain.ontology.actor_roles import eu_ai_role_detector, mdr_role_detector
-from ingestion.parse.base.requirement_patterns import (
+from ingestion.parse.semantic_layer.requirement_patterns import (
     is_requirement_text,
     classify_requirement_type,
 )

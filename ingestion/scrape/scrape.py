@@ -26,6 +26,10 @@ def scrape_document(celex: str, lang: str, out_dir: Path) -> Path:
         OSError: If the output directory is not writable.
     """
     url = f"https://eur-lex.europa.eu/legal-content/{lang}/TXT/HTML/?uri=CELEX:{celex}"
+
+    # in case we later scrape xml files
+    xml_url = f"https://eur-lex.europa.eu/legal-content/{lang}/TXT/XML/?uri=CELEX:{celex}"
+
     out_file = out_dir / "raw.html"
 
     with sync_playwright() as p:

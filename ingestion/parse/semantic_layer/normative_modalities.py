@@ -1,4 +1,4 @@
-# ingestion/parse/base/requirement_patterns.py
+# ingestion/parse/semantic_layer/requirement_patterns.py
 """
 Enhanced requirement patterns for EU regulations (MDR, IVDR, EU AI Act)
 Supports EN, DE, FR with conflict resolution, punctuation handling, and better definitions.
@@ -6,7 +6,7 @@ Supports EN, DE, FR with conflict resolution, punctuation handling, and better d
 
 import re
 
-REQ_PATTERNS = {
+NORMATIVE_MODALITIES = {
     "EN": {
         "obligation": [
             r"\bshall\b(?=\s|:|,|\.|$)",
@@ -81,14 +81,8 @@ REQ_PATTERNS = {
     },
 }
 
-# ============================================================
-# Requirement detection functions
-# ============================================================
 
 def is_requirement_text(text: str, lang: str) -> bool:
-    """
-    Returns True if the text contains any requirement keyword for the given language.
-    """
     lang = lang.upper()
     patterns = REQ_PATTERNS.get(lang, REQ_PATTERNS["EN"])
 
@@ -100,14 +94,9 @@ def is_requirement_text(text: str, lang: str) -> bool:
 
 
 def classify_requirement_type(text: str, lang: str) -> str:
-    """
-    Classifies the text into one of: obligation, prohibition, permission, definition, or 'other'.
-    Longer patterns are matched first to avoid conflicts (e.g., 'may not' vs 'may').
-    """
     lang = lang.upper()
     patterns = REQ_PATTERNS.get(lang, REQ_PATTERNS["EN"])
 
-    # Flatten patterns as (req_type, pattern) preserving order
     flat_patterns = []
     for req_type in ["prohibition", "obligation", "permission", "definition"]:
         flat_patterns.extend([(req_type, pat) for pat in patterns.get(req_type, [])])
