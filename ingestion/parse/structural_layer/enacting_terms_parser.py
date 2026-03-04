@@ -5,7 +5,7 @@ from typing import Dict, List
 
 from bs4 import BeautifulSoup
 
-from ..utils import ParserContext
+from ..base.utils import ParserContext
 
 
 def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:

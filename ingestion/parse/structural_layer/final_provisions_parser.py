@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, Optional
 
-from .utils import ParserContext
+from ..base.utils import ParserContext
 
 
 def parse_final_provisions(soup, ctx: ParserContext, root: Dict) -> Optional[Dict]:

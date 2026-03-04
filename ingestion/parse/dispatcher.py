@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from domain.regulations_catalog import REGULATIONS
-from .registry import PARSER_REGISTRY
+from .base.registry import PARSER_REGISTRY
 
 
 def parse_document(html_file: Path, lang: str, celex: str, out_dir: Path) -> Path:

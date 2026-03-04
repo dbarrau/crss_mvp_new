@@ -5,7 +5,7 @@ from typing import Dict, Optional
 
 from bs4 import BeautifulSoup
 
-from ..utils import ParserContext
+from ..base.utils import ParserContext
 
 
 def parse_annexes(soup, ctx: ParserContext, root: Dict) -> Optional[Dict]:

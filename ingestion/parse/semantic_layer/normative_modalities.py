@@ -84,7 +84,7 @@ NORMATIVE_MODALITIES = {
 
 def is_requirement_text(text: str, lang: str) -> bool:
     lang = lang.upper()
-    patterns = REQ_PATTERNS.get(lang, REQ_PATTERNS["EN"])
+    patterns = NORMATIVE_MODALITIES.get(lang, NORMATIVE_MODALITIES["EN"])
 
     for p_list in patterns.values():
         for pat in p_list:
@@ -95,7 +95,7 @@ def is_requirement_text(text: str, lang: str) -> bool:
 
 def classify_requirement_type(text: str, lang: str) -> str:
     lang = lang.upper()
-    patterns = REQ_PATTERNS.get(lang, REQ_PATTERNS["EN"])
+    patterns = NORMATIVE_MODALITIES.get(lang, NORMATIVE_MODALITIES["EN"])
 
     flat_patterns = []
     for req_type in ["prohibition", "obligation", "permission", "definition"]:

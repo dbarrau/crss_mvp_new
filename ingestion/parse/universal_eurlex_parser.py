@@ -10,9 +10,9 @@ from bs4 import BeautifulSoup
 
 from .structural_layer.annex_parser import parse_annexes
 from .structural_layer.enacting_terms_parser import parse_enacting_terms
-from .final_provisions_parser import parse_final_provisions
+from .structural_layer.final_provisions_parser import parse_final_provisions
 from .structural_layer.preamble_parser import parse_preamble
-from .utils import ParserContext
+from .base.utils import ParserContext
 
 
 # Public entry point used by the registry
