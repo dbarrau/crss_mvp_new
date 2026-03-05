@@ -1,0 +1,485 @@
+"""
+infrastructure/graphdb/neo4j/loader.py
+=======================================
+Loads EU regulation ``parsed.json`` files into a Neo4j graph database.
+
+Graph model (structural / hierarchical only)
+--------------------------------------------
+Nodes – 11 legal-structural labels
+    (:Document)           – regulation root
+  (:Citation)
+  (:Recital)
+  (:Chapter)
+  (:Section)
+  (:Article)
+  (:Paragraph)
+  (:Point)              – includes ``roman_item`` provisions
+  (:Annex)
+  (:AnnexSection)
+  (:AnnexPoint)         – includes ``annex_subpoint`` and ``annex_bullet``
+
+Editorial containers (``preamble``, ``enacting_terms``, ``final_provisions``,
+``annexes``) are **not** loaded as graph nodes.  Their children are
+re-parented directly under the Document node.
+
+Edges
+  (parent)-[:HAS_PART  {order}]->(child)   ordered containment
+  (child) -[:IS_PART_OF]       ->(parent)  inverse containment
+
+Node properties
+    id               – unique provision ID
+    celex            – CELEX identifier  (e.g. "32024R1689")
+    regulation_id    – human name        (e.g. "EU AI Act")
+    lang             – language code     (e.g. "EN")
+    kind             – raw kind field    (e.g. "article")
+    level            – normalized structural level (currently same as ``kind``)
+    text             – full text content
+    hierarchy_depth  – integer depth from root (0 = document)
+    number           – item number       (e.g. "1", "I", "a")
+    title            – optional heading
+    path_string      – "/"-joined ancestor IDs
+    display_ref      – human-friendly structural reference (e.g. "Article 72")
+    display_path     – human-friendly path (e.g. "Chapter IX / Section 1 / Article 72")
+"""
+from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+from typing import Any
+
+from neo4j import GraphDatabase, Driver
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# URI normalization
+# ---------------------------------------------------------------------------
+
+def _normalize_neo4j_uri(uri: str) -> str:
+    """
+    The Neo4j *browser* runs on HTTP port 7474; the Python driver requires
+    the Bolt protocol (port 7687).  This helper transparently converts the
+    common mistake of supplying the browser URL::
+
+        http://localhost:7474  →  bolt://localhost:7687
+        https://localhost:7473 →  bolt+s://localhost:7688
+
+    Any URI that already uses a bolt / neo4j scheme is returned unchanged.
+    """
+    if uri.startswith(("bolt", "neo4j")):
+        return uri
+
+    from urllib.parse import urlparse, urlunparse
+    p = urlparse(uri)
+    if p.scheme in ("http", "https"):
+        new_scheme = "bolt+s" if p.scheme == "https" else "bolt"
+        port_map = {7474: 7687, 7473: 7688}
+        new_port = port_map.get(p.port, p.port)
+        new_netloc = f"{p.hostname}:{new_port}" if new_port else p.hostname
+        converted = urlunparse(p._replace(scheme=new_scheme, netloc=new_netloc))
+        logger.warning(
+            "NEO4J_URI '%s' uses an HTTP scheme (browser port).  "
+            "Auto-converting to Bolt URI: '%s'",
+            uri, converted,
+        )
+        return converted
+
+    return uri
+
+
+# ---------------------------------------------------------------------------
+# kind → Neo4j label
+# ---------------------------------------------------------------------------
+_KIND_LABEL: dict[str, str] = {
+    "document":         "Document",
+    "citation":         "Citation",
+    "recital":          "Recital",
+    "chapter":          "Chapter",
+    "section":          "Section",
+    "article":          "Article",
+    "paragraph":        "Paragraph",
+    "point":            "Point",
+    "roman_item":       "Point",       # sub-points (i), (ii) → folded into Point
+    "annex":            "Annex",
+    "annex_section":    "AnnexSection",
+    "annex_point":      "AnnexPoint",
+    "annex_subpoint":   "AnnexPoint",  # lettered sub-items   → folded into AnnexPoint
+    "annex_bullet":     "AnnexPoint",  # dash/bullet items    → folded into AnnexPoint
+}
+
+# Editorial containers stripped during loading – their children are
+# re-parented directly under the Document node.
+_CONTAINER_KINDS: set[str] = {
+    "preamble", "enacting_terms", "final_provisions", "annexes",
+}
+
+# Batch size for UNWIND queries (avoid hitting Neo4j bolt message limits)
+_BATCH = 500
+
+
+def _kind_label(kind: str) -> str:
+    """Return the Neo4j label for a provision kind, falling back to a title-cased name."""
+    return _KIND_LABEL.get(kind, kind.replace("_", " ").title().replace(" ", ""))
+
+
+def _batched(lst: list, size: int):
+    for i in range(0, len(lst), size):
+        yield lst[i : i + size]
+
+
+# ---------------------------------------------------------------------------
+# Loader
+# ---------------------------------------------------------------------------
+
+class RegulationGraphLoader:
+    """
+    Load ``parsed.json`` regulation data into Neo4j as a structural hierarchy.
+
+    Usage (context-manager)::
+
+        with RegulationGraphLoader(uri, user, password) as loader:
+            loader.setup_schema()
+            stats = loader.load_file("data/regulations/32024R1689/EN/parsed.json")
+            print(stats)
+
+    Environment variables read by the convenience constructor
+    :meth:`from_env` (also used by the CLI):
+
+    * ``NEO4J_URI``      – default ``bolt://localhost:7687``
+    * ``NEO4J_USER``     – default ``neo4j``
+    * ``NEO4J_PASSWORD`` – default ``password``
+    * ``NEO4J_DATABASE`` – default ``neo4j``
+    """
+
+    def __init__(
+        self,
+        uri: str,
+        user: str,
+        password: str,
+        database: str = "neo4j",
+    ) -> None:
+        self._driver: Driver = GraphDatabase.driver(uri, auth=(user, password))
+        self._database = database
+
+    # ------------------------------------------------------------------
+    # Context-manager support
+    # ------------------------------------------------------------------
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
+    def close(self) -> None:
+        self._driver.close()
+
+    # ------------------------------------------------------------------
+    # Convenience constructor
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_env(cls, dotenv_path: str | None = None) -> "RegulationGraphLoader":
+        import os
+        from pathlib import Path as _Path
+        from dotenv import load_dotenv
+
+        _dotenv = dotenv_path or _Path.cwd() / ".env"
+        load_dotenv(_dotenv, override=False)
+
+        return cls(
+            uri=_normalize_neo4j_uri(os.environ.get("NEO4J_URI", "bolt://localhost:7687")),
+            user=os.environ.get("NEO4J_USERNAME", os.environ.get("NEO4J_USER", "neo4j")),
+            password=os.environ.get("NEO4J_PASSWORD", "password"),
+            database=os.environ.get("NEO4J_DATABASE", "neo4j"),
+        )
+
+    # ------------------------------------------------------------------
+    # Schema
+    # ------------------------------------------------------------------
+
+    def setup_schema(self) -> None:
+        """
+        Create uniqueness constraint and supporting indexes on a
+        dedicated ``Provision`` label.  This label is used only for
+        constraints / indexes and **not** attached to nodes at
+        runtime, so it does not appear in query results.
+
+        Safe to call repeatedly (uses ``IF NOT EXISTS``).
+        """
+        stmts = [
+            # Uniqueness – prevents duplicate provisions across re-loads
+            "CREATE CONSTRAINT provision_id IF NOT EXISTS "
+            "FOR (p:Provision) REQUIRE p.id IS UNIQUE",
+            # Fast look-up by regulation
+            "CREATE INDEX provision_celex IF NOT EXISTS "
+            "FOR (p:Provision) ON (p.celex)",
+            # Fast look-up by structural type
+            "CREATE INDEX provision_kind IF NOT EXISTS "
+            "FOR (p:Provision) ON (p.kind)",
+        ]
+        with self._driver.session(database=self._database) as session:
+            for stmt in stmts:
+                session.run(stmt)
+        logger.info("Schema constraints / indexes ensured.")
+
+    # ------------------------------------------------------------------
+    # Public load API
+    # ------------------------------------------------------------------
+
+    def load_file(self, path: str | Path, wipe: bool = False) -> dict:
+        """
+        Parse a single ``parsed.json`` and upsert it into Neo4j.
+
+        Parameters
+        ----------
+        path:
+            Path to the ``parsed.json`` file.
+        wipe:
+            If *True*, delete all existing nodes for this CELEX before
+            loading (useful for a clean re-import).
+
+        Returns
+        -------
+        dict
+            ``{"celex": str, "nodes": int, "relationships": int}``
+        """
+        path = Path(path)
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+
+        celex         = data["celex_id"]
+        regulation_id = data.get("regulation_id", celex)
+        provisions    = data["provisions"]
+
+        logger.info("Loading %s – %d provisions …", celex, len(provisions))
+
+        if wipe:
+            self.wipe_regulation(celex)
+
+        nodes, edges = self._prepare_data(provisions, celex, regulation_id)
+
+        with self._driver.session(database=self._database) as session:
+            n_nodes = self._upsert_nodes(session, nodes)
+            self._apply_kind_labels(session, celex)
+            n_rels  = self._upsert_relationships(session, edges)
+
+        stats = {"celex": celex, "nodes": n_nodes, "relationships": n_rels}
+        logger.info("  → %d nodes, %d relationships created/merged.", n_nodes, n_rels)
+        return stats
+
+    def wipe_regulation(self, celex: str) -> None:
+        """Delete all nodes for *celex* (regardless of labels)."""
+        with self._driver.session(database=self._database) as session:
+            session.run(
+                "MATCH (p {celex: $celex}) DETACH DELETE p",
+                celex=celex,
+            )
+        logger.info("Wiped all nodes for %s.", celex)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _prepare_data(
+        provisions: list[dict],
+        celex: str,
+        regulation_id: str,
+    ) -> tuple[list[dict], list[dict]]:
+        """
+        Transform provisions list into flat node-dicts and edge-dicts
+        ready for UNWIND Cypher queries.
+
+        Editorial containers (preamble, enacting_terms, final_provisions,
+        annexes) are removed: their children are spliced into the parent's
+        children list, paths are cleaned, and hierarchy_depth decremented.
+        """
+        # ----------------------------------------------------------
+        # Phase 0 – flatten editorial containers out of the tree
+        # ----------------------------------------------------------
+        by_id: dict[str, dict] = {p["id"]: p for p in provisions}
+        container_ids: set[str] = {
+            p["id"] for p in provisions
+            if p.get("kind") in _CONTAINER_KINDS
+        }
+
+        if container_ids:
+            # Splice each container's children into its parent's
+            # children list (preserving order at the container's position).
+            for prov in provisions:
+                old_children = prov.get("children", [])
+                if not old_children:
+                    continue
+                new_children: list[str] = []
+                for cid in old_children:
+                    if cid in container_ids:
+                        # Replace the container with its own children
+                        container = by_id[cid]
+                        new_children.extend(container.get("children", []))
+                    else:
+                        new_children.append(cid)
+                prov["children"] = new_children
+
+            # Strip container IDs from every descendant's path and
+            # re-compute hierarchy_depth.
+            for prov in provisions:
+                if prov["id"] in container_ids:
+                    continue
+                raw_path = prov.get("path", []) or []
+                cleaned = [pid for pid in raw_path if pid not in container_ids]
+                prov["path"] = cleaned
+                prov["hierarchy_depth"] = len(cleaned)
+
+            # Remove container provisions themselves
+            provisions = [
+                p for p in provisions if p["id"] not in container_ids
+            ]
+            # Rebuild lookup without containers
+            by_id = {p["id"]: p for p in provisions}
+
+            logger.info(
+                "Flattened %d editorial containers; %d provisions remain.",
+                len(container_ids), len(provisions),
+            )
+
+        # ----------------------------------------------------------
+        # Phase 1 – build node / edge dicts for Neo4j
+        # ----------------------------------------------------------
+        nodes: list[dict[str, Any]] = []
+        edges: list[dict[str, Any]] = []
+
+        def canonical_ref(p: dict) -> str:
+            kind = p.get("kind", "") or ""
+            number = p.get("number")
+
+            if kind == "chapter" and number:
+                return f"Chapter {number}"
+            if kind == "section" and number:
+                return f"Section {number}"
+            if kind == "article" and number:
+                return f"Article {number}"
+            if kind == "paragraph" and number:
+                return f"Paragraph {number}"
+            if kind in ("point", "roman_item") and number:
+                return f"Point ({number})"
+            if kind == "annex" and number:
+                return f"Annex {number}"
+            if kind == "annex_section" and number:
+                return f"Annex section {number}"
+            if kind in ("annex_point", "annex_subpoint", "annex_bullet") and number:
+                return f"Annex point {number}"
+
+            title = p.get("title")
+            if title:
+                return title
+            text = (p.get("text") or "").strip()
+            if text:
+                return text[:80]
+            return kind or ""
+
+        for prov in provisions:
+            raw_path = prov.get("path", []) or []
+
+            # Build a human-readable path from structural ancestors plus self
+            segments: list[str] = []
+            for anc_id in raw_path:
+                anc = by_id.get(anc_id)
+                if not anc:
+                    continue
+                ref = canonical_ref(anc)
+                if ref:
+                    segments.append(ref)
+
+            self_ref = canonical_ref(prov)
+            if self_ref:
+                segments.append(self_ref)
+
+            nodes.append({
+                "id":              prov["id"],
+                "celex":           celex,
+                "regulation_id":   regulation_id,
+                "lang":            prov.get("lang", "EN"),
+                "kind":            prov.get("kind", ""),
+                "level":           prov.get("kind", ""),
+                "text":            prov.get("text", ""),
+                "hierarchy_depth": prov.get("hierarchy_depth", 0),
+                "number":          prov.get("number"),
+                "title":           prov.get("title"),
+                "path_string":     "/".join(raw_path),
+                "display_ref":     self_ref,
+                "display_path":    " / ".join(segments),
+            })
+
+            for order, child_id in enumerate(prov.get("children", [])):
+                edges.append({
+                    "parent_id": prov["id"],
+                    "child_id":  child_id,
+                    "order":     order,
+                })
+
+        return nodes, edges
+
+    def _upsert_nodes(self, session, nodes: list[dict]) -> int:
+        """
+        MERGE all provision nodes in batches.
+        Returns total count of nodes touched.
+        """
+        total = 0
+        cypher = """
+            UNWIND $batch AS n
+            MERGE (p {id: n.id})
+            SET
+                p.celex           = n.celex,
+                p.regulation_id   = n.regulation_id,
+                p.lang            = n.lang,
+                p.kind            = n.kind,
+                p.level           = n.level,
+                p.text            = n.text,
+                p.hierarchy_depth = n.hierarchy_depth,
+                p.number          = n.number,
+                p.title           = n.title,
+                p.path_string     = n.path_string,
+                p.display_ref     = n.display_ref,
+                p.display_path    = n.display_path
+            RETURN count(p) AS c
+        """
+        for chunk in _batched(nodes, _BATCH):
+            result = session.run(cypher, batch=chunk)
+            total += result.single()["c"]
+        return total
+
+    def _apply_kind_labels(self, session, celex: str) -> None:
+        """
+        Add a specific structural label (e.g. ``:Article``) to each node
+        based on its ``kind`` property.  Runs one Cypher statement per kind.
+        """
+        for kind, label in _KIND_LABEL.items():
+            # Only touch nodes of this regulation that have this kind
+            session.run(
+                f"MATCH (p {{celex: $celex, kind: $kind}}) SET p:{label}",
+                celex=celex,
+                kind=kind,
+            )
+
+    def _upsert_relationships(self, session, edges: list[dict]) -> int:
+        """
+        MERGE HAS_PART and IS_PART_OF edges in batches.
+        Returns count of HAS_PART relationships created/merged.
+        """
+        total = 0
+        cypher = """
+            UNWIND $batch AS e
+            MATCH (parent {id: e.parent_id})
+            MATCH (child  {id: e.child_id})
+            MERGE (parent)-[r:HAS_PART]->(child)
+              ON CREATE SET r.order = e.order
+            MERGE (child)-[:IS_PART_OF]->(parent)
+            RETURN count(r) AS c
+        """
+        for chunk in _batched(edges, _BATCH):
+            result = session.run(cypher, batch=chunk)
+            total += result.single()["c"]
+        return total
