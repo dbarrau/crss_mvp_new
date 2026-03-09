@@ -253,6 +253,7 @@ class RegulationGraphLoader:
         celex         = data["celex_id"]
         regulation_id = data.get("regulation_id", celex)
         provisions    = data["provisions"]
+        xref_relations = data.get("relations", [])
 
         logger.info("Loading %s – %d provisions …", celex, len(provisions))
 
@@ -265,9 +266,18 @@ class RegulationGraphLoader:
             n_nodes = self._upsert_nodes(session, nodes)
             self._apply_kind_labels(session, celex)
             n_rels  = self._upsert_relationships(session, edges)
+            n_xrefs = self._upsert_cross_references(session, xref_relations, celex)
 
-        stats = {"celex": celex, "nodes": n_nodes, "relationships": n_rels}
-        logger.info("  → %d nodes, %d relationships created/merged.", n_nodes, n_rels)
+        stats = {
+            "celex": celex,
+            "nodes": n_nodes,
+            "relationships": n_rels,
+            "cross_references": n_xrefs,
+        }
+        logger.info(
+            "  → %d nodes, %d structural rels, %d cross-ref edges.",
+            n_nodes, n_rels, n_xrefs,
+        )
         return stats
 
     def wipe_regulation(self, celex: str) -> None:
@@ -482,4 +492,105 @@ class RegulationGraphLoader:
         for chunk in _batched(edges, _BATCH):
             result = session.run(cypher, batch=chunk)
             total += result.single()["c"]
+        return total
+
+    # ------------------------------------------------------------------
+    # Cross-reference edges
+    # ------------------------------------------------------------------
+
+    # Allowed relationship types — prevents Cypher injection via dynamic labels.
+    _XREF_TYPES: set[str] = {"CITES", "CITES_EXTERNAL", "AMENDS"}
+
+    def _upsert_cross_references(
+        self, session, relations: list[dict], celex: str,
+    ) -> int:
+        """
+        Create cross-reference edges from the ``relations`` array in
+        ``parsed.json``.
+
+        Internal references (CITES, CITES_RANGE) link existing provision
+        nodes.  External references (CITES_EXTERNAL, AMENDS) MERGE
+        lightweight ``ExternalAct`` stub nodes so the edge always has a
+        target.
+        """
+        if not relations:
+            return 0
+
+        internal: list[dict] = []
+        external: list[dict] = []
+
+        for rel in relations:
+            rel_type = rel.get("type", "")
+            if rel_type not in self._XREF_TYPES:
+                logger.warning("Skipping unknown relation type: %s", rel_type)
+                continue
+            entry = {
+                "source": rel["source"],
+                "target": rel["target"],
+                "rel_type": rel_type,
+                "ref_text": (rel.get("properties") or {}).get("ref_text", ""),
+            }
+            if rel_type in ("CITES_EXTERNAL", "AMENDS"):
+                external.append(entry)
+            else:
+                internal.append(entry)
+
+        total = 0
+        total += self._upsert_internal_xrefs(session, internal)
+        total += self._upsert_external_xrefs(session, external, celex)
+
+        logger.info(
+            "  Cross-refs: %d internal, %d external → %d edges total.",
+            len(internal), len(external), total,
+        )
+        return total
+
+    def _upsert_internal_xrefs(self, session, refs: list[dict]) -> int:
+        """MERGE CITES / CITES_RANGE edges between existing provision nodes."""
+        total = 0
+        # Group by rel_type so we can use a fixed relationship label per query
+        by_type: dict[str, list[dict]] = {}
+        for r in refs:
+            by_type.setdefault(r["rel_type"], []).append(r)
+
+        for rel_type, entries in by_type.items():
+            if rel_type not in self._XREF_TYPES:
+                continue
+            cypher = (
+                "UNWIND $batch AS e "
+                "MATCH (s {id: e.source}) "
+                "MATCH (t {id: e.target}) "
+                f"MERGE (s)-[r:{rel_type}]->(t) "
+                "ON CREATE SET r.ref_text = e.ref_text "
+                "RETURN count(r) AS c"
+            )
+            for chunk in _batched(entries, _BATCH):
+                result = session.run(cypher, batch=chunk)
+                total += result.single()["c"]
+        return total
+
+    def _upsert_external_xrefs(
+        self, session, refs: list[dict], celex: str,
+    ) -> int:
+        """MERGE ExternalAct stubs and create CITES_EXTERNAL / AMENDS edges."""
+        total = 0
+        by_type: dict[str, list[dict]] = {}
+        for r in refs:
+            by_type.setdefault(r["rel_type"], []).append(r)
+
+        for rel_type, entries in by_type.items():
+            if rel_type not in self._XREF_TYPES:
+                continue
+            cypher = (
+                "UNWIND $batch AS e "
+                "MATCH (s {id: e.source}) "
+                "MERGE (t:ExternalAct {id: e.target}) "
+                "ON CREATE SET t.ref_text = e.ref_text "
+                f"MERGE (s)-[r:{rel_type}]->(t) "
+                "ON CREATE SET r.ref_text = e.ref_text "
+                "RETURN count(r) AS c"
+            )
+            for chunk in _batched(entries, _BATCH):
+                result = session.run(cypher, batch=chunk)
+                total += result.single()["c"]
         return total

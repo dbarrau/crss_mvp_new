@@ -149,8 +149,9 @@ def main() -> None:
     print(f"Wipe before load    : {args.wipe}")
     print()
 
-    total_nodes = 0
-    total_rels  = 0
+    total_nodes  = 0
+    total_rels   = 0
+    total_xrefs  = 0
 
     with RegulationGraphLoader(
         uri=args.uri,
@@ -163,16 +164,19 @@ def main() -> None:
         for path in files:
             celex = path.parts[-3]
             stats = loader.load_file(path, wipe=args.wipe)
-            total_nodes += stats["nodes"]
-            total_rels  += stats["relationships"]
+            total_nodes  += stats["nodes"]
+            total_rels   += stats["relationships"]
+            total_xrefs  += stats.get("cross_references", 0)
             print(
                 f"  {celex:<20}  nodes={stats['nodes']:>6}  "
-                f"relationships={stats['relationships']:>6}"
+                f"structural_rels={stats['relationships']:>6}  "
+                f"cross_refs={stats.get('cross_references', 0):>6}"
             )
 
     print()
-    print(f"Total  nodes         : {total_nodes}")
-    print(f"Total  relationships : {total_rels}")
+    print(f"Total  nodes              : {total_nodes}")
+    print(f"Total  structural rels    : {total_rels}")
+    print(f"Total  cross-ref edges    : {total_xrefs}")
     print("Done ✓")
 
 
