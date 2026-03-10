@@ -27,10 +27,11 @@ def parse_annexes(soup, ctx: ParserContext, root: Dict) -> Optional[Dict]:
 		return clone.get_text(" ", strip=True)
 
 	def parse_table(table, current_parent: Dict, current_point: Optional[Dict], counters: Dict[str, int]) -> Optional[Dict]:
-		rows = table.find_all("tr")
+		container = table.find("tbody", recursive=False) or table
+		rows = container.find_all("tr", recursive=False)
 		last_point = current_point
 		for row in rows:
-			cells = row.find_all("td")
+			cells = row.find_all("td", recursive=False)
 			if not cells:
 				continue
 			if len(cells) >= 3:
@@ -52,17 +53,31 @@ def parse_annexes(soup, ctx: ParserContext, root: Dict) -> Optional[Dict]:
 			elif len(cells) == 2:
 				token_text = cells[0].get_text(" ", strip=True)
 				body_text = cell_text_without_tables(cells[1])
+				num_match_2col = number_token.match(token_text)
 				letter_match = letter_token.match(token_text)
 				dash_match = dash_token.match(token_text)
+				if num_match_2col:
+					counters["point"] += 1
+					last_point = ctx.make_node(
+						"annex_point",
+						f"{current_parent['id'].split(f'{ctx.celex}_', 1)[-1]}_pt_{counters['point']}",
+						body_text,
+						current_parent,
+						number=num_match_2col.group(1),
+					)
+					nested = cells[1].find_all("table", recursive=False)
+					for nested_table in nested:
+						parse_table(nested_table, last_point, last_point, counters)
+					continue
 				if letter_match:
 					counters["subpoint"] += 1
 					host = last_point or current_parent
 					ctx.make_node(
 						"annex_subpoint",
-						f"{host['id'].split(f'{ctx.celex}_', 1)[-1]}_ltr_{counters['subpoint']}",
+						f"{host['id'].split(f'{ctx.celex}_', 1)[-1]}_ltr_{letter_match.group(1).lower()}",
 						body_text,
 						host,
-						number=letter_match.group(1),
+						number=letter_match.group(1).lower(),
 					)
 					nested = cells[1].find_all("table", recursive=False)
 					for nested_table in nested:
@@ -169,7 +184,7 @@ def parse_annexes(soup, ctx: ParserContext, root: Dict) -> Optional[Dict]:
 					host = current_point or current_parent
 					ctx.make_node(
 						"annex_subpoint",
-						f"{host['id'].split(f'{ctx.celex}_', 1)[-1]}_ltr_{counters['subpoint']}",
+						f"{host['id'].split(f'{ctx.celex}_', 1)[-1]}_ltr_{label.lower()}",
 						content,
 						host,
 						number=label.lower(),

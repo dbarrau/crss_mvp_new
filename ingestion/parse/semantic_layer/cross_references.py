@@ -203,7 +203,10 @@ class CrossReferenceResolver:
                 rels = self._resolve_single(
                     ref, source_id, ctx_article, ctx_paragraph,
                 )
-                relations.extend(rels)
+                for rel in rels:
+                    if rel["source"] == rel["target"]:
+                        continue
+                    relations.append(rel)
 
         return relations
 
