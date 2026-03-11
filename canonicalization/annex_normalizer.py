@@ -68,7 +68,7 @@ def extract_annex_blocks_from_provisions(
 		label = node.get("number")
 		block_kind: BlockKind
 
-		if kind == "annex_section":
+		if kind in ("annex_section", "annex_chapter", "annex_part"):
 			block_kind = "heading"
 		elif kind == "annex_point":
 			block_kind = "point"

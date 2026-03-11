@@ -5,7 +5,7 @@ Loads EU regulation ``parsed.json`` files into a Neo4j graph database.
 
 Graph model (structural / hierarchical only)
 --------------------------------------------
-Nodes – 11 legal-structural labels
+Nodes – 14 legal-structural labels
     (:Document)           – regulation root
   (:Citation)
   (:Recital)
@@ -15,16 +15,18 @@ Nodes – 11 legal-structural labels
   (:Paragraph)
   (:Point)              – includes ``roman_item`` provisions
   (:Annex)
-  (:AnnexSection)
-  (:AnnexPoint)         – includes ``annex_subpoint`` and ``annex_bullet``
+  (:AnnexChapter)       – CHAPTER I, II, III inside an annex
+  (:AnnexSection)       – numbered section headings (10., 10.4., etc.)
+  (:AnnexPoint)         – numbered requirements (10.1., 10.2., etc.)
+  (:AnnexSubpoint)      – lettered sub-items (a), (b), (c)
+  (:AnnexBullet)        – dash/bullet items
 
 Editorial containers (``preamble``, ``enacting_terms``, ``final_provisions``,
 ``annexes``) are **not** loaded as graph nodes.  Their children are
 re-parented directly under the Document node.
 
 Edges
-  (parent)-[:HAS_PART  {order}]->(child)   ordered containment
-  (child) -[:IS_PART_OF]       ->(parent)  inverse containment
+  (parent)-[:HAS_PART {order}]->(child)   ordered containment (traverse parent with <-[:HAS_PART]-)
 
 Node properties
     id               – unique provision ID
@@ -94,6 +96,10 @@ def _normalize_neo4j_uri(uri: str) -> str:
 # ---------------------------------------------------------------------------
 _KIND_LABEL: dict[str, str] = {
     "document":         "Document",
+    "preamble":         "Preamble",
+    "enacting_terms":   "EnactingTerms",
+    "final_provisions": "FinalProvisions",
+    "annexes":          "Annexes",
     "citation":         "Citation",
     "recital":          "Recital",
     "chapter":          "Chapter",
@@ -103,17 +109,17 @@ _KIND_LABEL: dict[str, str] = {
     "point":            "Point",
     "roman_item":       "Point",       # sub-points (i), (ii) → folded into Point
     "annex":            "Annex",
+    "annex_chapter":    "AnnexChapter",
+    "annex_part":       "AnnexPart",
     "annex_section":    "AnnexSection",
     "annex_point":      "AnnexPoint",
-    "annex_subpoint":   "AnnexPoint",  # lettered sub-items   → folded into AnnexPoint
-    "annex_bullet":     "AnnexPoint",  # dash/bullet items    → folded into AnnexPoint
+    "annex_subpoint":   "AnnexSubpoint",
+    "annex_bullet":     "AnnexBullet",
 }
 
-# Editorial containers stripped during loading – their children are
-# re-parented directly under the Document node.
-_CONTAINER_KINDS: set[str] = {
-    "preamble", "enacting_terms", "final_provisions", "annexes",
-}
+# No editorial containers are flattened – all structural nodes are kept
+# as real graph nodes for navigable hierarchy.
+_CONTAINER_KINDS: set[str] = set()
 
 # Batch size for UNWIND queries (avoid hitting Neo4j bolt message limits)
 _BATCH = 500
@@ -365,6 +371,14 @@ class RegulationGraphLoader:
             kind = p.get("kind", "") or ""
             number = p.get("number")
 
+            if kind == "preamble":
+                return "Preamble"
+            if kind == "enacting_terms":
+                return "Enacting Terms"
+            if kind == "final_provisions":
+                return "Final Provisions"
+            if kind == "annexes":
+                return "Annexes"
             if kind == "chapter" and number:
                 return f"Chapter {number}"
             if kind == "section" and number:
@@ -377,10 +391,18 @@ class RegulationGraphLoader:
                 return f"Point ({number})"
             if kind == "annex" and number:
                 return f"Annex {number}"
+            if kind == "annex_chapter" and number:
+                return f"Annex chapter {number}"
+            if kind == "annex_part" and number:
+                return f"Annex part {number}"
             if kind == "annex_section" and number:
                 return f"Annex section {number}"
-            if kind in ("annex_point", "annex_subpoint", "annex_bullet") and number:
+            if kind == "annex_point" and number:
                 return f"Annex point {number}"
+            if kind == "annex_subpoint" and number:
+                return f"Annex subpoint ({number})"
+            if kind == "annex_bullet":
+                return "Annex bullet"
 
             title = p.get("title")
             if title:
@@ -440,7 +462,7 @@ class RegulationGraphLoader:
         total = 0
         cypher = """
             UNWIND $batch AS n
-            MERGE (p {id: n.id})
+            MERGE (p:Provision {id: n.id})
             SET
                 p.celex           = n.celex,
                 p.regulation_id   = n.regulation_id,
@@ -476,17 +498,17 @@ class RegulationGraphLoader:
 
     def _upsert_relationships(self, session, edges: list[dict]) -> int:
         """
-        MERGE HAS_PART and IS_PART_OF edges in batches.
+        MERGE HAS_PART edges in batches.
         Returns count of HAS_PART relationships created/merged.
+        To traverse upward use the reverse direction: MATCH (x)<-[:HAS_PART]-(parent).
         """
         total = 0
         cypher = """
             UNWIND $batch AS e
-            MATCH (parent {id: e.parent_id})
-            MATCH (child  {id: e.child_id})
+            MATCH (parent:Provision {id: e.parent_id})
+            MATCH (child:Provision  {id: e.child_id})
             MERGE (parent)-[r:HAS_PART]->(child)
               ON CREATE SET r.order = e.order
-            MERGE (child)-[:IS_PART_OF]->(parent)
             RETURN count(r) AS c
         """
         for chunk in _batched(edges, _BATCH):
@@ -558,8 +580,8 @@ class RegulationGraphLoader:
                 continue
             cypher = (
                 "UNWIND $batch AS e "
-                "MATCH (s {id: e.source}) "
-                "MATCH (t {id: e.target}) "
+                "MATCH (s:Provision {id: e.source}) "
+                "MATCH (t:Provision {id: e.target}) "
                 f"MERGE (s)-[r:{rel_type}]->(t) "
                 "ON CREATE SET r.ref_text = e.ref_text "
                 "RETURN count(r) AS c"
@@ -583,7 +605,7 @@ class RegulationGraphLoader:
                 continue
             cypher = (
                 "UNWIND $batch AS e "
-                "MATCH (s {id: e.source}) "
+                "MATCH (s:Provision {id: e.source}) "
                 "MERGE (t:ExternalAct {id: e.target}) "
                 "ON CREATE SET t.ref_text = e.ref_text "
                 f"MERGE (s)-[r:{rel_type}]->(t) "
