@@ -45,9 +45,9 @@ def _cell_text(cell: Tag) -> str:
 	return clone.get_text(" ", strip=True)
 
 
-def _id_of(annex_id: str, number: str) -> str:
-	"""Build a canonical HTML-id fragment: anx_VII_1.1.1"""
-	return f"{annex_id}_{number}"
+def _id_of(parent: Dict, number: str, celex: str) -> str:
+	"""Build a node id rooted at the immediate parent: anx_VI_part_A_1.1"""
+	return f"{_suffix(parent, celex)}_{number}"
 
 
 def _suffix(node: Dict, celex: str) -> str:
@@ -213,7 +213,7 @@ def _on_heading(
 		number, content, depth = parsed
 		parent = _parent_for(stack, depth)
 		node = ctx.make_node(
-			"annex_section", _id_of(html_id, number),
+			"annex_section", _id_of(parent, number, ctx.celex),
 			content, parent,
 			title=content, number=number,
 		)
@@ -264,7 +264,7 @@ def _on_paragraph(
 		number, content, depth = parsed
 		parent = _parent_for(stack, depth)
 		node = ctx.make_node(
-			"annex_point", _id_of(html_id, number),
+			"annex_point", _id_of(parent, number, ctx.celex),
 			content, parent, number=number,
 		)
 		stack.append((depth, node))
@@ -307,7 +307,7 @@ def _on_table(
 			depth = number.count(".") + 1
 			parent = _parent_for(stack, depth)
 			node = ctx.make_node(
-				"annex_point", _id_of(html_id, number),
+				"annex_point", _id_of(parent, number, ctx.celex),
 				body, parent, number=number,
 			)
 			stack.append((depth, node))
@@ -372,7 +372,7 @@ def _on_enum_spacing(
 		number, _, depth = parsed
 		parent = _parent_for(stack, depth)
 		node = ctx.make_node(
-			"annex_point", _id_of(html_id, number),
+			"annex_point", _id_of(parent, number, ctx.celex),
 			body, parent, number=number,
 		)
 		stack.append((depth, node))
@@ -385,7 +385,7 @@ def _on_enum_spacing(
 		depth = number.count(".") + 1
 		parent = _parent_for(stack, depth)
 		node = ctx.make_node(
-			"annex_point", _id_of(html_id, number),
+			"annex_point", _id_of(parent, number, ctx.celex),
 			body, parent, number=number,
 		)
 		stack.append((depth, node))

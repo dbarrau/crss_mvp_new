@@ -36,5 +36,10 @@ REGULATIONS = {
         "name": "EU AI Act",
         "type": "ai_regulation",
         "jurisdiction": "EU"
+    },
+    "32017R0746": {
+        "name": "IVDR 2017/746",
+        "type": "in_vitro_diagnostic_regulation",
+        "jurisdiction": "EU"
     }
 }
