@@ -35,8 +35,7 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 			nested.decompose()
 		return root_table.get_text(" ", strip=True)
 
-	def parse_points(parent_paragraph: Dict, para_div) -> None:
-		tables = para_div.find_all("table", width="100%")
+	def parse_points_from_tables(parent_node: Dict, tables: List) -> None:
 		for table in tables:
 			text = point_text_without_nested_tables(table)
 			label_match = re.match(r"^\(([^)]+)\)", text)
@@ -44,12 +43,12 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 				continue
 			label = label_match.group(1)
 			content = text[label_match.end():].strip()
-			parent_html_id = parent_paragraph["id"].split(f"{ctx.celex}_", 1)[-1]
+			parent_html_id = parent_node["id"].split(f"{ctx.celex}_", 1)[-1]
 			point = ctx.make_node(
 				"point",
 				f"{parent_html_id}_pt_{label}",
 				content,
-				parent_paragraph,
+				parent_node,
 				number=label,
 			)
 			nested = table.find_all("table", width="100%")
@@ -68,20 +67,66 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 					number=nested_label,
 				)
 
-	def parse_paragraphs(article_node: Dict, article_div) -> None:
-		for para_div in article_div.find_all("div", id=paragraph_pattern, recursive=False):
-			para_match = paragraph_pattern.match(para_div["id"])
-			if not para_match:
+	def collect_subparagraph_blocks(para_div):
+		"""Group direct children into (p_element, [table_elements]) tuples."""
+		blocks = []
+		current_p = None
+		current_tables = []
+		for child in para_div.children:
+			if not hasattr(child, 'name') or not child.name:
 				continue
-			_, para_num = para_match.groups()
+			if child.name == 'p' and 'oj-normal' in child.get('class', []):
+				if current_p is not None:
+					blocks.append((current_p, current_tables))
+				current_p = child
+				current_tables = []
+			elif child.name == 'table':
+				current_tables.append(child)
+		if current_p is not None:
+			blocks.append((current_p, current_tables))
+		return blocks
+
+	def parse_paragraph_div(para_div, parent_node: Dict) -> None:
+		para_match = paragraph_pattern.match(para_div["id"])
+		if not para_match:
+			return
+		_, para_num = para_match.groups()
+
+		blocks = collect_subparagraph_blocks(para_div)
+
+		if len(blocks) <= 1:
+			# Single subparagraph — keep current behaviour
 			paragraph = ctx.make_node(
 				"paragraph",
 				para_div["id"],
 				paragraph_text_without_tables(para_div),
-				article_node,
+				parent_node,
 				number=str(int(para_num)),
 			)
-			parse_points(paragraph, para_div)
+			parse_points_from_tables(paragraph, para_div.find_all("table", width="100%"))
+		else:
+			# Multiple subparagraphs
+			paragraph = ctx.make_node(
+				"paragraph",
+				para_div["id"],
+				"",
+				parent_node,
+				number=str(int(para_num)),
+			)
+			for idx, (p_elem, tables) in enumerate(blocks, 1):
+				sp_text = p_elem.get_text(" ", strip=True)
+				sp_node = ctx.make_node(
+					"subparagraph",
+					f"{para_div['id']}_sp_{idx}",
+					sp_text,
+					paragraph,
+					number=str(idx),
+				)
+				parse_points_from_tables(sp_node, tables)
+
+	def parse_paragraphs(article_node: Dict, article_div) -> None:
+		for para_div in article_div.find_all("div", id=paragraph_pattern, recursive=False):
+			parse_paragraph_div(para_div, article_node)
 
 	def parse_articles(parent_node: Dict, parent_div) -> bool:
 		found = False
@@ -145,18 +190,7 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 				number=str(int(art_num)),
 			)
 			for para_div in para_list:
-				para_match = paragraph_pattern.match(para_div["id"])
-				if not para_match:
-					continue
-				_, para_num = para_match.groups()
-				paragraph = ctx.make_node(
-					"paragraph",
-					para_div["id"],
-					paragraph_text_without_tables(para_div),
-					article_node,
-					number=str(int(para_num)),
-				)
-				parse_points(paragraph, para_div)
+				parse_paragraph_div(para_div, article_node)
 
 	def extract_title(id_value: str):
 		title_node = soup.find("div", id=f"{id_value}.tit_1")

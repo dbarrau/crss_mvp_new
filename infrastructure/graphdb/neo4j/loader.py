@@ -5,7 +5,7 @@ Loads EU regulation ``parsed.json`` files into a Neo4j graph database.
 
 Graph model (structural / hierarchical only)
 --------------------------------------------
-Nodes – 14 legal-structural labels
+Nodes – 15 legal-structural labels
     (:Document)           – regulation root
   (:Citation)
   (:Recital)
@@ -13,6 +13,7 @@ Nodes – 14 legal-structural labels
   (:Section)
   (:Article)
   (:Paragraph)
+  (:Subparagraph)       – ordinal subparagraph within a paragraph
   (:Point)              – includes ``roman_item`` provisions
   (:Annex)
   (:AnnexChapter)       – CHAPTER I, II, III inside an annex
@@ -106,6 +107,7 @@ _KIND_LABEL: dict[str, str] = {
     "section":          "Section",
     "article":          "Article",
     "paragraph":        "Paragraph",
+    "subparagraph":     "Subparagraph",
     "point":            "Point",
     "roman_item":       "Point",       # sub-points (i), (ii) → folded into Point
     "annex":            "Annex",
@@ -387,6 +389,8 @@ class RegulationGraphLoader:
                 return f"Article {number}"
             if kind == "paragraph" and number:
                 return f"Paragraph {number}"
+            if kind == "subparagraph" and number:
+                return f"Subparagraph {number}"
             if kind in ("point", "roman_item") and number:
                 return f"Point ({number})"
             if kind == "annex" and number:
