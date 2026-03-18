@@ -13,7 +13,9 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from domain.regulations_catalog import REGULATIONS
+from canonicalization.text_enrichment import enrich_text_for_analysis
 from .base.registry import PARSER_REGISTRY
+from .semantic_layer.definitions import extract_defined_terms
 
 
 def parse_document(html_file: Path, lang: str, celex: str, out_dir: Path) -> Path:
@@ -73,6 +75,16 @@ def parse_document(html_file: Path, lang: str, celex: str, out_dir: Path) -> Pat
         "provisions": provisions,
         "relations": relations,
     }
+
+    # Enrich text_for_analysis for multi-granularity embeddings
+    enrich_text_for_analysis(provisions)
+
+    # Extract DefinedTerm nodes and DEFINED_BY relations (Layer 1 semantic layer)
+    defined_terms, dt_relations = extract_defined_terms(
+        provisions, celex, regulation_name or celex
+    )
+    relations.extend(dt_relations)
+    out["defined_terms"] = defined_terms
 
     if debug_roman_stats is not None:
         out["debug_roman_stats"] = debug_roman_stats

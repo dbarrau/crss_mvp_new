@@ -12,7 +12,7 @@ from .structural_layer.annex_parser import parse_annexes
 from .structural_layer.enacting_terms_parser import parse_enacting_terms
 from .structural_layer.final_provisions_parser import parse_final_provisions
 from .structural_layer.preamble_parser import parse_preamble
-# from .semantic_layer.cross_references import CrossReferenceResolver
+from .semantic_layer.cross_references import CrossReferenceResolver
 from .base.utils import ParserContext
 
 
@@ -34,7 +34,7 @@ def parse_eurlex_html(html_content: str, celex: str, regulation_id: str, lang: s
 	parse_annexes(soup, ctx, root)
 
 	# Post-parse pass: extract and resolve intra-text cross-references
-	# resolver = CrossReferenceResolver(celex=celex, provisions=ctx.provisions)
-	# ctx.relations = resolver.resolve_all()
+	resolver = CrossReferenceResolver(celex=celex, provisions=ctx.provisions)
+	ctx.relations = resolver.resolve_all()
 
 	return {"provisions": ctx.provisions, "relations": ctx.relations}

@@ -128,6 +128,55 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 		for para_div in article_div.find_all("div", id=paragraph_pattern, recursive=False):
 			parse_paragraph_div(para_div, article_node)
 
+	def parse_article_body_fallback(article_node: Dict, article_div) -> None:
+		"""Parse article content when no numbered paragraph wrapper divs exist.
+
+		Handles four EUR-Lex patterns:
+		  1. Intro <p> + definition/point <table> elements  (art 3, 16, 108)
+		  2. Single-body <p>                                (art 4, 32, 39)
+		  3. Multi-paragraph <p> blocks                     (art 85)
+		  4. Intro <p> + amendment <div> containers          (art 102-110)
+		"""
+		blocks = collect_subparagraph_blocks(article_div)
+
+		if not blocks:
+			# No <p class="oj-normal"> at all — extract all readable body text
+			body = paragraph_text_without_tables(article_div)
+			if body and body != article_node.get("text", ""):
+				article_node["text"] = body
+			return
+
+		if len(blocks) == 1:
+			p_elem, tables = blocks[0]
+			body_text = p_elem.get_text(" ", strip=True)
+			# For amendment articles, also grab text from child <div> siblings
+			extra_parts = []
+			capture = False
+			for child in article_div.children:
+				if child is p_elem:
+					capture = True
+					continue
+				if not capture:
+					continue
+				if hasattr(child, "name") and child.name == "div" and not child.get("id"):
+					extra_parts.append(child.get_text(" ", strip=True))
+			if extra_parts:
+				body_text = body_text + " " + " ".join(extra_parts)
+			article_node["text"] = body_text
+			parse_points_from_tables(article_node, tables)
+		else:
+			# Multiple subparagraph blocks
+			for idx, (p_elem, tables) in enumerate(blocks, 1):
+				sp_text = p_elem.get_text(" ", strip=True)
+				sp_node = ctx.make_node(
+					"subparagraph",
+					f"{article_div['id']}_sp_{idx}",
+					sp_text,
+					article_node,
+					number=str(idx),
+				)
+				parse_points_from_tables(sp_node, tables)
+
 	def parse_articles(parent_node: Dict, parent_div) -> bool:
 		found = False
 		for article_div in parent_div.find_all("div", id=article_pattern, recursive=False):
@@ -146,6 +195,8 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 				title=title,
 			)
 			parse_paragraphs(article_node, article_div)
+			if not article_node["children"]:
+				parse_article_body_fallback(article_node, article_div)
 		return found
 
 	def parse_sections_or_articles(chapter_node: Dict, chapter_div) -> None:

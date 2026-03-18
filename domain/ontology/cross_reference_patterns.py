@@ -38,10 +38,19 @@ import re
 EXPLICIT_REF = re.compile(
     r"""
     (?:
+      # ── "Section X of Annex Y" (reversed order) ─────────────────────────
+      Section\s+(?P<sec_of_annex>[A-Z]|\d+)
+      (?:,?\s*points?\s+(?P<sec_annex_pt>\d+(?:\([a-z]\))?))?  # optional point
+      \s+of\s+Annex\s+(?P<annex_of_sec>[IVX]+|\d+)
+    |
+      # ── "point N of Annex Y" (reversed order) ──────────────────────────
+      point\s+(?P<pt_of_annex>\d+(?:\([a-z]\))?)
+      \s+of\s+Annex\s+(?P<annex_of_pt>[IVX]+|\d+)
+    |
       # ── Annex branch ──────────────────────────────────────────────────────
       Annex\s+(?P<annex>[IVX]+|\d+)
-      (?:,?\s*Section\s+(?P<section>[A-Z]))?
-      (?:,?\s*point\s+(?P<annex_pt>\d+(?:\([a-z]\))?))?
+      (?:,?\s*Section\s+(?P<section>[A-Z]|\d+))?
+      (?:,?\s*points?\s+(?P<annex_pt>\d+(?:\([a-z]\))?))?  # "point 2" or "points 1"
     |
       # ── Article branch ────────────────────────────────────────────────────
       Articles?\s+(?P<article>\d+)
@@ -59,8 +68,13 @@ lettered/numbered point.
 
 Named groups
 ------------
+sec_of_annex : Section id in "Section X of Annex Y" form, e.g. "A", "1"
+sec_annex_pt : Optional point after section in reversed form
+annex_of_sec : Annex roman/number in "Section X of Annex Y" form
+pt_of_annex  : Point number in "point N of Annex Y" form
+annex_of_pt  : Annex roman/number in "point N of Annex Y" form
 annex       : Roman or Arabic numeral of the Annex, e.g. "III", "I", "IV"
-section     : Capital-letter section within the Annex, e.g. "A", "B"
+section     : Section within the Annex, e.g. "A", "B", "1"
 annex_pt    : Point number inside the Annex, e.g. "8", "1(a)"
 article     : Article number, e.g. "5", "9", "26"
 para        : Paragraph number inside the article, e.g. "1", "2"
@@ -156,6 +170,16 @@ Source locations in 32024R1689/EN/parsed.json
 RELATIVE_REF = re.compile(
     r"""
     (?:
+      # ── Anaphoric "this" without a number ─────────────────────────────
+      # "this paragraph", "this subparagraph", "this Article"
+      # Must appear as standalone phrases (not "this paragraph 3")
+      (?P<this_kw>this)\s+(?P<this_target>paragraph|subparagraph|Article)
+      (?!\s*\d)              # negative lookahead: no digit follows
+    |
+      # ── Anaphoric: "of this Article" / "of this paragraph" ────────────
+      of\s+this\s+(?P<of_this>Article|paragraph)
+      (?!\s*\d)
+    |
       # ── Ordinal subparagraph: "the first subparagraph [of paragraph N]" ──
       (?P<the>the)\s+
       (?P<ordinal>first|second|third|fourth|fifth)\s+subparagraph
@@ -194,6 +218,9 @@ the current context, without repeating the full Article number.
 
 Named groups
 ------------
+this_kw   : Literal "this" — signals anaphoric self-reference
+this_target : "paragraph", "subparagraph", or "Article" (no digit)
+of_this   : "Article" or "paragraph" in "of this Article/paragraph"
 the       : Literal "the" — signals ordinal-subparagraph form
 ordinal   : Ordinal word — "first" … "fifth"
 of_para   : Paragraph number when "of paragraph N" follows the ordinal
@@ -214,6 +241,14 @@ ref_pt    : Point letter after anaphoric locator, e.g. "h"
 
 Test strings (sourced from 32024R1689)
 ---------------------------------------
+"this paragraph"
+    → this_kw='this', this_target='paragraph'
+"this Article"
+    → this_kw='this', this_target='Article'
+"this subparagraph"
+    → this_kw='this', this_target='subparagraph'
+"of this Article"
+    → of_this='Article'
 "the first subparagraph"
     → the='the', ordinal='first'
 "paragraph 1, first subparagraph, point (h)"

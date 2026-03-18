@@ -169,15 +169,22 @@ class CrossReferenceResolver:
         self._by_id: dict[str, dict] = {p["id"]: p for p in provisions}
         self._index = _build_provision_index(celex, provisions)
 
+    _ORDINAL_MAP: dict[str, str] = {
+        "first": "1", "second": "2", "third": "3",
+        "fourth": "4", "fifth": "5",
+    }
+
     def resolve_all(self) -> list[dict[str, Any]]:
         """Iterate all provisions, extract and resolve cross-references.
 
         Returns a list of relation dicts.
         """
         relations: list[dict[str, Any]] = []
+        seen_edges: set[tuple[str, str]] = set()
         # Context state for relative references
         ctx_article: str | None = None
         ctx_paragraph: str | None = None
+        ctx_subparagraph: str | None = None
 
         for prov in self.provisions:
             kind = prov.get("kind", "")
@@ -186,9 +193,16 @@ class CrossReferenceResolver:
             if kind == "article":
                 ctx_article = prov.get("number")
                 ctx_paragraph = None
+                ctx_subparagraph = None
             elif kind == "paragraph":
                 ctx_paragraph = prov.get("number")
-                # Infer article from parent chain
+                ctx_subparagraph = None
+                if ctx_article is None:
+                    ctx_article = self._article_of(prov)
+            elif kind == "subparagraph":
+                ctx_subparagraph = prov.get("number")
+                if ctx_paragraph is None:
+                    ctx_paragraph = self._ancestor_number(prov, "paragraph")
                 if ctx_article is None:
                     ctx_article = self._article_of(prov)
 
@@ -202,10 +216,15 @@ class CrossReferenceResolver:
             for ref in raw_refs:
                 rels = self._resolve_single(
                     ref, source_id, ctx_article, ctx_paragraph,
+                    ctx_subparagraph,
                 )
                 for rel in rels:
                     if rel["source"] == rel["target"]:
                         continue
+                    edge_key = (rel["source"], rel["target"])
+                    if edge_key in seen_edges:
+                        continue
+                    seen_edges.add(edge_key)
                     relations.append(rel)
 
         return relations
@@ -220,6 +239,7 @@ class CrossReferenceResolver:
         source_id: str,
         ctx_article: str | None,
         ctx_paragraph: str | None,
+        ctx_subparagraph: str | None = None,
     ) -> list[dict[str, Any]]:
         category = ref["category"]
         groups = ref["groups"]
@@ -227,7 +247,10 @@ class CrossReferenceResolver:
         if category == "explicit":
             return self._resolve_explicit(groups, source_id)
         if category == "relative":
-            return self._resolve_relative(groups, source_id, ctx_article, ctx_paragraph)
+            return self._resolve_relative(
+                groups, source_id, ctx_article, ctx_paragraph,
+                ctx_subparagraph,
+            )
         if category == "range":
             return self._resolve_range(groups, source_id)
         if category == "external":
@@ -243,13 +266,56 @@ class CrossReferenceResolver:
     def _resolve_explicit(
         self, groups: dict, source_id: str,
     ) -> list[dict[str, Any]]:
-        # Annex branch
+        # "Section X of Annex Y" (reversed order)
+        annex_of_sec = groups.get("annex_of_sec")
+        if annex_of_sec:
+            sec_id = groups.get("sec_of_annex", "")
+            target = self._lookup_annex_section(annex_of_sec, sec_id)
+            if not target:
+                target = self._lookup("annex", annex_of_sec)
+            if target:
+                ref = f"Section {sec_id} of Annex {annex_of_sec}"
+                return [self._make_rel(source_id, target, self.REL_CITES,
+                                       {"ref_text": ref})]
+            return []
+
+        # "point N of Annex Y" (reversed order)
+        annex_of_pt = groups.get("annex_of_pt")
+        if annex_of_pt:
+            pt_num = groups.get("pt_of_annex", "")
+            target = self._lookup_annex_point(annex_of_pt, pt_num)
+            if not target:
+                target = self._lookup("annex", annex_of_pt)
+            if target:
+                ref = f"point {pt_num} of Annex {annex_of_pt}"
+                return [self._make_rel(source_id, target, self.REL_CITES,
+                                       {"ref_text": ref})]
+            return []
+
+        # Annex branch (forward order: "Annex III, Section A, point 2")
         annex = groups.get("annex")
         if annex:
-            target = self._lookup("annex", annex)
+            section = groups.get("section")
+            annex_pt = groups.get("annex_pt")
+            # Try to resolve to the deepest available node
+            if annex_pt and section:
+                target = self._lookup_annex_point(annex, annex_pt)
+            elif section:
+                target = self._lookup_annex_section(annex, section)
+            elif annex_pt:
+                target = self._lookup_annex_point(annex, annex_pt)
+            else:
+                target = None
+            if not target:
+                target = self._lookup("annex", annex)
             if target:
+                ref_parts = [f"Annex {annex}"]
+                if section:
+                    ref_parts.append(f"Section {section}")
+                if annex_pt:
+                    ref_parts.append(f"point {annex_pt}")
                 return [self._make_rel(source_id, target, self.REL_CITES,
-                                       {"ref_text": f"Annex {annex}"})]
+                                       {"ref_text": ", ".join(ref_parts)})]
             return []
 
         # Article branch — resolve to the deepest matching node
@@ -289,7 +355,34 @@ class CrossReferenceResolver:
         source_id: str,
         ctx_article: str | None,
         ctx_paragraph: str | None,
+        ctx_subparagraph: str | None = None,
     ) -> list[dict[str, Any]]:
+        # "this paragraph" / "this Article" / "this subparagraph"
+        this_target = groups.get("this_target")
+        if this_target:
+            target = self._resolve_this(
+                this_target.lower(), source_id,
+                ctx_article, ctx_paragraph, ctx_subparagraph,
+            )
+            if target:
+                return [self._make_rel(source_id, target, self.REL_CITES,
+                                       {"ref_text": f"this {this_target}",
+                                        "relative": True})]
+            return []
+
+        # "of this Article" / "of this paragraph"
+        of_this = groups.get("of_this")
+        if of_this:
+            target = self._resolve_this(
+                of_this.lower(), source_id,
+                ctx_article, ctx_paragraph, ctx_subparagraph,
+            )
+            if target:
+                return [self._make_rel(source_id, target, self.REL_CITES,
+                                       {"ref_text": f"of this {of_this}",
+                                        "relative": True})]
+            return []
+
         # "referred to in Article N" / "pursuant to Article N"
         # Optionally followed by ", first subparagraph, point (h)"
         ref_kw = groups.get("ref_kw")
@@ -457,15 +550,57 @@ class CrossReferenceResolver:
 
     def _article_of(self, prov: dict) -> str | None:
         """Walk parent chain to find the enclosing article number."""
+        return self._ancestor_number(prov, "article")
+
+    def _ancestor_number(self, prov: dict, target_kind: str) -> str | None:
+        """Walk parent chain to find the nearest ancestor of *target_kind*."""
         pid = prov.get("parent_id")
         while pid:
             parent = self._by_id.get(pid)
             if not parent:
                 break
-            if parent.get("kind") == "article":
+            if parent.get("kind") == target_kind:
                 return parent.get("number")
             pid = parent.get("parent_id")
         return None
+
+    # ------------------------------------------------------------------
+    # "this" reference helpers
+    # ------------------------------------------------------------------
+
+    def _resolve_this(
+        self,
+        target_kind: str,
+        source_id: str,
+        ctx_article: str | None,
+        ctx_paragraph: str | None,
+        ctx_subparagraph: str | None,
+    ) -> str | None:
+        """Resolve 'this paragraph', 'this Article', 'this subparagraph'."""
+        if target_kind == "article" and ctx_article:
+            return self._lookup("article", ctx_article)
+        if target_kind == "paragraph" and ctx_article and ctx_paragraph:
+            return self._lookup_para(ctx_article, ctx_paragraph)
+        if target_kind == "subparagraph":
+            if ctx_article and ctx_paragraph and ctx_subparagraph:
+                return self._index.get(
+                    ("subparagraph", f"{ctx_article}.{ctx_paragraph}.{ctx_subparagraph}")
+                )
+            # Fall back: the source node itself if it is a subparagraph
+            src = self._by_id.get(source_id)
+            if src and src.get("kind") == "subparagraph":
+                return source_id
+        return None
+
+    # ------------------------------------------------------------------
+    # Annex lookup helpers
+    # ------------------------------------------------------------------
+
+    def _lookup_annex_section(self, annex_num: str, section_id: str) -> str | None:
+        return self._index.get(("annex_section", f"{annex_num}.{section_id}"))
+
+    def _lookup_annex_point(self, annex_num: str, point_num: str) -> str | None:
+        return self._index.get(("annex_point", f"{annex_num}.{point_num}"))
 
     # ------------------------------------------------------------------
     # Relation factory
@@ -494,10 +629,17 @@ def _build_provision_index(
     """Build a lookup index: (kind, compound_key) → provision ID.
 
     Compound keys:
-      - article:   number                          (e.g. "5")
-      - paragraph: article_num.para_num            (e.g. "5.1")
-      - point:     article_num.para_num.point_lbl  (e.g. "5.1.g")
-      - annex:     number                          (e.g. "III")
+      - article:         number                          (e.g. "5")
+      - paragraph:       article_num.para_num            (e.g. "5.1")
+      - subparagraph:    article_num.para_num.sp_num     (e.g. "5.1.2")
+      - point:           article_num.para_num.point_lbl  (e.g. "5.1.g")
+      - roman_item:      article.para.point.roman        (e.g. "5.1.g.i")
+      - annex:           number                          (e.g. "III")
+      - annex_section:   annex_num.section_id            (e.g. "I.A", "VIII.1")
+      - annex_point:     annex_num.point_num             (e.g. "III.2")
+      - chapter:         number                          (e.g. "III")
+      - section:         number                          (e.g. "1")
+      - recital:         number                          (e.g. "170")
     """
     index: dict[tuple[str, str], str] = {}
     # Pre-build parent lookup
@@ -528,10 +670,17 @@ def _build_provision_index(
             index[("chapter", number)] = prov["id"]
         elif kind == "section":
             index[("section", number)] = prov["id"]
+        elif kind == "recital":
+            index[("recital", number)] = prov["id"]
         elif kind == "paragraph":
             art_num = _ancestor_number(prov, "article")
             if art_num:
                 index[("paragraph", f"{art_num}.{number}")] = prov["id"]
+        elif kind == "subparagraph":
+            art_num = _ancestor_number(prov, "article")
+            para_num = _ancestor_number(prov, "paragraph")
+            if art_num and para_num:
+                index[("subparagraph", f"{art_num}.{para_num}.{number}")] = prov["id"]
         elif kind == "point":
             art_num = _ancestor_number(prov, "article")
             para_num = _ancestor_number(prov, "paragraph")
@@ -543,6 +692,14 @@ def _build_provision_index(
             pt_num = _ancestor_number(prov, "point")
             if art_num and para_num and pt_num:
                 index[("roman_item", f"{art_num}.{para_num}.{pt_num}.{number}")] = prov["id"]
+        elif kind == "annex_section":
+            annex_num = _ancestor_number(prov, "annex")
+            if annex_num:
+                index[("annex_section", f"{annex_num}.{number}")] = prov["id"]
+        elif kind == "annex_point":
+            annex_num = _ancestor_number(prov, "annex")
+            if annex_num:
+                index[("annex_point", f"{annex_num}.{number}")] = prov["id"]
 
     return index
 

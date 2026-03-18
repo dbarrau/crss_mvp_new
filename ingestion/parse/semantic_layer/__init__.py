@@ -5,3 +5,4 @@ such as requirement/obligation pattern matchers.
 """
 
 from .normative_modalities import is_requirement_text, classify_requirement_type  # noqa: F401
+from .definitions import extract_defined_terms  # noqa: F401

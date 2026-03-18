@@ -227,6 +227,13 @@ class RegulationGraphLoader:
             # Fast look-up by structural type
             "CREATE INDEX provision_kind IF NOT EXISTS "
             "FOR (p:Provision) ON (p.kind)",
+            # DefinedTerm – uniqueness and lookup indexes
+            "CREATE CONSTRAINT defined_term_id IF NOT EXISTS "
+            "FOR (d:DefinedTerm) REQUIRE d.id IS UNIQUE",
+            "CREATE INDEX defined_term_normalized IF NOT EXISTS "
+            "FOR (d:DefinedTerm) ON (d.term_normalized)",
+            "CREATE INDEX defined_term_category IF NOT EXISTS "
+            "FOR (d:DefinedTerm) ON (d.category)",
         ]
         with self._driver.session(database=self._database) as session:
             for stmt in stmts:
@@ -258,10 +265,13 @@ class RegulationGraphLoader:
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
 
-        celex         = data["celex_id"]
-        regulation_id = data.get("regulation_id", celex)
-        provisions    = data["provisions"]
+        celex          = data["celex_id"]
+        regulation_id  = data.get("regulation_id", celex)
+        provisions     = data["provisions"]
+        # relations includes cross-references AND DEFINED_BY edges (added by
+        # the definitions semantic layer during parsing)
         xref_relations = data.get("relations", [])
+        defined_terms  = data.get("defined_terms", [])
 
         logger.info("Loading %s – %d provisions …", celex, len(provisions))
 
@@ -270,21 +280,32 @@ class RegulationGraphLoader:
 
         nodes, edges = self._prepare_data(provisions, celex, regulation_id)
 
+        # DEFINED_BY relations reference DefinedTerm nodes (not Provision nodes)
+        # so they must be handled after defined_terms are upserted; separate them
+        # from the standard cross-reference set.
+        defined_by_rels = [r for r in xref_relations if r.get("type") == "DEFINED_BY"]
+        std_xref_rels   = [r for r in xref_relations if r.get("type") != "DEFINED_BY"]
+
         with self._driver.session(database=self._database) as session:
-            n_nodes = self._upsert_nodes(session, nodes)
+            n_nodes      = self._upsert_nodes(session, nodes)
             self._apply_kind_labels(session, celex)
-            n_rels  = self._upsert_relationships(session, edges)
-            n_xrefs = self._upsert_cross_references(session, xref_relations, celex)
+            n_rels       = self._upsert_relationships(session, edges)
+            n_xrefs      = self._upsert_cross_references(session, std_xref_rels, celex)
+            n_dterms     = self._upsert_defined_terms(session, defined_terms)
+            n_defined_by = self._upsert_defined_by_edges(session, defined_terms)
 
         stats = {
-            "celex": celex,
-            "nodes": n_nodes,
+            "celex":         celex,
+            "nodes":         n_nodes,
             "relationships": n_rels,
             "cross_references": n_xrefs,
+            "defined_terms": n_dterms,
+            "defined_by_edges": n_defined_by,
         }
         logger.info(
-            "  → %d nodes, %d structural rels, %d cross-ref edges.",
-            n_nodes, n_rels, n_xrefs,
+            "  → %d nodes, %d structural rels, %d cross-ref edges, "
+            "%d defined-terms, %d DEFINED_BY edges.",
+            n_nodes, n_rels, n_xrefs, n_dterms, n_defined_by,
         )
         return stats
 
@@ -441,6 +462,7 @@ class RegulationGraphLoader:
                 "kind":            prov.get("kind", ""),
                 "level":           prov.get("kind", ""),
                 "text":            prov.get("text", ""),
+                "text_for_analysis": prov.get("text_for_analysis"),
                 "hierarchy_depth": prov.get("hierarchy_depth", 0),
                 "number":          prov.get("number"),
                 "title":           prov.get("title"),
@@ -474,6 +496,7 @@ class RegulationGraphLoader:
                 p.kind            = n.kind,
                 p.level           = n.level,
                 p.text            = n.text,
+                p.text_for_analysis = n.text_for_analysis,
                 p.hierarchy_depth = n.hierarchy_depth,
                 p.number          = n.number,
                 p.title           = n.title,
@@ -593,6 +616,57 @@ class RegulationGraphLoader:
             for chunk in _batched(entries, _BATCH):
                 result = session.run(cypher, batch=chunk)
                 total += result.single()["c"]
+        return total
+
+    # ------------------------------------------------------------------
+    # DefinedTerm nodes and DEFINED_BY edges
+    # ------------------------------------------------------------------
+
+    def _upsert_defined_terms(self, session, defined_terms: list[dict]) -> int:
+        """MERGE :DefinedTerm nodes in batches.
+
+        Returns total count of DefinedTerm nodes touched.
+        """
+        if not defined_terms:
+            return 0
+        total = 0
+        cypher = """
+            UNWIND $batch AS dt
+            MERGE (d:DefinedTerm {id: dt.id})
+            SET
+                d.term                = dt.term,
+                d.term_normalized     = dt.term_normalized,
+                d.category            = dt.category,
+                d.celex               = dt.celex,
+                d.regulation          = dt.regulation,
+                d.source_provision_id = dt.source_provision_id
+            RETURN count(d) AS c
+        """
+        for chunk in _batched(defined_terms, _BATCH):
+            result = session.run(cypher, batch=chunk)
+            total += result.single()["c"]
+        logger.info("  DefinedTerm nodes: %d upserted.", total)
+        return total
+
+    def _upsert_defined_by_edges(self, session, defined_terms: list[dict]) -> int:
+        """MERGE DEFINED_BY edges from :DefinedTerm → :Provision in batches.
+
+        Returns total count of edges created/merged.
+        """
+        if not defined_terms:
+            return 0
+        total = 0
+        cypher = """
+            UNWIND $batch AS dt
+            MATCH (d:DefinedTerm {id: dt.id})
+            MATCH (p:Provision   {id: dt.source_provision_id})
+            MERGE (d)-[r:DEFINED_BY]->(p)
+            RETURN count(r) AS c
+        """
+        for chunk in _batched(defined_terms, _BATCH):
+            result = session.run(cypher, batch=chunk)
+            total += result.single()["c"]
+        logger.info("  DEFINED_BY edges: %d upserted.", total)
         return total
 
     def _upsert_external_xrefs(
