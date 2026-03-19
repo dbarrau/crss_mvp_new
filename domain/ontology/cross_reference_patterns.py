@@ -13,8 +13,10 @@ from category name to pattern, suitable for pipeline use.
 CAVEATS FOR GRAPH-BUILDING PIPELINES
 -----------------------------------------------------------------------
 1. **Footnote noise** – parsed text often contains inline citation markers
-   such as ``( 10 )`` immediately after a reference.  Strip these first:
-       FOOTNOTE_MARKER = re.compile(r'\\s*\\(\\s*\\d+\\s*\\)')
+   such as ``( 10 )`` (with spaces inside) immediately after a reference.
+   Strip these first — requires at least one space on each side of the digit
+   so that definition point numbers like ``(49)`` are not accidentally stripped:
+       FOOTNOTE_MARKER = re.compile(r'\\s*\\(\\s+\\d+\\s+\\)')
 2. **Priority order** – apply RELATIVE_REF before EXPLICIT_REF; a string
    like "paragraph 3, second subparagraph" is unambiguously relative in
    context but also matches the explicit article branch partially.
@@ -207,7 +209,7 @@ RELATIVE_REF = re.compile(
       (?P<qualifier>referred\s+to\s+in|pursuant\s+to|in\s+accordance\s+with)
       \s+(?:this\s+)?(?P<ref_kw>paragraph|Article)\s+(?P<ref_num>\d+)
       (?:,\s*(?P<ref_sub_ord>first|second|third|fourth|fifth)\s+subparagraph)?
-      (?:,\s*point\s+\((?P<ref_pt>[a-z])\))?
+      (?:,\s*point\s+\((?P<ref_pt>[a-z0-9]+)\)(?:\((?P<ref_subpt>[a-z0-9]+)\))?)?
     )
     """,
     re.VERBOSE | re.IGNORECASE,
@@ -237,7 +239,8 @@ qualifier : Anaphoric trigger — "referred to in", "pursuant to",
 ref_kw    : "paragraph" or "Article"
 ref_num   : Number of the referred provision
 ref_sub_ord : Ordinal subparagraph after anaphoric locator, e.g. "first"
-ref_pt    : Point letter after anaphoric locator, e.g. "h"
+ref_pt    : Point label after anaphoric locator, e.g. "h" or "49"
+ref_subpt : Sub-point label after ref_pt, e.g. "c" from "point (49)(c)"
 
 Test strings (sourced from 32024R1689)
 ---------------------------------------
@@ -371,7 +374,7 @@ Test strings
 # ---------------------------------------------------------------------------
 # Footnote noise stripper (apply before matching)
 # ---------------------------------------------------------------------------
-FOOTNOTE_MARKER = re.compile(r"\s*\(\s*\d+\s*\)")
+FOOTNOTE_MARKER = re.compile(r"\s*\(\s+\d+\s+\)")
 """
 Strips inline footnote citation markers like ``( 10 )`` or ``(7)`` that appear
 in EUR-Lex parsed text immediately after cross-references, e.g.:

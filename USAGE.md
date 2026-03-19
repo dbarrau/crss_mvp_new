@@ -65,12 +65,6 @@ If `raw/raw.html` already exists, scraping is skipped. To force a re-scrape, del
 | `32024R1689` | EU AI Act |
 | `32017R0746` | IVDR 2017/746 |
 
-**Quick re-parse of MDR + AI Act:**
-
-```bash
-python scripts/_reparse.py
-# Results written to /tmp/crss_reparse_results.txt
-```
 
 ### 2. Validate Parsed Output (optional)
 

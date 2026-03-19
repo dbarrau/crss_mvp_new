@@ -388,18 +388,24 @@ class CrossReferenceResolver:
         ref_kw = groups.get("ref_kw")
         ref_num = groups.get("ref_num")
         if ref_kw and ref_num:
+            ref_pt = groups.get("ref_pt")
+            ref_subpt = groups.get("ref_subpt")
             if ref_kw.lower() == "article":
-                # "referred to in Article N[, para, point]" — drill down
-                ref_pt = groups.get("ref_pt")
+                # "referred to in Article N[, para, point(subpoint)]" — drill down
                 if ref_pt:
-                    target = self._resolve_article_chain(ref_num, None, ref_pt, None)
+                    target = self._resolve_article_chain(ref_num, None, ref_pt, ref_subpt)
                 else:
                     target = self._lookup("article", ref_num)
             else:
-                # "referred to in paragraph N[, subparagraph, point (x)]"
+                # "referred to in paragraph N[, subparagraph, point (x)(y)]"
                 if ctx_article:
-                    ref_pt = groups.get("ref_pt")
-                    if ref_pt:
+                    if ref_pt and ref_subpt:
+                        target = self._index.get(
+                            ("roman_item", f"{ctx_article}.{ref_num}.{ref_pt}.{ref_subpt}")
+                        )
+                        if not target:
+                            target = self._lookup_point(ctx_article, ref_num, ref_pt)
+                    elif ref_pt:
                         target = self._lookup_point(ctx_article, ref_num, ref_pt)
                     else:
                         target = self._lookup_para(ctx_article, ref_num)
@@ -410,8 +416,10 @@ class CrossReferenceResolver:
                 ref_text_parts = [qualifier, ref_kw, ref_num]
                 if groups.get("ref_sub_ord"):
                     ref_text_parts.append(f"{groups['ref_sub_ord']} subparagraph")
-                if groups.get("ref_pt"):
-                    ref_text_parts.append(f"point ({groups['ref_pt']})")
+                if ref_pt:
+                    ref_text_parts.append(f"point ({ref_pt})")
+                if ref_subpt:
+                    ref_text_parts.append(f"({ref_subpt})")
                 return [self._make_rel(source_id, target, self.REL_CITES,
                                        {"ref_text": " ".join(ref_text_parts).strip(),
                                         "relative": True})]
@@ -431,14 +439,25 @@ class CrossReferenceResolver:
                                         "relative": True})]
             return []
 
-        # "point (x) of …" — resolve within current article/para
+        # "point (x)(y) of …" — resolve within current article/para
         pt_letter = groups.get("pt_letter")
         if pt_letter and ctx_article:
+            pt_sub = groups.get("pt_sub")
             para_ctx = ctx_paragraph or "1"
-            target = self._lookup_point(ctx_article, para_ctx, pt_letter)
+            if pt_sub:
+                target = self._index.get(
+                    ("roman_item", f"{ctx_article}.{para_ctx}.{pt_letter}.{pt_sub}")
+                )
+                if not target:
+                    target = self._lookup_point(ctx_article, para_ctx, pt_letter)
+            else:
+                target = self._lookup_point(ctx_article, para_ctx, pt_letter)
             if target:
+                ref_text = f"point ({pt_letter})"
+                if pt_sub:
+                    ref_text += f"({pt_sub})"
                 return [self._make_rel(source_id, target, self.REL_CITES,
-                                       {"ref_text": f"point ({pt_letter})",
+                                       {"ref_text": ref_text,
                                         "relative": True})]
 
         return []
@@ -538,7 +557,15 @@ class CrossReferenceResolver:
             if t:
                 return t
         if point and not para:
-            # "Article 4, point (14)" — scan all paragraphs
+            # Try direct article-level point first (e.g. definitions article)
+            if subpoint:
+                t = self._index.get(("roman_item", f"{article}.{point}.{subpoint}"))
+                if t:
+                    return t
+            t = self._index.get(("point", f"{article}.{point}"))
+            if t:
+                return t
+            # Fall back: scan paragraph-based points
             for key, pid in self._index.items():
                 if key[0] == "point" and key[1].startswith(f"{article}.") and key[1].endswith(f".{point}"):
                     return pid
@@ -686,12 +713,18 @@ def _build_provision_index(
             para_num = _ancestor_number(prov, "paragraph")
             if art_num and para_num:
                 index[("point", f"{art_num}.{para_num}.{number}")] = prov["id"]
+            elif art_num:
+                # Direct article-level points (e.g. definitions article — no paragraph)
+                index[("point", f"{art_num}.{number}")] = prov["id"]
         elif kind == "roman_item":
             art_num = _ancestor_number(prov, "article")
             para_num = _ancestor_number(prov, "paragraph")
             pt_num = _ancestor_number(prov, "point")
             if art_num and para_num and pt_num:
                 index[("roman_item", f"{art_num}.{para_num}.{pt_num}.{number}")] = prov["id"]
+            elif art_num and pt_num:
+                # Direct article-level roman items (under a no-paragraph point)
+                index[("roman_item", f"{art_num}.{pt_num}.{number}")] = prov["id"]
         elif kind == "annex_section":
             annex_num = _ancestor_number(prov, "annex")
             if annex_num:

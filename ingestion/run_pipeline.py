@@ -1,4 +1,4 @@
-# crss_mvp/crss/ingestion/run_pipeline.py
+# crss/ingestion/run_pipeline.py
 
 """
 Pipeline Orchestrator

@@ -29,17 +29,20 @@ Attributes:
 REGULATIONS = {
     "32017R0745": {
         "name": "MDR 2017/745",
+        "number": "2017/745",
         "type": "medical_device_regulation",
-        "jurisdiction": "EU"
+        "jurisdiction": "EU",
     },
     "32024R1689": {
         "name": "EU AI Act",
+        "number": "2024/1689",
         "type": "ai_regulation",
-        "jurisdiction": "EU"
+        "jurisdiction": "EU",
     },
     "32017R0746": {
         "name": "IVDR 2017/746",
+        "number": "2017/746",
         "type": "in_vitro_diagnostic_regulation",
-        "jurisdiction": "EU"
-    }
+        "jurisdiction": "EU",
+    },
 }

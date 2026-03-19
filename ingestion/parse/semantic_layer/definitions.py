@@ -26,58 +26,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
-# Matches: opening quote (straight or curly), the term, closing quote,
-# optional whitespace, then literal 'means'
-_TERM_RE = re.compile(
-    r"^['\u2018\u2019\u201a\u201b]([^'\u2018\u2019\u201a\u201b]+)"
-    r"['\u2018\u2019\u201a\u201b]\s+means\b",
-    re.IGNORECASE,
+from domain.ontology.defined_terms import (
+    TERM_PATTERN as _TERM_RE,
+    classify_category as _classify_category,
 )
-
-# ---------------------------------------------------------------------------
-# Category classification
-# ---------------------------------------------------------------------------
-# Only the first clause (text before the first ';' or '.') is checked for actors.
-# Body classification uses the term name itself — if the term is called an
-# "authority", "body", "office", or "board", it is an institutional body.
-# This avoids false positives where an unrelated definition merely *mentions*
-# a competent authority in its text.
-#
-# Two meaningful categories for agent use:
-#   actor — economic operators (natural/legal persons) bearing obligations/rights
-#   body  — institutional actors (authorities, boards, offices)
-# Everything else is "other"; exact-term lookup via find_by_term() works for all.
-
-_ACTOR_SIGNALS = (
-    "natural or legal person",
-    "public authority",
-    "agency or other body",
-)
-
-# Keywords present in the term *name* that identify institutional bodies.
-_BODY_TERM_KEYWORDS = ("authority", "body", "office", "board")
-
-
-def _classify_category(term: str, definition_body: str) -> str:
-    """Return the semantic category for a defined term.
-
-    Parameters
-    ----------
-    term:
-        The raw term text (between quotes), e.g. ``"notifying authority"``.
-    definition_body:
-        The provision text *after* the word ``means``.
-    """
-    first_clause = re.split(r"[;.]", definition_body, maxsplit=1)[0]
-    first_clause = first_clause.replace("\xa0", " ").lower()
-
-    if any(sig in first_clause for sig in _ACTOR_SIGNALS):
-        return "actor"
-
-    if any(kw in term.lower() for kw in _BODY_TERM_KEYWORDS):
-        return "body"
-
-    return "other"
 
 
 def _normalize_term(term: str) -> str:

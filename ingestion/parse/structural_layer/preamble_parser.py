@@ -1,19 +1,19 @@
 from __future__ import annotations
 
-import re
 from typing import Dict, Optional
 
 from ..base.utils import ParserContext
+from domain.ontology.eurlex_html import PREAMBLE_ID, CITATION_ID_RE, RECITAL_ID_RE
 
 
 def parse_preamble(soup, ctx: ParserContext, root: Dict) -> Optional[Dict]:
-	preamble_div = soup.find("div", id="pbl_1")
+	preamble_div = soup.find("div", id=PREAMBLE_ID)
 	if not preamble_div:
 		return None
 
 	preamble_node = ctx.make_node("preamble", "preamble", "", root)
 
-	for cit_div in preamble_div.find_all("div", id=re.compile(r"^cit_\d+")):
+	for cit_div in preamble_div.find_all("div", id=CITATION_ID_RE):
 		number = cit_div.get("id", "").split("_")[-1]
 		ctx.make_node(
 			"citation",
@@ -23,7 +23,7 @@ def parse_preamble(soup, ctx: ParserContext, root: Dict) -> Optional[Dict]:
 			number=number,
 		)
 
-	recital_divs = preamble_div.find_all("div", id=re.compile(r"^rct_\d+"))
+	recital_divs = preamble_div.find_all("div", id=RECITAL_ID_RE)
 	if recital_divs:
 		for rec_div in recital_divs:
 			number = rec_div.get("id", "").split("_")[-1]

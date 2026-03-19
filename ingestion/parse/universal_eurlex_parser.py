@@ -14,6 +14,7 @@ from .structural_layer.final_provisions_parser import parse_final_provisions
 from .structural_layer.preamble_parser import parse_preamble
 from .semantic_layer.cross_references import CrossReferenceResolver
 from .base.utils import ParserContext
+from domain.ontology.eurlex_html import CLASS_ELI_MAIN_TITLE, MAIN_TITLE_ID
 
 
 # Public entry point used by the registry
@@ -23,7 +24,7 @@ def parse_eurlex_html(html_content: str, celex: str, regulation_id: str, lang: s
 
 	# Root document node
 	main_title = None
-	main_title_div = soup.find("div", class_="eli-main-title", id="tit_1")
+	main_title_div = soup.find("div", class_=CLASS_ELI_MAIN_TITLE, id=MAIN_TITLE_ID)
 	if main_title_div:
 		main_title = main_title_div.get_text(" ", strip=True)
 	root = ctx.make_node("document", "document", main_title or regulation_id or celex, None)

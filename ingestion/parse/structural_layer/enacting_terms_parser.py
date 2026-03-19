@@ -6,19 +6,29 @@ from typing import Dict, List
 from bs4 import BeautifulSoup
 
 from ..base.utils import ParserContext
+from domain.ontology.eurlex_html import (
+	ENACTING_TERMS_ID,
+	CHAPTER_ID_RE,
+	SECTION_ID_RE,
+	ARTICLE_ID_RE,
+	PARAGRAPH_ID_RE,
+	ARTICLE_TITLE_ID_TEMPLATE,
+	CLASS_OJ_NORMAL,
+	TABLE_POINTS_WIDTH,
+)
 
 
 def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
-	enc_root = soup.find("div", id="enc_1")
+	enc_root = soup.find("div", id=ENACTING_TERMS_ID)
 	if not enc_root:
 		return {}
 
 	enc_node = ctx.make_node("enacting_terms", "enc_1", "", root)
 
-	chapter_pattern = re.compile(r"^cpt_([IVXLCDM]+)$")
-	section_pattern = re.compile(r"^cpt_([IVXLCDM]+)\.sct_(\d+)$")
-	article_pattern = re.compile(r"^art_(\d+)$")
-	paragraph_pattern = re.compile(r"^(\d{3})\.(\d{3})$")
+	chapter_pattern = CHAPTER_ID_RE
+	section_pattern = SECTION_ID_RE
+	article_pattern = ARTICLE_ID_RE
+	paragraph_pattern = PARAGRAPH_ID_RE
 
 	def paragraph_text_without_tables(para_div) -> str:
 		clone = BeautifulSoup(str(para_div), "html.parser")
@@ -75,7 +85,7 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 		for child in para_div.children:
 			if not hasattr(child, 'name') or not child.name:
 				continue
-			if child.name == 'p' and 'oj-normal' in child.get('class', []):
+			if child.name == 'p' and CLASS_OJ_NORMAL in child.get('class', []):
 				if current_p is not None:
 					blocks.append((current_p, current_tables))
 				current_p = child
@@ -103,7 +113,7 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 				parent_node,
 				number=str(int(para_num)),
 			)
-			parse_points_from_tables(paragraph, para_div.find_all("table", width="100%"))
+			parse_points_from_tables(paragraph, para_div.find_all("table", width=TABLE_POINTS_WIDTH))
 		else:
 			# Multiple subparagraphs
 			paragraph = ctx.make_node(
@@ -244,7 +254,7 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 				parse_paragraph_div(para_div, article_node)
 
 	def extract_title(id_value: str):
-		title_node = soup.find("div", id=f"{id_value}.tit_1")
+		title_node = soup.find("div", id=ARTICLE_TITLE_ID_TEMPLATE.format(id=id_value))
 		return title_node.get_text(" ", strip=True) if title_node else None
 
 	for chapter_div in enc_root.find_all("div", id=chapter_pattern, recursive=False):

@@ -53,7 +53,16 @@ from typing import Any
 
 from neo4j import GraphDatabase, Driver
 
+from domain.regulations_catalog import REGULATIONS
+
 logger = logging.getLogger(__name__)
+
+# Map regulation numbers (e.g. "2017/745") to CELEX IDs for loaded regs.
+# Used to avoid creating ExternalAct stubs for regulations already in the graph.
+# Derived from the single source of truth in domain/regulations_catalog.py.
+_NUMBER_TO_CELEX: dict[str, str] = {
+    _meta["number"]: _celex for _celex, _meta in REGULATIONS.items()
+}
 
 
 # ---------------------------------------------------------------------------
@@ -573,11 +582,13 @@ class RegulationGraphLoader:
             if rel_type not in self._XREF_TYPES:
                 logger.warning("Skipping unknown relation type: %s", rel_type)
                 continue
+            props = rel.get("properties") or {}
             entry = {
                 "source": rel["source"],
                 "target": rel["target"],
                 "rel_type": rel_type,
-                "ref_text": (rel.get("properties") or {}).get("ref_text", ""),
+                "ref_text": props.get("ref_text", ""),
+                "number":  props.get("number", ""),
             }
             if rel_type in ("CITES_EXTERNAL", "AMENDS"):
                 external.append(entry)
@@ -672,10 +683,34 @@ class RegulationGraphLoader:
     def _upsert_external_xrefs(
         self, session, refs: list[dict], celex: str,
     ) -> int:
-        """MERGE ExternalAct stubs and create CITES_EXTERNAL / AMENDS edges."""
+        """Create cross-reference edges for external references.
+
+        References to regulations already loaded in the graph (identified
+        by ``_NUMBER_TO_CELEX``) are **skipped** here — they are resolved
+        into concrete CITES edges by the crosslinker post-processing step.
+        Only truly external references (regulations we do not load) get
+        the lightweight ``ExternalAct`` stub node.
+        """
+        truly_external: list[dict] = []
+        skipped = 0
+        for r in refs:
+            number = r.get("number", "")
+            target_celex = _NUMBER_TO_CELEX.get(number)
+            if target_celex is not None:
+                # Target regulation is loaded — crosslinker will resolve
+                skipped += 1
+                continue
+            truly_external.append(r)
+
+        if skipped:
+            logger.info(
+                "  Skipped %d external refs (target regulation loaded; "
+                "crosslinker will resolve).", skipped,
+            )
+
         total = 0
         by_type: dict[str, list[dict]] = {}
-        for r in refs:
+        for r in truly_external:
             by_type.setdefault(r["rel_type"], []).append(r)
 
         for rel_type, entries in by_type.items():

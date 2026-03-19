@@ -6,6 +6,15 @@ from typing import Dict, List, Optional, Tuple
 from bs4 import BeautifulSoup, Tag
 
 from ..base.utils import ParserContext
+from domain.ontology.eurlex_html import (
+	ANNEX_ID_RE,
+	ANNEX_SKIP_ID,
+	CLASS_ELI_CONTAINER,
+	CLASS_OJ_DOC_TI,
+	CLASS_OJ_TI_GRSEQ_1,
+	CLASS_OJ_NORMAL,
+	CLASS_OJ_ENUMERATION_SPACING,
+)
 
 # ── Number / marker extraction ────────────────────────────────────────
 _DOTTED_NUM_RE = re.compile(r"^(\d+(?:\.\d+)*)\.\s+")     # "1.1.1.   text"
@@ -58,7 +67,7 @@ def _suffix(node: Dict, celex: str) -> str:
 # ── Public entry point ────────────────────────────────────────────────
 def parse_annexes(soup, ctx: ParserContext, root: Dict) -> Optional[Dict]:
 	annex_divs = soup.find_all(
-		"div", id=re.compile(r"^anx_[A-Za-z0-9]+$"), class_="eli-container",
+		"div", id=ANNEX_ID_RE, class_=CLASS_ELI_CONTAINER,
 	)
 	if not annex_divs:
 		return None
@@ -67,7 +76,7 @@ def parse_annexes(soup, ctx: ParserContext, root: Dict) -> Optional[Dict]:
 
 	for div in annex_divs:
 		html_id = div.get("id", "")
-		if html_id == "anx_ES":
+		if html_id == ANNEX_SKIP_ID:
 			continue
 		_parse_single_annex(div, html_id, ctx, annexes_root, soup)
 
@@ -80,7 +89,7 @@ def _parse_single_annex(
 	annexes_root: Dict, soup,
 ) -> None:
 	# ── title ──
-	title_ps = annex_div.find_all("p", class_="oj-doc-ti", recursive=False)
+	title_ps = annex_div.find_all("p", class_=CLASS_OJ_DOC_TI, recursive=False)
 	titles = [_norm(t.get_text(" ", strip=True)) for t in title_ps if t.get_text(strip=True)]
 	annex_title = titles[1] if len(titles) > 1 else (titles[0] if titles else _fallback_title(soup, html_id) or html_id)
 
@@ -95,7 +104,7 @@ def _parse_single_annex(
 	elements: List[Tag] = [
 		el for el in annex_div.children
 		if isinstance(el, Tag) and el.name in ("p", "table", "div")
-		and "oj-doc-ti" not in (el.get("class") or [])
+		and CLASS_OJ_DOC_TI not in (el.get("class") or [])
 	]
 
 	# ── Stack: (depth, node) ──
@@ -111,12 +120,12 @@ def _parse_single_annex(
 		cls = el.get("class") or []
 
 		# ── <p class="oj-ti-grseq-1"> : heading ──
-		if el.name == "p" and "oj-ti-grseq-1" in cls:
+		if el.name == "p" and CLASS_OJ_TI_GRSEQ_1 in cls:
 			i = _on_heading(elements, i, stack, annex_node, html_id, ctx, blt_cnt)
 			continue
 
 		# ── <p class="oj-normal"> : body paragraph ──
-		if el.name == "p" and "oj-normal" in cls:
+		if el.name == "p" and CLASS_OJ_NORMAL in cls:
 			i = _on_paragraph(elements, i, stack, html_id, ctx)
 			continue
 
@@ -135,7 +144,7 @@ def _parse_single_annex(
 			continue
 
 		# ── <div class="oj-enumeration-spacing"> ──
-		if el.name == "div" and "oj-enumeration-spacing" in cls:
+		if el.name == "div" and CLASS_OJ_ENUMERATION_SPACING in cls:
 			_on_enum_spacing(el, stack, html_id, ctx)
 			i += 1
 			continue
@@ -242,7 +251,7 @@ def _peek_title(elements: List[Tag], idx: int) -> Optional[str]:
 	if idx >= len(elements):
 		return None
 	nxt = elements[idx]
-	if nxt.name != "p" or "oj-ti-grseq-1" not in (nxt.get("class") or []):
+	if nxt.name != "p" or CLASS_OJ_TI_GRSEQ_1 not in (nxt.get("class") or []):
 		return None
 	t = _norm(nxt.get_text(" ", strip=True))
 	if _parse_dotted(t) or _CHAPTER_RE.match(t) or _PART_RE.match(t) or _SECTION_RE.match(t):
