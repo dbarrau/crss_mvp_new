@@ -40,7 +40,7 @@ Agent: 1. The prohibited AI practices under Article 5(1) of the EU AI Act, prese
 
 [1] Article 5(1)
 
-## Query 3: Compare the obligations that the EU AI Act places on a deployer versus an importer of a high-risk ay system. Where do their responsibilities overlap and where do they diverge? 
+## Query 3: Compare the obligations that the EU AI Act places on a deployer versus an importer of a high-risk AI system. Where do their responsibilities overlap and where do they diverge?
 
 Agent: ### Direct Answer:
 The EU AI Act imposes distinct but overlapping obligations on **deployers** and **importers** of high-risk AI systems. Both roles must ensure compliance with the Act, but their responsibilities differ in scope, focus, and enforcement mechanisms. Below is a structured comparison of their obligations, highlighting overlaps and divergences.

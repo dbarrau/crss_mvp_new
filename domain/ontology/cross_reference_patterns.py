@@ -40,19 +40,34 @@ import re
 EXPLICIT_REF = re.compile(
     r"""
     (?:
+      # ── Decimal annex-point enumeration (must precede individual point) ──
+      # "Points 4.3., 4.4., 4.5. and the fifth paragraph of point 4.6 of Annex VII"
+      Points?\s+(?P<dec_start>\d+\.\d+)\.?
+      (?P<dec_middle>(?:\s*,\s*\d+\.\d+\.?)*)
+      (?:\s+and\s+
+         (?:(?:the\s+)?(?:first|second|third|fourth|fifth)\s+paragraph\s+of\s+)?
+         (?:point\s+)?(?P<dec_last>\d+\.\d+)\.?
+      )?
+      \s+of\s+Annex\s+(?P<dec_annex>[IVX]+|\d+)
+    |
       # ── "Section X of Annex Y" (reversed order) ─────────────────────────
       Section\s+(?P<sec_of_annex>[A-Z]|\d+)
       (?:,?\s*points?\s+(?P<sec_annex_pt>\d+(?:\([a-z]\))?))?  # optional point
       \s+of\s+Annex\s+(?P<annex_of_sec>[IVX]+|\d+)
     |
-      # ── "point N of Annex Y" (reversed order) ──────────────────────────
-      point\s+(?P<pt_of_annex>\d+(?:\([a-z]\))?)
+      # ── "[the Nth paragraph of] point N[.M] of Annex Y" (reversed order) ─
+      (?:(?:the\s+)?(?P<pt_annex_ord>first|second|third|fourth|fifth)\s+paragraph\s+of\s+)?
+      point\s+(?P<pt_of_annex>\d+(?:\.\d+)?(?:\([a-z]\))?)\.?
       \s+of\s+Annex\s+(?P<annex_of_pt>[IVX]+|\d+)
+    |
+      # ── "Section N of Chapter X" (explicit chapter-section) ──────────────
+      Sections?\s+(?P<sec_of_cpt>\d+)
+      \s+of\s+Chapter\s+(?P<cpt_of_sec>[IVX]+|\d+)
     |
       # ── Annex branch ──────────────────────────────────────────────────────
       Annex\s+(?P<annex>[IVX]+|\d+)
       (?:,?\s*Section\s+(?P<section>[A-Z]|\d+))?
-      (?:,?\s*points?\s+(?P<annex_pt>\d+(?:\([a-z]\))?))?  # "point 2" or "points 1"
+      (?:,?\s*points?\s+(?P<annex_pt>\d+(?:\.\d+)?(?:\([a-z]\))?))?  # "point 2" or "point 4.3"
     |
       # ── Article branch ────────────────────────────────────────────────────
       Articles?\s+(?P<article>\d+)
@@ -172,6 +187,9 @@ Source locations in 32024R1689/EN/parsed.json
 RELATIVE_REF = re.compile(
     r"""
     (?:
+      # ── "Section N of this Chapter" / "Section N of this Regulation" ──
+      Sections?\s+(?P<sec_num>\d+)\s+of\s+this\s+(?P<sec_scope>Chapter|Regulation)
+    |
       # ── Anaphoric "this" without a number ─────────────────────────────
       # "this paragraph", "this subparagraph", "this Article"
       # Must appear as standalone phrases (not "this paragraph 3")

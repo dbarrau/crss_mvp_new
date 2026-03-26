@@ -15,6 +15,7 @@ from typing import Any, Dict, List
 from domain.regulations_catalog import REGULATIONS
 from canonicalization.text_enrichment import enrich_text_for_analysis
 from .base.registry import PARSER_REGISTRY
+from .normalizer import normalize_consolidated_html
 from .semantic_layer.definitions import extract_defined_terms
 
 
@@ -34,8 +35,9 @@ def parse_document(html_file: Path, lang: str, celex: str, out_dir: Path) -> Pat
     if not parser:
         raise KeyError(f"No parser registered for CELEX {celex}")
 
-    # Read HTML content and invoke parser
+    # Read HTML content and normalize if consolidated
     html_content = Path(html_file).read_text(encoding="utf-8")
+    html_content = normalize_consolidated_html(html_content)
     regulation_id = REGULATIONS.get(celex, {}).get("name", celex)
 
     # The universal parser returns a dict with 'provisions' and 'relations'.

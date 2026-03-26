@@ -221,8 +221,11 @@ def _on_heading(
 	if parsed:
 		number, content, depth = parsed
 		parent = _parent_for(stack, depth)
+		# Depth 1 = broad section (e.g. "1. ORGANISATIONAL REQUIREMENTS")
+		# Depth 2+ = subsection — the ideal retrieval anchor
+		kind = "annex_section" if depth <= 1 else "annex_subsection"
 		node = ctx.make_node(
-			"annex_section", _id_of(parent, number, ctx.celex),
+			kind, _id_of(parent, number, ctx.celex),
 			content, parent,
 			title=content, number=number,
 		)

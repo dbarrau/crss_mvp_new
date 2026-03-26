@@ -80,6 +80,12 @@ def discover_resolvable_refs() -> list[dict[str, Any]]:
 _PROVISION_RE = re.compile(
     r"""
     (?:
+      # "point (N) of Article M" (reversed order, e.g. definitions)
+      point\s+\((?P<rev_point>[a-z0-9]+)\)
+      (?:\((?P<rev_subpoint>[a-z0-9]+)\))?
+      \s+of\s+Articles?\s+(?P<rev_article>\d+)
+    |
+      # "Article N(P), point (X)(Y)"
       Articles?\s+(?P<article>\d+)
       (?:\((?P<para>\d+)\))?
       (?:,?\s*point\s+\((?P<point>[a-z0-9]+)\)(?:\((?P<subpoint>[a-z0-9]+)\))?)?
@@ -97,13 +103,29 @@ def parse_ref_text(ref_text: str) -> dict[str, str]:
     m = _PROVISION_RE.search(ref_text)
     if not m:
         return {}
-    return {k: v for k, v in m.groupdict().items() if v is not None}
+    groups = {k: v for k, v in m.groupdict().items() if v is not None}
+    # Normalize reversed form: "point (N) of Article M"
+    if "rev_article" in groups:
+        groups["article"] = groups.pop("rev_article")
+        if "rev_point" in groups:
+            groups["point"] = groups.pop("rev_point")
+        if "rev_subpoint" in groups:
+            groups["subpoint"] = groups.pop("rev_subpoint")
+    return groups
 
 
 def build_target_id(celex: str, parts: dict[str, str]) -> str | None:
     """Construct a deterministic provision ID from parsed ref_text components.
 
     Returns None when no provision-level info was extracted (document-level).
+
+    ID format mirrors the HTML-based IDs from the EUR-Lex parser:
+      - Article only:           {celex}_art_{N}
+      - Article + paragraph:    {celex}_{art:03d}.{para:03d}
+      - Article + para + point: {celex}_{art:03d}.{para:03d}_pt_{letter}
+      - Article + point (no para, e.g. definitions): {celex}_art_{N}_pt_{point}
+      - Annex:                  {celex}_anx_{roman}
+      - Annex + section:        {celex}_anx_{roman}_sec_{section}
     """
     if not parts:
         return None
@@ -118,17 +140,25 @@ def build_target_id(celex: str, parts: dict[str, str]) -> str | None:
 
     article = parts.get("article")
     if article:
-        base = f"{celex}_art_{article}"
         para = parts.get("para")
-        if para:
-            base = f"{base}_{int(para):03d}"
         point = parts.get("point")
+        subpoint = parts.get("subpoint")
+
+        if para:
+            # Paragraph-based IDs use zero-padded 3-digit format: 001.002
+            base = f"{celex}_{int(article):03d}.{int(para):03d}"
+            if point:
+                if subpoint:
+                    return f"{base}_pt_{point}_rm_{subpoint}"
+                return f"{base}_pt_{point}"
+            return base
+
+        # No paragraph — article-level or direct article-point
         if point:
-            subpoint = parts.get("subpoint")
             if subpoint:
-                return f"{base}_pt_{point}_rm_{subpoint}"
-            return f"{base}_pt_{point}"
-        return base
+                return f"{celex}_art_{article}_pt_{point}_rm_{subpoint}"
+            return f"{celex}_art_{article}_pt_{point}"
+        return f"{celex}_art_{article}"
 
     return None
 

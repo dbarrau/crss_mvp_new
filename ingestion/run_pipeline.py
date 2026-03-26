@@ -78,6 +78,9 @@ def run(celex: str, lang: str) -> Optional[Path]:
     raw_dir = reg_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
 
+    # Resolve source CELEX for scraping (consolidated versions use a different CELEX)
+    scrape_celex = REGULATIONS[celex].get("source_celex", celex)
+
     # Discover existing HTML files first
     html_candidates = sorted(raw_dir.glob("*.html"))
     if html_candidates:
@@ -85,7 +88,7 @@ def run(celex: str, lang: str) -> Optional[Path]:
         logger.info("Using existing HTML: %s", html_file)
     else:
         try:
-            html_file = scrape_document(celex, lang, raw_dir)
+            html_file = scrape_document(scrape_celex, lang, raw_dir)
             logger.info("Scraped HTML to: %s", html_file)
         except Exception as e:
             logger.exception("Scraping failed for %s %s: %s", celex, lang, e)

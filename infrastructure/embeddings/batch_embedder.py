@@ -34,7 +34,8 @@ DIMENSIONS = 384
 EMBED_KINDS = {
     "article", "paragraph", "subparagraph", "point", "roman_item",
     "recital", "section",
-    "annex", "annex_section", "annex_point", "annex_subpoint", "annex_bullet",
+    "annex", "annex_section", "annex_subsection",
+    "annex_point", "annex_subpoint", "annex_bullet",
 }
 
 

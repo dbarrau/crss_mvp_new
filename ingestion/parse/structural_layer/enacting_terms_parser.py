@@ -100,7 +100,9 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 		para_match = paragraph_pattern.match(para_div["id"])
 		if not para_match:
 			return
-		_, para_num = para_match.groups()
+		_, para_num_raw = para_match.groups()
+		# para_num_raw may be "003" or "003a" — strip leading zeros, keep suffix
+		para_number = para_num_raw.lstrip("0") or "0"
 
 		blocks = collect_subparagraph_blocks(para_div)
 
@@ -111,7 +113,7 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 				para_div["id"],
 				paragraph_text_without_tables(para_div),
 				parent_node,
-				number=str(int(para_num)),
+				number=para_number,
 			)
 			parse_points_from_tables(paragraph, para_div.find_all("table", width=TABLE_POINTS_WIDTH))
 		else:
@@ -121,7 +123,7 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 				para_div["id"],
 				"",
 				parent_node,
-				number=str(int(para_num)),
+				number=para_number,
 			)
 			for idx, (p_elem, tables) in enumerate(blocks, 1):
 				sp_text = p_elem.get_text(" ", strip=True)

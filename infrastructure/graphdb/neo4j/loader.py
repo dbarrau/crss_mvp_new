@@ -123,6 +123,7 @@ _KIND_LABEL: dict[str, str] = {
     "annex_chapter":    "AnnexChapter",
     "annex_part":       "AnnexPart",
     "annex_section":    "AnnexSection",
+    "annex_subsection": "AnnexSubsection",
     "annex_point":      "AnnexPoint",
     "annex_subpoint":   "AnnexSubpoint",
     "annex_bullet":     "AnnexBullet",
@@ -431,6 +432,8 @@ class RegulationGraphLoader:
                 return f"Annex part {number}"
             if kind == "annex_section" and number:
                 return f"Annex section {number}"
+            if kind == "annex_subsection" and number:
+                return f"Annex subsection {number}"
             if kind == "annex_point" and number:
                 return f"Annex point {number}"
             if kind == "annex_subpoint" and number:

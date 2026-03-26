@@ -39,6 +39,30 @@ from domain.ontology.cross_reference_patterns import (
 
 
 # ---------------------------------------------------------------------------
+# Qualifier pattern: "Article X(...), point (y) of" / "Annex Y, Section Z of/to"
+# preceding an external reference.  Captured so the crosslinker can resolve
+# to a specific provision in the target regulation.
+# ---------------------------------------------------------------------------
+_QUALIFIER_RE = re.compile(
+    r"""
+    (?:
+        Articles?\s+(?P<article>\d+)
+        (?:\((?P<para>\d+)\))?                      # (paragraph)
+        (?:,?\s*(?:first|second|third|fourth|fifth)\s+subparagraph)?
+        (?:,?\s*point\s+\((?P<point>[a-z0-9]+)\)
+           (?:\((?P<subpoint>[a-z0-9]+)\))?
+        )?
+    |
+        Annex(?:es)?\s+(?P<annex>[IVX]+|\d+)
+        (?:,?\s*Section\s+(?P<section>[A-Z]|\d+))?
+    )
+    \s+(?:of|to)\s*$
+    """,
+    re.VERBOSE | re.IGNORECASE,
+)
+
+
+# ---------------------------------------------------------------------------
 # Raw extraction (stateless)
 # ---------------------------------------------------------------------------
 
@@ -185,15 +209,20 @@ class CrossReferenceResolver:
         ctx_article: str | None = None
         ctx_paragraph: str | None = None
         ctx_subparagraph: str | None = None
+        ctx_chapter: str | None = None
 
         for prov in self.provisions:
             kind = prov.get("kind", "")
 
             # Update structural context as we walk
-            if kind == "article":
+            if kind == "chapter":
+                ctx_chapter = prov.get("number")
+            elif kind == "article":
                 ctx_article = prov.get("number")
                 ctx_paragraph = None
                 ctx_subparagraph = None
+                if ctx_chapter is None:
+                    ctx_chapter = self._ancestor_number(prov, "chapter")
             elif kind == "paragraph":
                 ctx_paragraph = prov.get("number")
                 ctx_subparagraph = None
@@ -210,13 +239,14 @@ class CrossReferenceResolver:
             if not text:
                 continue
 
+            clean_text = FOOTNOTE_MARKER.sub("", text)
             raw_refs = extract_raw_refs(text)
             source_id = prov["id"]
 
             for ref in raw_refs:
                 rels = self._resolve_single(
                     ref, source_id, ctx_article, ctx_paragraph,
-                    ctx_subparagraph,
+                    ctx_subparagraph, clean_text, ctx_chapter,
                 )
                 for rel in rels:
                     if rel["source"] == rel["target"]:
@@ -240,6 +270,8 @@ class CrossReferenceResolver:
         ctx_article: str | None,
         ctx_paragraph: str | None,
         ctx_subparagraph: str | None = None,
+        source_text: str = "",
+        ctx_chapter: str | None = None,
     ) -> list[dict[str, Any]]:
         category = ref["category"]
         groups = ref["groups"]
@@ -249,12 +281,15 @@ class CrossReferenceResolver:
         if category == "relative":
             return self._resolve_relative(
                 groups, source_id, ctx_article, ctx_paragraph,
-                ctx_subparagraph,
+                ctx_subparagraph, ctx_chapter,
             )
         if category == "range":
             return self._resolve_range(groups, source_id)
         if category == "external":
-            return self._resolve_external(groups, source_id, ref["match"])
+            return self._resolve_external(
+                groups, source_id, ref["match"],
+                source_text, ref.get("span", (0, 0))[0],
+            )
         if category == "amended_by":
             return self._resolve_amended_by(groups, source_id)
         return []
@@ -266,6 +301,32 @@ class CrossReferenceResolver:
     def _resolve_explicit(
         self, groups: dict, source_id: str,
     ) -> list[dict[str, Any]]:
+        # Decimal annex-point enumeration: "Points 4.3., 4.4., 4.5. ... of Annex VII"
+        dec_annex = groups.get("dec_annex")
+        if dec_annex:
+            nums = self._expand_decimal_enum(groups)
+            relations = []
+            for num in nums:
+                target = self._lookup_annex_point(dec_annex, num)
+                if not target:
+                    target = self._lookup("annex", dec_annex)
+                if target:
+                    relations.append(self._make_rel(
+                        source_id, target, self.REL_CITES,
+                        {"ref_text": f"point {num} of Annex {dec_annex}"},
+                    ))
+            return relations
+
+        # "Section N of Chapter X" (explicit chapter-section)
+        cpt_of_sec = groups.get("cpt_of_sec")
+        if cpt_of_sec:
+            sec_num = groups.get("sec_of_cpt", "")
+            target = self._lookup_section(cpt_of_sec, sec_num)
+            if target:
+                return [self._make_rel(source_id, target, self.REL_CITES,
+                                       {"ref_text": f"Section {sec_num} of Chapter {cpt_of_sec}"})]
+            return []
+
         # "Section X of Annex Y" (reversed order)
         annex_of_sec = groups.get("annex_of_sec")
         if annex_of_sec:
@@ -356,6 +417,7 @@ class CrossReferenceResolver:
         ctx_article: str | None,
         ctx_paragraph: str | None,
         ctx_subparagraph: str | None = None,
+        ctx_chapter: str | None = None,
     ) -> list[dict[str, Any]]:
         # "this paragraph" / "this Article" / "this subparagraph"
         this_target = groups.get("this_target")
@@ -460,6 +522,36 @@ class CrossReferenceResolver:
                                        {"ref_text": ref_text,
                                         "relative": True})]
 
+        # "the first subparagraph [of paragraph N]" — ordinal subparagraph
+        ordinal = groups.get("ordinal")
+        if ordinal and groups.get("the"):
+            sp_num = self._ORDINAL_MAP.get(ordinal.lower())
+            if sp_num:
+                of_para = groups.get("of_para")
+                para_ctx = of_para or ctx_paragraph
+                if ctx_article and para_ctx:
+                    target = self._index.get(
+                        ("subparagraph", f"{ctx_article}.{para_ctx}.{sp_num}")
+                    )
+                    if target:
+                        ref_text = f"the {ordinal} subparagraph"
+                        if of_para:
+                            ref_text += f" of paragraph {of_para}"
+                        return [self._make_rel(source_id, target, self.REL_CITES,
+                                               {"ref_text": ref_text,
+                                                "relative": True})]
+
+        # "Section N of this Chapter"
+        sec_num = groups.get("sec_num")
+        sec_scope = groups.get("sec_scope")
+        if sec_num and sec_scope:
+            if sec_scope.lower() == "chapter" and ctx_chapter:
+                target = self._lookup_section(ctx_chapter, sec_num)
+                if target:
+                    return [self._make_rel(source_id, target, self.REL_CITES,
+                                           {"ref_text": f"Section {sec_num} of this Chapter",
+                                            "relative": True})]
+
         return []
 
     # ------------------------------------------------------------------
@@ -489,6 +581,7 @@ class CrossReferenceResolver:
 
     def _resolve_external(
         self, groups: dict, source_id: str, match_text: str,
+        source_text: str = "", match_start: int = 0,
     ) -> list[dict[str, Any]]:
         doc_type = groups.get("doc_type", "")
         series = groups.get("series", "")
@@ -496,8 +589,17 @@ class CrossReferenceResolver:
         suffix = groups.get("suffix", "")
 
         ext_id = _external_act_id(doc_type, series, number, suffix)
+
+        # Capture "Article X(Y), point (z) of" / "Annex Y of" qualifier
+        ref_text = match_text.strip()
+        if source_text and match_start > 0:
+            preceding = source_text[:match_start]
+            qm = _QUALIFIER_RE.search(preceding)
+            if qm:
+                ref_text = f"{qm.group().strip()} {ref_text}"
+
         return [self._make_rel(source_id, ext_id, self.REL_CITES_EXT, {
-            "ref_text": match_text.strip(),
+            "ref_text": ref_text,
             "doc_type": doc_type,
             "series": series,
             "number": number,
@@ -629,6 +731,22 @@ class CrossReferenceResolver:
     def _lookup_annex_point(self, annex_num: str, point_num: str) -> str | None:
         return self._index.get(("annex_point", f"{annex_num}.{point_num}"))
 
+    def _lookup_section(self, chapter_num: str, section_num: str) -> str | None:
+        """Look up a chapter-qualified section."""
+        return self._index.get(("section", f"{chapter_num}.{section_num}"))
+
+    @staticmethod
+    def _expand_decimal_enum(groups: dict) -> list[str]:
+        """Expand decimal annex-point enumeration into individual point numbers."""
+        nums = [groups.get("dec_start", "")]
+        middle = groups.get("dec_middle", "") or ""
+        for m in re.finditer(r"\d+\.\d+", middle):
+            nums.append(m.group())
+        last = groups.get("dec_last")
+        if last:
+            nums.append(last)
+        return [n for n in nums if n]
+
     # ------------------------------------------------------------------
     # Relation factory
     # ------------------------------------------------------------------
@@ -665,7 +783,7 @@ def _build_provision_index(
       - annex_section:   annex_num.section_id            (e.g. "I.A", "VIII.1")
       - annex_point:     annex_num.point_num             (e.g. "III.2")
       - chapter:         number                          (e.g. "III")
-      - section:         number                          (e.g. "1")
+      - section:         chapter_num.number                (e.g. "III.1")
       - recital:         number                          (e.g. "170")
     """
     index: dict[tuple[str, str], str] = {}
@@ -696,7 +814,11 @@ def _build_provision_index(
         elif kind == "chapter":
             index[("chapter", number)] = prov["id"]
         elif kind == "section":
-            index[("section", number)] = prov["id"]
+            chapter_num = _ancestor_number(prov, "chapter")
+            if chapter_num:
+                index[("section", f"{chapter_num}.{number}")] = prov["id"]
+            else:
+                index[("section", number)] = prov["id"]
         elif kind == "recital":
             index[("recital", number)] = prov["id"]
         elif kind == "paragraph":

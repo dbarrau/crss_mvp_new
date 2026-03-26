@@ -35,8 +35,8 @@ CITATION_ID_RE = re.compile(r"^cit_\d+")
 RECITAL_ID_RE = re.compile(r"^rct_\d+")
 CHAPTER_ID_RE = re.compile(r"^cpt_([IVXLCDM]+)$")
 SECTION_ID_RE = re.compile(r"^cpt_([IVXLCDM]+)\.sct_(\d+)$")
-ARTICLE_ID_RE = re.compile(r"^art_(\d+)$")
-PARAGRAPH_ID_RE = re.compile(r"^(\d{3})\.(\d{3})$")
+ARTICLE_ID_RE = re.compile(r"^art_(\d+[a-z]?)$")
+PARAGRAPH_ID_RE = re.compile(r"^(\d{3})\.(\d{3}[a-z]?)$")
 ANNEX_ID_RE = re.compile(r"^anx_[A-Za-z0-9]+$")
 
 

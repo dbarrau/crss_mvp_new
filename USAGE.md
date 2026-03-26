@@ -59,11 +59,17 @@ If `raw/raw.html` already exists, scraping is skipped. To force a re-scrape, del
 
 **Supported regulations:**
 
-| CELEX | Name |
-|---|---|
-| `32017R0745` | MDR 2017/745 |
-| `32024R1689` | EU AI Act |
-| `32017R0746` | IVDR 2017/746 |
+| CELEX | Name | Source |
+|---|---|---|
+| `32017R0745` | MDR 2017/745 | Consolidated (`02017R0745-20260101`) |
+| `32024R1689` | EU AI Act | Basic act |
+| `32017R0746` | IVDR 2017/746 | Consolidated (`02017R0746-20250110`) |
+
+> **Note:** MDR and IVDR use consolidated versions (current law with all amendments applied).
+> The canonical CELEX key (`32017R0745`, `32017R0746`) stays the same for node IDs,
+> cross-references, and queries. The `source_celex` field in `domain/regulations_catalog.py`
+> controls which EUR-Lex URL is scraped. To update to a newer consolidation, change
+> `source_celex`, delete `raw/raw.html`, and re-run the pipeline.
 
 
 ### 2. Validate Parsed Output (optional)

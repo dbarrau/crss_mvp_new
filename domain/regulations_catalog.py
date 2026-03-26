@@ -32,6 +32,7 @@ REGULATIONS = {
         "number": "2017/745",
         "type": "medical_device_regulation",
         "jurisdiction": "EU",
+        "source_celex": "02017R0745-20260101",
     },
     "32024R1689": {
         "name": "EU AI Act",
@@ -44,5 +45,6 @@ REGULATIONS = {
         "number": "2017/746",
         "type": "in_vitro_diagnostic_regulation",
         "jurisdiction": "EU",
+        "source_celex": "02017R0746-20250110",
     },
 }

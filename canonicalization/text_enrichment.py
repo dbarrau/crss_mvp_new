@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 _HEADING_KINDS = frozenset({
     "chapter", "section", "article",
     "annex", "annex_chapter", "annex_part", "annex_section",
+    "annex_subsection",
 })
 
 # Kinds whose text is typically just a heading / title, not normative body.
@@ -47,6 +48,14 @@ _CTX_SEP = " | "
 _PATH_SEP = " > "
 # Separator when concatenating children's text.
 _CHILD_SEP = " "
+
+# Maximum chars for flattened text of parent provisions with children.
+# Prevents parent nodes from becoming massive blobs that dilute
+# embedding quality.  intfloat/multilingual-e5-small has a 512-token
+# context window (~1 500–2 000 chars of English legal prose); keeping
+# flattened text under ~1 500 chars leaves room for the ancestry
+# context prefix that is prepended later.
+_ANNEX_FLATTEN_CAP = 1500
 
 
 def enrich_text_for_analysis(provisions: List[Dict[str, Any]]) -> int:
@@ -89,6 +98,20 @@ def enrich_text_for_analysis(provisions: List[Dict[str, Any]]) -> int:
         if not body.strip():
             prov["text_for_analysis"] = None
             continue
+
+        # Cap flattened text for any parent provision whose children
+        # produce a blob larger than the model context window.
+        # intfloat/multilingual-e5-small has 512 tokens ≈ 1 500–2 000
+        # chars; capping at _ANNEX_FLATTEN_CAP keeps the body within
+        # the usable range after the ancestry prefix is prepended.
+        has_children = bool(prov.get("children"))
+        if has_children and len(body) > _ANNEX_FLATTEN_CAP:
+            cut = body[:_ANNEX_FLATTEN_CAP]
+            last_period = cut.rfind('.')
+            if last_period > _ANNEX_FLATTEN_CAP // 2:
+                body = cut[:last_period + 1]
+            else:
+                body = cut
 
         prefix = _build_context_prefix(prov, by_id)
         if prefix:
@@ -223,4 +246,5 @@ _LABEL_MAP: Dict[str, str] = {
     "annex_chapter": "Annex Chapter",
     "annex_part": "Annex Part",
     "annex_section": "Annex Section",
+    "annex_subsection": "Annex Subsection",
 }
