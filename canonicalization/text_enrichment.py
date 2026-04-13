@@ -27,6 +27,8 @@ _HEADING_KINDS = frozenset({
     "chapter", "section", "article",
     "annex", "annex_chapter", "annex_part", "annex_section",
     "annex_subsection",
+    # Guidance
+    "guidance_section",
 })
 
 # Kinds whose text is typically just a heading / title, not normative body.
@@ -34,12 +36,15 @@ _TITLE_ONLY_KINDS = frozenset({
     "document", "preamble", "enacting_terms", "final_provisions", "annexes",
     "chapter", "section",
     "annex", "annex_chapter", "annex_part",
+    # NOTE: guidance_section is NOT title-only — sections carry full body text.
 })
 
 # Kinds where we do NOT produce a text_for_analysis
 # (structural containers with no independent semantic value).
 _SKIP_KINDS = frozenset({
     "document", "preamble", "enacting_terms", "final_provisions", "annexes",
+    # Guidance
+    "guidance_document",
 })
 
 # Separator between context prefix and body text.
@@ -55,7 +60,7 @@ _CHILD_SEP = " "
 # context window (~1 500–2 000 chars of English legal prose); keeping
 # flattened text under ~1 500 chars leaves room for the ancestry
 # context prefix that is prepended later.
-_ANNEX_FLATTEN_CAP = 1500
+_ANNEX_FLATTEN_CAP = 3000
 
 
 def enrich_text_for_analysis(provisions: List[Dict[str, Any]]) -> int:
@@ -247,4 +252,6 @@ _LABEL_MAP: Dict[str, str] = {
     "annex_part": "Annex Part",
     "annex_section": "Annex Section",
     "annex_subsection": "Annex Subsection",
+    # Guidance
+    "guidance_section": "Section",
 }

@@ -481,6 +481,9 @@ class RegulationGraphLoader:
                 "path_string":     "/".join(raw_path),
                 "display_ref":     self_ref,
                 "display_path":    " / ".join(segments),
+                # Neo4j Browser uses the 'name' property as the visual caption
+                # by default, so we keep it in sync with display_ref.
+                "name":            self_ref,
             })
 
             for order, child_id in enumerate(prov.get("children", [])):
@@ -514,7 +517,8 @@ class RegulationGraphLoader:
                 p.title           = n.title,
                 p.path_string     = n.path_string,
                 p.display_ref     = n.display_ref,
-                p.display_path    = n.display_path
+                p.display_path    = n.display_path,
+                p.name            = n.name
             RETURN count(p) AS c
         """
         for chunk in _batched(nodes, _BATCH):

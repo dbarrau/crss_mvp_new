@@ -92,7 +92,9 @@ _REG_PATTERNS: dict[str, list[str]] = {
 # Regex for detecting explicit provision references in a question.
 # Matches "Annex I", "Annex XIV", "Article 5", "Article 26a", "Recital 47".
 _PROVISION_REF_RE = re.compile(
-    r"\b(annex\s+[IVX]{1,5}|article\s+\d{1,3}[a-z]?|recital\s+\d{1,4})\b",
+    r"\b(annex\s+[IVX]{1,5}"
+    r"|article\s+\d{1,3}[a-z]?(?:\(\d+\))?"  # catches Article 26(3)
+    r"|recital\s+\d{1,4})\b",
     re.IGNORECASE,
 )
 
@@ -330,7 +332,7 @@ def _format_context(provisions: list[dict]) -> str:
                     matched_lines.append(f"  [\u2605 MATCHED] {ref}: {text}")
                 else:
                     child_lines.append(f"  {ref}: {text}")
-        child_lines = (matched_lines + child_lines)[:20]
+        child_lines = (matched_lines + child_lines)[:40]
 
         # Cross-referenced provisions (separate internal vs cross-regulation)
         cited = p.get("cited_provisions") or []
@@ -361,7 +363,7 @@ def _format_context(provisions: list[dict]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def ask(question: str, retriever, k: int = 5) -> str:
+def ask(question: str, retriever, k: int = 20) -> str:
     """Retrieve context from the graph and generate an answer via Mistral.
 
     Parameters

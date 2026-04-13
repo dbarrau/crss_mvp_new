@@ -316,65 +316,33 @@ def _reconstruct_paragraphs(soup: BeautifulSoup) -> None:
             # Remove the span (the parser extracts numbers from the ID, not text)
             span.decompose()
 
-            # The remaining content of the child div becomes the inner <p>
-            # Unwrap the child div's contents into the wrapper
-            # First, convert the child div into proper <p class="oj-normal"> children
-            inner_children = list(child.children)
-
             # Check if there's an inline-element div wrapping the actual content
             inline_div = child.find("div", class_="inline-element", recursive=False)
             if inline_div:
-                # The inline-element contains the actual paragraph content + possible sub-elements
-                # Extract all its children into the wrapper
-                for ic in list(inline_div.children):
-                    if isinstance(ic, Tag):
-                        _remap_classes(ic)
-                        if ic.name == "p" and "oj-normal" in ic.get("class", []):
-                            wrapper.append(ic.extract())
-                        elif ic.name == "table":
-                            wrapper.append(ic.extract())
-                        elif ic.name == "div" and "oj-normal" in ic.get("class", []):
-                            # Convert div.oj-normal to p.oj-normal
-                            p = soup.new_tag("p")
-                            p["class"] = ["oj-normal"]
-                            p.string = ic.get_text(" ", strip=True)
-                            wrapper.append(p)
-                            ic.decompose()
-                        else:
-                            wrapper.append(ic.extract())
-                    elif isinstance(ic, NavigableString) and ic.strip():
-                        p = soup.new_tag("p")
-                        p["class"] = ["oj-normal"]
-                        p.string = str(ic).strip()
-                        wrapper.append(p)
-                # If no <p> was found inside inline, create one from the text
-                if not wrapper.find("p"):
-                    p = soup.new_tag("p")
-                    p["class"] = ["oj-normal"]
-                    p.string = inline_div.get_text(" ", strip=True)
-                    wrapper.append(p)
+                # Flatten all content (including inline tags) into a single <p class="oj-normal">
+                p = soup.new_tag("p")
+                p["class"] = ["oj-normal"]
+                # Use decode_contents() to preserve all inline tags (e.g. <span class="italics">)
+                p.append(BeautifulSoup(inline_div.decode_contents(), "html.parser"))
+                wrapper.append(p)
+                # Also move any tables or block elements after the inline_div
+                for sib in list(child.children):
+                    if isinstance(sib, Tag) and sib is not inline_div:
+                        if sib.name == "table":
+                            wrapper.append(sib.extract())
             else:
                 # No inline-element wrapper — content is directly in the div
-                # Create a single <p class="oj-normal"> from the div's text
-                # but first extract any tables/nested content
+                # Move tables out, flatten the rest into a single <p class="oj-normal">
                 for ic in list(child.children):
-                    if isinstance(ic, Tag):
-                        if ic.name == "table":
-                            wrapper.append(ic.extract())
-                        elif ic.name == "p":
-                            _remap_classes(ic)
-                            wrapper.append(ic.extract())
-                        elif ic.name == "div":
-                            _remap_classes(ic)
-                            wrapper.append(ic.extract())
-
-                # If no <p> was found, create one from remaining text
-                remaining_text = child.get_text(" ", strip=True)
-                if remaining_text and not wrapper.find("p", class_="oj-normal"):
+                    if isinstance(ic, Tag) and ic.name == "table":
+                        wrapper.append(ic.extract())
+                # After extracting tables, flatten the rest
+                text_html = child.decode_contents(formatter="html").strip()
+                if text_html:
                     p = soup.new_tag("p")
                     p["class"] = ["oj-normal"]
-                    p.string = remaining_text
-                    wrapper.insert(0, p)
+                    p.append(BeautifulSoup(text_html, "html.parser"))
+                    wrapper.append(p)
 
             child.replace_with(wrapper)
 

@@ -1,0 +1,146 @@
+- chart_id: C
+  title: Software Change*
+  reference_section: 4.3.2.3
+  steps:
+  - id: C1
+    question: New or major change of operating system or any component?
+    'yes': The change is considered significant per Art. 120(3c), point (b) MDR
+    'no': Go to Step C2
+  - id: C2
+    question: New or modification of architecture or database structure, change of
+      an algorithm?
+    'yes': The change is considered significant per Art. 120(3c), point (b) MDR
+    'no': Go to Step C3
+  - id: C3
+    question: Required user input replaced by closed loop algorithm?
+    'yes': The change is considered significant per Art. 120(3c), point (b) MDR
+    'no': Go to Step C4
+  - id: C4
+    question: New user interface, medical feature, channel of interoperability or
+      presentation of data?
+    'yes': The change is considered significant per Art. 120(3c), point (b) MDR
+    'no': Go to Step C5
+  - id: C5
+    question: Does the change negatively affect the benefit/risk ratio of the device?
+    'yes': The change is considered significant per Art. 120(3c), point (b) MDR
+    'no': Return to Main Chart Question D
+- chart_id: D
+  title: Change of a substance or material*
+  reference_section: 4.3.2.3
+  steps:
+  - id: D1
+    question: Change to or addition of a new material of human/animal origin?
+    'yes': The change is considered significant per Art. 120(3c), point (b)
+    'no': Go to Step D2
+  - id: D2
+    question: 'Change to the excipient of an MS\*\* or to the MS itself? \*\*MS: substance
+      which, if used separately, would be considered to be a medicinal substance?'
+    'yes': The change is considered significant per Art. 120(3c), point (b)
+    'no': Go to Step D3
+  - id: D3
+    question: Is the material or substance in contact >30d with patient tissue or
+      fluid or absorbed\*\*\*? \*\*\*Surgically invasive devices only?
+    'yes': The change is considered significant per Art. 120(3c), point (b)
+    'no': Go to Step D4
+  - id: D4
+    question: Does the change affect the safety or perform. and negatively affect
+      the benefit/risk ratio of the device?
+    'yes': The change is considered significant per Art. 120(3c), point (b)
+    'no': Return to Main Chart Question E
+- chart_id: E
+  title: Chart E
+  reference_section: 4.3.2.3
+  steps:
+  - id: E1
+    question: Change of terminal sterilisation method?
+    'yes': The change is considered significant per Art. 120(3c), point (b) MDR
+    'no': Go to Step E2
+  - id: E2
+    question: Change which adversely affects the sterility assurance level**?
+    'yes': The change is considered significant per Art. 120(3c), point (b) MDR
+    'no': Go to Step E3
+  - id: E3
+    question: Change in packaging design which affects sterility, stability or microbiological
+      state of the device, incl. seal integrity?
+    'yes': The change is considered significant per Art. 120(3c), point (b) MDR
+    'no': Go to Step E4
+  - id: E4
+    question: Shelf-life extension?
+    'yes': Go to Step E5
+    'no': Return to Main Chart for final determination
+  - id: E5
+    question: Shelf-life extension validated according to protocols approved by the
+      notified body?
+    'yes': Return to Main Chart for final determination
+    'no': The change is considered significant per Art. 120(3c), point (b) MDR
+- chart_id: Main
+  title: Main Chart
+  reference_section: ''
+  steps:
+  - id: Main-1
+    question: Change of a legacy device covered by a valid certificate or declaration
+      of conformity under AIMDD/MDD.?
+    'yes': The change is considered a non-significant change per Art. 120(3c), point
+      (b) MDR
+    'no': Go to Step A
+  - id: Main-2
+    question: Change related to corrective actions?
+    'yes': The change is considered a non-significant change per Art. 120(3c), point
+      (b) MDR
+    'no': Go to Step A
+  - id: Main-A
+    question: Change of the Intended Purpose?
+    'yes': Go to Chart A
+    'no': Go to Step B
+  - id: Main-B
+    question: Change of the design?
+    'yes': Go to Chart B
+    'no': Go to Step C
+  - id: Main-C
+    question: Software change?
+    'yes': Go to Chart C
+    'no': Go to Step D
+  - id: Main-D
+    question: Change of a substance or material?
+    'yes': Go to Chart D
+    'no': Go to Step E
+  - id: Main-E
+    question: Change of terminal sterilisation method of device or packaging design
+      with impact to the sterilisation?
+    'yes': Go to Chart E
+    'no': The change is considered a non-significant change per Art. 120(3c), point
+      (b) MDR
+- chart_id: A
+  title: Chart A
+  reference_section: 4.3.2.2
+  steps:
+  - id: A1
+    question: Limitation of the Intended Purpose?
+    'yes': Return to Main Chart Question B
+    'no': Go to Step A2
+  - id: A2
+    question: Extension of the Intended Purpose?
+    'yes': The change is considered significant per Art. 120(3c), point (b) MDR
+    'no': Go to Step A3
+  - id: A3
+    question: New user or patient population?
+    'yes': The change is considered significant per Art. 120(3c), point (b) MDR
+    'no': Go to Step A4
+  - id: A4
+    question: New way of clinical application?
+    'yes': The change is considered significant per Art. 120(3c), point (b) MDR
+    'no': Return to Main Chart Question B
+- chart_id: B
+  title: Change of the Design*
+  reference_section: 4.3.2.3
+  steps:
+  - id: B1
+    question: Change of built-in control mechanism, operating principles, source of
+      energy or alarm systems?
+    'yes': The change is considered significant per Art. 120(3c), point (b) MDR
+    'no': Go to Step B2
+  - id: B2
+    question: Does the change affect the safety or perform. and negatively affect
+      the benefit/risk ratio of the device?
+    'yes': The change is considered significant per Art. 120(3c), point (b) MDR
+    'no': Return to Main Chart Question C
