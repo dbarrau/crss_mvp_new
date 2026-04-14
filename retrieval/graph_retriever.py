@@ -33,7 +33,10 @@ PASSAGE_PREFIX = "passage: "
 # anchor to a specific numbered point rather than a broad subsection.
 _PARENT_KINDS = frozenset({
     "article", "annex_section", "annex_subsection", "annex_point",
+    "annex_part",
     "recital", "section",
+    # Guidance (MDCG)
+    "guidance_section", "guidance_subsection",
 })
 
 # Graph expansion: given top-k article IDs, fetch children + cross-refs.
@@ -41,7 +44,10 @@ _PARENT_KINDS = frozenset({
 # since they are the most valuable for multi-regulation questions.
 _EXPAND_CYPHER = """\
 UNWIND $ids AS aid
-MATCH (art:Provision {id: aid})
+OPTIONAL MATCH (p1:Provision {id: aid})
+OPTIONAL MATCH (p2:Guidance  {id: aid})
+WITH coalesce(p1, p2) AS art
+WHERE art IS NOT NULL
 
 OPTIONAL MATCH (art)-[:HAS_PART*1..5]->(leaf)
 WHERE leaf.text_for_analysis IS NOT NULL
@@ -55,24 +61,41 @@ WITH art,
        ref: leaf.display_ref
      })[..25] AS children
 
+// Sibling expansion for Guidance nodes: when a guidance_paragraph is
+// retrieved, also pull its siblings under the same parent so both the
+// "significant" and "non-significant" example lists appear together.
+OPTIONAL MATCH (parent:Guidance)-[:HAS_PART]->(art)
+WHERE art:Guidance
+OPTIONAL MATCH (parent)-[:HAS_PART]->(sibling:Guidance)
+WHERE sibling <> art AND sibling.text_for_analysis IS NOT NULL
+
+WITH art, children,
+     collect(DISTINCT {
+       id:   sibling.id,
+       kind: sibling.kind,
+       text: sibling.text_for_analysis,
+       raw_text: sibling.text,
+       ref:  sibling.display_ref
+     })[..10] AS siblings
+
 // Internal citations (same regulation)
 OPTIONAL MATCH (art)-[:HAS_PART*1..5]->()-[:CITES]->(cited:Provision)
 WHERE cited.text_for_analysis IS NOT NULL
   AND cited.celex = art.celex
 
-WITH art, children,
-     collect(DISTINCT {
+WITH art, children, siblings,
+     [x IN collect(DISTINCT {
        id:   cited.id,
        ref:  cited.display_ref,
        text: cited.text_for_analysis
-     })[..5] AS internal_cited
+     }) WHERE x.id IS NOT NULL][..12] AS internal_cited
 
 // Cross-regulation citations (different regulation)
 OPTIONAL MATCH (art)-[:HAS_PART*1..5]->()-[:CITES]->(xref:Provision)
 WHERE xref.text_for_analysis IS NOT NULL
   AND xref.celex <> art.celex
 
-WITH art, children, internal_cited,
+WITH art, children, siblings, internal_cited,
      collect(DISTINCT {
        id:   xref.id,
        ref:  xref.display_ref,
@@ -86,7 +109,7 @@ RETURN
   art.display_ref     AS article_ref,
   art.display_path    AS article_path,
   art.text_for_analysis AS article_text,
-  children,
+  children + siblings AS children,
   internal_cited + cross_reg_cited AS cited_provisions,
   cross_reg_cited
 """
@@ -101,7 +124,7 @@ MATCH (src)-[:CITES]->(art)
 WHERE src.celex <> art.celex
 MATCH (srcArt:Provision)-[:HAS_PART*0..5]->(src)
 WHERE srcArt.kind IN ['article', 'annex_section', 'annex_subsection',
-                       'annex_point', 'recital', 'section']
+                       'annex_point', 'annex_part', 'recital', 'section']
   AND NOT srcArt.id IN $ids
 RETURN DISTINCT
   srcArt.id            AS article_id,
@@ -113,13 +136,30 @@ RETURN DISTINCT
 LIMIT 3
 """
 
+# Cited-container drilldown: when a CITES edge points to a high-level
+# container node (e.g. "Annex XIV") whose own text is very short, fetch
+# the container's direct children so the LLM sees the actual content.
+_CITED_CHILDREN_CYPHER = """\
+UNWIND $ids AS cid
+MATCH (c:Provision {id: cid})-[:HAS_PART]->(child)
+WHERE child.text_for_analysis IS NOT NULL
+RETURN cid               AS container_id,
+       child.id           AS id,
+       child.kind         AS kind,
+       child.display_ref  AS ref,
+       child.text_for_analysis AS text
+ORDER BY cid, child.hierarchy_depth, child.id
+"""
+
 # Direct provision lookup by display_ref.  Used for structural questions
 # that explicitly name a provision ("What does Annex I contain?",
 # "What does Article 26 require?").  Bypasses vector similarity entirely.
 _DIRECT_REF_CYPHER = """\
 UNWIND $refs AS ref
-MATCH (art:Provision)
-WHERE toLower(art.display_ref) = toLower(ref)
+OPTIONAL MATCH (p1:Provision) WHERE toLower(p1.display_ref) = toLower(ref)
+OPTIONAL MATCH (p2:Guidance)  WHERE toLower(p2.display_ref) = toLower(ref)
+WITH ref, collect(p1) + collect(p2) AS nodes
+UNWIND nodes AS art
 RETURN art.id AS article_id, art.celex AS celex, art.display_ref AS display_ref
 ORDER BY art.hierarchy_depth ASC
 LIMIT 20
@@ -160,10 +200,16 @@ class GraphRetriever:
         self._load_index()
 
     def _load_index(self) -> None:
-        """Fetch all embedded provisions from Neo4j into a numpy matrix."""
+        """Fetch all embedded provisions and guidance nodes from Neo4j into a numpy matrix."""
         with self._driver.session(database=self._db) as s:
             rows = s.run(
                 "MATCH (n:Provision) "
+                "WHERE n.embedding IS NOT NULL "
+                "RETURN n.id AS id, n.kind AS kind, "
+                "n.path_string AS path_string, n.celex AS celex, "
+                "n.embedding AS emb "
+                "UNION ALL "
+                "MATCH (n:Guidance) "
                 "WHERE n.embedding IS NOT NULL "
                 "RETURN n.id AS id, n.kind AS kind, "
                 "n.path_string AS path_string, n.celex AS celex, "
@@ -210,6 +256,61 @@ class GraphRetriever:
             if ancestor_id and self._id_to_kind.get(ancestor_id) in _PARENT_KINDS:
                 return ancestor_id
         return node_id
+
+    def _expand_cited_containers(self, results: list[dict]) -> None:
+        """Drill into cited provisions that are high-level containers.
+
+        When a CITES edge points to a container node (e.g. "Annex XIV")
+        whose own text is very short but has children, this method fetches
+        the children's text and appends them to the cited_provisions list
+        so the LLM sees the actual substantive content.
+        """
+        container_ids: list[str] = []
+        for r in results:
+            for c in r.get("cited_provisions") or []:
+                text = c.get("text") or ""
+                # Short text + id present → likely a container heading
+                if c.get("id") and len(text) <= 80:
+                    container_ids.append(c["id"])
+        if not container_ids:
+            return
+        # Deduplicate
+        container_ids = list(dict.fromkeys(container_ids))
+        with self._driver.session(database=self._db) as s:
+            children_rows = s.run(
+                _CITED_CHILDREN_CYPHER, ids=container_ids,
+            ).data()
+        if not children_rows:
+            return
+        # Group children by container
+        children_by_container: dict[str, list[dict]] = {}
+        for row in children_rows:
+            cid = row["container_id"]
+            children_by_container.setdefault(cid, []).append({
+                "id": row["id"],
+                "kind": row["kind"],
+                "ref": row["ref"],
+                "text": (row["text"] or "")[:500],
+            })
+        # Inject children into the cited_provisions entries
+        injected = 0
+        for r in results:
+            cited = r.get("cited_provisions") or []
+            extras: list[dict] = []
+            for c in cited:
+                kids = children_by_container.get(c.get("id", ""))
+                if kids:
+                    for kid in kids[:8]:
+                        extras.append(kid)
+                        injected += 1
+            if extras:
+                cited.extend(extras)
+        if injected:
+            logger.info(
+                "Container drilldown: injected %d children from %d "
+                "container(s).",
+                injected, len(children_by_container),
+            )
 
     def retrieve(
         self,
@@ -316,6 +417,10 @@ class GraphRetriever:
             r["matched_leaf_id"] = leaf_map.get(r["article_id"])
         results.sort(key=lambda r: r["score"], reverse=True)
 
+        # Drill into cited container nodes (e.g. "Annex XIV" headings)
+        # to surface their children's text for the LLM.
+        self._expand_cited_containers(results)
+
         # Cross-regulation expansion: if the retrieved provisions have
         # cross-regulation CITES links, also retrieve the "other side"
         # provisions from the other regulation(s).  This ensures that
@@ -396,6 +501,7 @@ RETURN
     d.term                AS term,
     d.term_normalized     AS term_normalized,
     d.category            AS category,
+    d.definition_type     AS definition_type,
     d.regulation          AS regulation,
     d.celex               AS celex,
     p.text                AS definition_text,

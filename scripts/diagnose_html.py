@@ -14,8 +14,8 @@ Usage:
 
 Example:
     python scripts/diagnose_html.py \
-        data/regulations/32017R0745/EN/raw/raw_legal_basis.html \
-        data/regulations/32017R0745/EN/raw/raw.html
+        data/legislation/32017R0745/EN/raw/raw_legal_basis.html \
+        data/legislation/32017R0745/EN/raw/raw.html
 """
 from __future__ import annotations
 

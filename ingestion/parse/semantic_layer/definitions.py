@@ -27,6 +27,7 @@ import re
 from typing import Any
 
 from domain.ontology.defined_terms import (
+    DEFINITIONS_ARTICLES as _DEFINITIONS_ARTICLES,
     TERM_PATTERN as _TERM_RE,
     classify_category as _classify_category,
 )
@@ -102,12 +103,25 @@ def extract_defined_terms(
 
         node_id = f"{celex}_defterm_{term_normalized}"
 
+        # Determine whether the definition comes from the regulation's
+        # official definitions article (formal) or from elsewhere (contextual).
+        def_article = _DEFINITIONS_ARTICLES.get(celex, {})
+        def_article_prefix = def_article.get("article_id", "")
+        is_formal = bool(
+            def_article_prefix
+            and (
+                prov["id"] == def_article_prefix
+                or prov["id"].startswith(def_article_prefix + "_")
+            )
+        )
+
         defined_terms.append(
             {
                 "id":                  node_id,
                 "term":                raw_term.strip(),
                 "term_normalized":     term_normalized,
                 "category":            category,
+                "definition_type":     "formal" if is_formal else "contextual",
                 "celex":               celex,
                 "regulation":          regulation,
                 "source_provision_id": prov["id"],

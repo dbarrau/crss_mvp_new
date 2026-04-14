@@ -1,26 +1,20 @@
 """
 infrastructure/graphdb/neo4j/loader.py
 =======================================
-Loads EU regulation ``parsed.json`` files into a Neo4j graph database.
+Loads EU regulation and MDCG guidance ``parsed.json`` files into a
+Neo4j graph database.
 
 Graph model (structural / hierarchical only)
 --------------------------------------------
-Nodes – 15 legal-structural labels
-    (:Document)           – regulation root
-  (:Citation)
-  (:Recital)
-  (:Chapter)
-  (:Section)
-  (:Article)
-  (:Paragraph)
-  (:Subparagraph)       – ordinal subparagraph within a paragraph
-  (:Point)              – includes ``roman_item`` provisions
-  (:Annex)
-  (:AnnexChapter)       – CHAPTER I, II, III inside an annex
-  (:AnnexSection)       – numbered section headings (10., 10.4., etc.)
-  (:AnnexPoint)         – numbered requirements (10.1., 10.2., etc.)
-  (:AnnexSubpoint)      – lettered sub-items (a), (b), (c)
-  (:AnnexBullet)        – dash/bullet items
+Regulation nodes — base label ``:Provision``
+  (:Document)  (:Citation)  (:Recital)  (:Chapter)  (:Section)
+  (:Article)   (:Paragraph) (:Subparagraph) (:Point)
+  (:Annex)     (:AnnexChapter) (:AnnexPart) (:AnnexSection)
+  (:AnnexSubsection) (:AnnexPoint) (:AnnexSubpoint) (:AnnexBullet)
+
+Guidance nodes — base label ``:Guidance``
+  (:GuidanceDocument) (:GuidanceSection) (:GuidanceSubsection)
+  (:GuidanceParagraph) (:GuidanceChart)
 
 Editorial containers (``preamble``, ``enacting_terms``, ``final_provisions``,
 ``annexes``) are **not** loaded as graph nodes.  Their children are
@@ -53,15 +47,15 @@ from typing import Any
 
 from neo4j import GraphDatabase, Driver
 
-from domain.regulations_catalog import REGULATIONS
+from domain.legislation_catalog import LEGISLATION
 
 logger = logging.getLogger(__name__)
 
 # Map regulation numbers (e.g. "2017/745") to CELEX IDs for loaded regs.
 # Used to avoid creating ExternalAct stubs for regulations already in the graph.
-# Derived from the single source of truth in domain/regulations_catalog.py.
+# Derived from the single source of truth in domain/legislation_catalog.py.
 _NUMBER_TO_CELEX: dict[str, str] = {
-    _meta["number"]: _celex for _celex, _meta in REGULATIONS.items()
+    _meta["number"]: _celex for _celex, _meta in LEGISLATION.items()
 }
 
 
@@ -127,7 +121,31 @@ _KIND_LABEL: dict[str, str] = {
     "annex_point":      "AnnexPoint",
     "annex_subpoint":   "AnnexSubpoint",
     "annex_bullet":     "AnnexBullet",
+    # Guidance (MDCG)
+    "guidance_document":    "GuidanceDocument",
+    "guidance_section":     "GuidanceSection",
+    "guidance_subsection":  "GuidanceSubsection",
+    "guidance_paragraph":   "GuidanceParagraph",
+    "guidance_chart":       "GuidanceChart",
 }
+
+# Guidance-family kinds → nodes get :Guidance instead of :Provision.
+_GUIDANCE_KINDS: frozenset[str] = frozenset({
+    "guidance_document", "guidance_section", "guidance_subsection",
+    "guidance_paragraph", "guidance_chart",
+})
+
+# Allowed base labels for node identity (prevent Cypher injection)
+_ALLOWED_BASE_LABELS: frozenset[str] = frozenset({"Provision", "Guidance"})
+
+
+def _base_label_for(provisions: list[dict]) -> str:
+    """Return 'Guidance' if this file contains guidance nodes, else 'Provision'."""
+    for p in provisions:
+        if p.get("kind", "") in _GUIDANCE_KINDS:
+            return "Guidance"
+    return "Provision"
+
 
 # No editorial containers are flattened – all structural nodes are kept
 # as real graph nodes for navigable hierarchy.
@@ -159,7 +177,7 @@ class RegulationGraphLoader:
 
         with RegulationGraphLoader(uri, user, password) as loader:
             loader.setup_schema()
-            stats = loader.load_file("data/regulations/32024R1689/EN/parsed.json")
+            stats = loader.load_file("data/legislation/32024R1689/EN/parsed.json")
             print(stats)
 
     Environment variables read by the convenience constructor
@@ -220,24 +238,30 @@ class RegulationGraphLoader:
 
     def setup_schema(self) -> None:
         """
-        Create uniqueness constraint and supporting indexes on a
-        dedicated ``Provision`` label.  This label is used only for
-        constraints / indexes and **not** attached to nodes at
-        runtime, so it does not appear in query results.
+        Create uniqueness constraints and supporting indexes.
+
+        Two base labels are used:
+        - ``:Provision`` for regulation nodes (articles, paragraphs …)
+        - ``:Guidance``  for MDCG guidance nodes (guidance_section …)
 
         Safe to call repeatedly (uses ``IF NOT EXISTS``).
         """
         stmts = [
-            # Uniqueness – prevents duplicate provisions across re-loads
+            # ── Provision (regulation nodes) ───────────────────────
             "CREATE CONSTRAINT provision_id IF NOT EXISTS "
             "FOR (p:Provision) REQUIRE p.id IS UNIQUE",
-            # Fast look-up by regulation
             "CREATE INDEX provision_celex IF NOT EXISTS "
             "FOR (p:Provision) ON (p.celex)",
-            # Fast look-up by structural type
             "CREATE INDEX provision_kind IF NOT EXISTS "
             "FOR (p:Provision) ON (p.kind)",
-            # DefinedTerm – uniqueness and lookup indexes
+            # ── Guidance (MDCG guidance nodes) ─────────────────────
+            "CREATE CONSTRAINT guidance_id IF NOT EXISTS "
+            "FOR (g:Guidance) REQUIRE g.id IS UNIQUE",
+            "CREATE INDEX guidance_celex IF NOT EXISTS "
+            "FOR (g:Guidance) ON (g.celex)",
+            "CREATE INDEX guidance_kind IF NOT EXISTS "
+            "FOR (g:Guidance) ON (g.kind)",
+            # ── DefinedTerm ────────────────────────────────────────
             "CREATE CONSTRAINT defined_term_id IF NOT EXISTS "
             "FOR (d:DefinedTerm) REQUIRE d.id IS UNIQUE",
             "CREATE INDEX defined_term_normalized IF NOT EXISTS "
@@ -290,6 +314,10 @@ class RegulationGraphLoader:
 
         nodes, edges = self._prepare_data(provisions, celex, regulation_id)
 
+        # Choose the correct base label for this document family.
+        base_label = _base_label_for(provisions)
+        assert base_label in _ALLOWED_BASE_LABELS
+
         # DEFINED_BY relations reference DefinedTerm nodes (not Provision nodes)
         # so they must be handled after defined_terms are upserted; separate them
         # from the standard cross-reference set.
@@ -297,9 +325,9 @@ class RegulationGraphLoader:
         std_xref_rels   = [r for r in xref_relations if r.get("type") != "DEFINED_BY"]
 
         with self._driver.session(database=self._database) as session:
-            n_nodes      = self._upsert_nodes(session, nodes)
+            n_nodes      = self._upsert_nodes(session, nodes, base_label)
             self._apply_kind_labels(session, celex)
-            n_rels       = self._upsert_relationships(session, edges)
+            n_rels       = self._upsert_relationships(session, edges, base_label)
             n_xrefs      = self._upsert_cross_references(session, std_xref_rels, celex)
             n_dterms     = self._upsert_defined_terms(session, defined_terms)
             n_defined_by = self._upsert_defined_by_edges(session, defined_terms)
@@ -495,15 +523,18 @@ class RegulationGraphLoader:
 
         return nodes, edges
 
-    def _upsert_nodes(self, session, nodes: list[dict]) -> int:
+    def _upsert_nodes(
+        self, session, nodes: list[dict], base_label: str = "Provision",
+    ) -> int:
         """
-        MERGE all provision nodes in batches.
+        MERGE all nodes in batches under *base_label* (``Provision`` or ``Guidance``).
         Returns total count of nodes touched.
         """
+        assert base_label in _ALLOWED_BASE_LABELS
         total = 0
-        cypher = """
+        cypher = f"""
             UNWIND $batch AS n
-            MERGE (p:Provision {id: n.id})
+            MERGE (p:{base_label} {{id: n.id}})
             SET
                 p.celex           = n.celex,
                 p.regulation_id   = n.regulation_id,
@@ -539,17 +570,20 @@ class RegulationGraphLoader:
                 kind=kind,
             )
 
-    def _upsert_relationships(self, session, edges: list[dict]) -> int:
+    def _upsert_relationships(
+        self, session, edges: list[dict], base_label: str = "Provision",
+    ) -> int:
         """
         MERGE HAS_PART edges in batches.
         Returns count of HAS_PART relationships created/merged.
         To traverse upward use the reverse direction: MATCH (x)<-[:HAS_PART]-(parent).
         """
+        assert base_label in _ALLOWED_BASE_LABELS
         total = 0
-        cypher = """
+        cypher = f"""
             UNWIND $batch AS e
-            MATCH (parent:Provision {id: e.parent_id})
-            MATCH (child:Provision  {id: e.child_id})
+            MATCH (parent:{base_label} {{id: e.parent_id}})
+            MATCH (child:{base_label}  {{id: e.child_id}})
             MERGE (parent)-[r:HAS_PART]->(child)
               ON CREATE SET r.order = e.order
             RETURN count(r) AS c
@@ -655,6 +689,7 @@ class RegulationGraphLoader:
                 d.term                = dt.term,
                 d.term_normalized     = dt.term_normalized,
                 d.category            = dt.category,
+                d.definition_type     = dt.definition_type,
                 d.celex               = dt.celex,
                 d.regulation          = dt.regulation,
                 d.source_provision_id = dt.source_provision_id

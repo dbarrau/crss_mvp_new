@@ -26,20 +26,21 @@ from typing import Any
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
 
-from domain.regulations_catalog import REGULATIONS
+from domain.legislation_catalog import LEGISLATION
 from infrastructure.graphdb.neo4j.loader import _normalize_neo4j_uri
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Resolution map: regulation "number" field → CELEX ID
-# (derived from the single source of truth in domain/regulations_catalog.py)
+# (derived from the single source of truth in domain/legislation_catalog.py)
 # ---------------------------------------------------------------------------
 CELEX_BY_NUMBER: dict[str, str] = {
-    meta["number"]: celex for celex, meta in REGULATIONS.items()
+    meta["number"]: celex for celex, meta in LEGISLATION.items()
 }
 
-_DATA_ROOT = Path(__file__).resolve().parent.parent / "data" / "regulations"
+_DATA_ROOT = Path(__file__).resolve().parent.parent / "data" / "legislation"
+_GUIDANCE_ROOT = Path(__file__).resolve().parent.parent / "data" / "guidance"
 
 # ---------------------------------------------------------------------------
 # 1. Discover resolvable CITES_EXTERNAL edges from parsed.json files
@@ -47,9 +48,17 @@ _DATA_ROOT = Path(__file__).resolve().parent.parent / "data" / "regulations"
 
 def discover_resolvable_refs() -> list[dict[str, Any]]:
     """Read all parsed.json files and return CITES_EXTERNAL relations
-    whose ``number`` maps to a CELEX ID we have loaded."""
+    whose ``number`` maps to a CELEX ID we have loaded.
+
+    Scans both ``data/legislation/`` and ``data/guidance/`` directories.
+    """
     results: list[dict[str, Any]] = []
-    for celex_dir in sorted(_DATA_ROOT.iterdir()):
+    dirs_to_scan: list[Path] = []
+    if _DATA_ROOT.is_dir():
+        dirs_to_scan.extend(sorted(_DATA_ROOT.iterdir()))
+    if _GUIDANCE_ROOT.is_dir():
+        dirs_to_scan.extend(sorted(_GUIDANCE_ROOT.iterdir()))
+    for celex_dir in dirs_to_scan:
         parsed = celex_dir / "EN" / "parsed.json"
         if not parsed.exists():
             continue
@@ -163,16 +172,46 @@ def build_target_id(celex: str, parts: dict[str, str]) -> str | None:
     return None
 
 
+def build_alternative_ids(celex: str, parts: dict[str, str]) -> list[str]:
+    """Generate alternative provision IDs for ambiguous references.
+
+    Definitions articles (e.g. Article 2) use point-based IDs
+    (``art_2_pt_N``) rather than paragraph-based IDs (``002.00N``).
+    When ``build_target_id`` produces a paragraph-format ID,
+    this function returns the point-format alternative so the
+    crosslinker can try both before falling back to document-level.
+    """
+    alternatives: list[str] = []
+    article = parts.get("article")
+    para = parts.get("para")
+    point = parts.get("point")
+    subpoint = parts.get("subpoint")
+
+    if article and para and not point:
+        # "Article N(P)" could be point P of Article N
+        alternatives.append(f"{celex}_art_{article}_pt_{para}")
+    elif article and para and point:
+        # "Article N(P), point (X)" — point X under paragraph-as-point P
+        alternatives.append(f"{celex}_art_{article}_pt_{para}")
+
+    return alternatives
+
+
 # ---------------------------------------------------------------------------
 # 4. Verify targets exist in Neo4j
 # ---------------------------------------------------------------------------
 
 def verify_targets(tx, target_ids: set[str]) -> set[str]:
-    """Return the subset of *target_ids* that exist as Provision nodes."""
+    """Return the subset of *target_ids* that exist as Provision or Guidance nodes."""
     if not target_ids:
         return set()
     result = tx.run(
-        "UNWIND $ids AS id MATCH (p:Provision {id: id}) RETURN p.id AS id",
+        "UNWIND $ids AS id "
+        "OPTIONAL MATCH (p:Provision {id: id}) "
+        "OPTIONAL MATCH (g:Guidance  {id: id}) "
+        "WITH id, coalesce(p, g) AS n "
+        "WHERE n IS NOT NULL "
+        "RETURN id",
         ids=list(target_ids),
     )
     return {r["id"] for r in result}
@@ -183,12 +222,19 @@ def verify_targets(tx, target_ids: set[str]) -> set[str]:
 # ---------------------------------------------------------------------------
 
 def write_edges(tx, edges: list[dict[str, Any]]) -> int:
-    """MERGE CITES edges between existing Provision nodes. Returns count."""
+    """MERGE CITES edges between existing nodes.
+
+    Source may be either a ``:Provision`` or ``:Guidance`` node (MDCG
+    guidance citing regulations).  Targets are always ``:Provision``.
+    """
     if not edges:
         return 0
     result = tx.run(
         "UNWIND $batch AS e "
-        "MATCH (s:Provision {id: e.source}) "
+        "OPTIONAL MATCH (s1:Provision {id: e.source}) "
+        "OPTIONAL MATCH (s2:Guidance  {id: e.source}) "
+        "WITH e, coalesce(s1, s2) AS s "
+        "WHERE s IS NOT NULL "
         "MATCH (t:Provision {id: e.target}) "
         "MERGE (s)-[r:CITES]->(t) "
         "  ON CREATE SET r.resolved_from = 'crosslinker', "
@@ -276,11 +322,15 @@ def crosslink(dry_run: bool = False, cleanup: bool = False) -> dict[str, int]:
 
         if target_id:
             provision_targets.add(target_id)
+            alts = build_alternative_ids(target_celex, parts)
+            for alt in alts:
+                provision_targets.add(alt)
             doc_fallback = f"{target_celex}_document"
             document_targets.add(doc_fallback)
             candidate_edges.append({
                 "source": source,
                 "target": target_id,
+                "alternatives": alts,
                 "fallback": doc_fallback,
                 "ref_text": ref_text,
             })
@@ -306,6 +356,16 @@ def crosslink(dry_run: bool = False, cleanup: bool = False) -> dict[str, int]:
 
     try:
         with driver.session(database=database) as session:
+            # Reset previous crosslinker output so re-runs are idempotent
+            if not dry_run:
+                reset = session.run(
+                    "MATCH ()-[r:CITES {resolved_from: 'crosslinker'}]->() "
+                    "DELETE r RETURN count(r) AS c"
+                )
+                reset_count = reset.single()["c"]
+                if reset_count:
+                    logger.info("Cleared %d stale crosslinker CITES edges.", reset_count)
+
             all_targets = provision_targets | document_targets
             existing = session.execute_read(verify_targets, all_targets)
 
@@ -314,6 +374,16 @@ def crosslink(dry_run: bool = False, cleanup: bool = False) -> dict[str, int]:
                 if edge["target"] in existing:
                     provision_matched += 1
                     final_edges.append(edge)
+                    continue
+                # Try alternative IDs (e.g. point-format for definitions)
+                alt_hit = None
+                for alt in edge.get("alternatives", []):
+                    if alt in existing:
+                        alt_hit = alt
+                        break
+                if alt_hit:
+                    provision_matched += 1
+                    final_edges.append({**edge, "target": alt_hit})
                 elif edge["fallback"] and edge["fallback"] in existing:
                     logger.debug(
                         "Target %s not found; falling back to %s",

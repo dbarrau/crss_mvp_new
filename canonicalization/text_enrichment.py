@@ -28,7 +28,7 @@ _HEADING_KINDS = frozenset({
     "annex", "annex_chapter", "annex_part", "annex_section",
     "annex_subsection",
     # Guidance
-    "guidance_section",
+    "guidance_section", "guidance_subsection",
 })
 
 # Kinds whose text is typically just a heading / title, not normative body.

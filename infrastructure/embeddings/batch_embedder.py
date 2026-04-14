@@ -36,6 +36,9 @@ EMBED_KINDS = {
     "recital", "section",
     "annex", "annex_section", "annex_subsection",
     "annex_point", "annex_subpoint", "annex_bullet",
+    # Guidance (MDCG)
+    "guidance_section", "guidance_subsection",
+    "guidance_paragraph", "guidance_chart",
 }
 
 
@@ -58,17 +61,21 @@ def run(model_name: str = MODEL_NAME, batch_size: int = 64) -> int:
     )
     db = os.environ.get("NEO4J_DATABASE", "neo4j")
 
-    # Fetch all provisions that have analysable text
+    # Fetch all provisions and guidance nodes that have analysable text
     with driver.session(database=db) as s:
         rows = s.run(
             "MATCH (n:Provision) "
+            "WHERE n.text_for_analysis IS NOT NULL AND n.kind IN $kinds "
+            "RETURN n.id AS id, n.text_for_analysis AS text "
+            "UNION ALL "
+            "MATCH (n:Guidance) "
             "WHERE n.text_for_analysis IS NOT NULL AND n.kind IN $kinds "
             "RETURN n.id AS id, n.text_for_analysis AS text",
             kinds=list(EMBED_KINDS),
         ).data()
 
     if not rows:
-        logger.warning("No provisions found to embed. Is Neo4j loaded?")
+        logger.warning("No nodes found to embed. Is Neo4j loaded?")
         driver.close()
         return 0
 
@@ -94,7 +101,10 @@ def run(model_name: str = MODEL_NAME, batch_size: int = 64) -> int:
         for i in range(0, len(batch), CHUNK):
             s.run(
                 "UNWIND $batch AS row "
-                "MATCH (n:Provision {id: row.id}) "
+                "OPTIONAL MATCH (p:Provision {id: row.id}) "
+                "OPTIONAL MATCH (g:Guidance  {id: row.id}) "
+                "WITH row, coalesce(p, g) AS n "
+                "WHERE n IS NOT NULL "
                 "SET n.embedding = row.emb",
                 batch=batch[i : i + CHUNK],
             )

@@ -18,7 +18,8 @@ CRSS is a compliance readiness system that helps medtech startups navigate EU re
 crss/
 │
 ├── domain/                        # Pure regulatory metadata & ontology
-│   ├── regulations_catalog.py     # CELEX → metadata registry (single source of truth)
+│   ├── legislation_catalog.py     # CELEX → metadata registry (single source of truth)
+│   ├── mdcg_catalog.py            # MDCG ID → guidance metadata registry
 │   ├── ontology/
 │   │   ├── cross_reference_patterns.py  # Regex patterns for legal cross-references
 │   │   ├── defined_terms.py             # Patterns for extracting defined terms
@@ -30,7 +31,8 @@ crss/
 │   ├── pipeline.py                # Backward-compatible wrapper
 │   ├── run_pipeline.py            # Main pipeline orchestrator
 │   ├── scrape/
-│   │   └── scrape.py              # Playwright-based EUR-Lex retrieval
+│   │   ├── scrape.py              # Playwright-based EUR-Lex retrieval
+│   │   └── download_guidance.py   # HTTP-based MDCG PDF downloader
 │   ├── parse/
 │   │   ├── dispatcher.py          # Routes CELEX → parser, writes parsed.json
 │   │   ├── normalizer.py          # Consolidated HTML → OJ format normalizer
@@ -68,7 +70,7 @@ crss/
 │
 ├── scripts/                       # CLI entry-points
 │   ├── chat.py                    # Interactive REPL for regulatory Q&A
-│   ├── load_neo4j.py              # Load parsed.json into Neo4j (--wipe, --celex)
+│   ├── load_neo4j.py              # Load parsed.json into Neo4j (--wipe, --doc)
 │   ├── embed_provisions.py        # Batch-embed all provisions
 │   ├── analyze_graphrag.py        # Graph analytics
 │   ├── diagnose_html.py           # HTML structure diagnostics
@@ -77,10 +79,13 @@ crss/
 │   └── test_agent.py              # Agent smoke test
 │
 ├── data/
-│   └── regulations/
-│       ├── 32017R0745/EN/         # MDR
-│       ├── 32017R0746/EN/         # IVDR
-│       └── 32024R1689/EN/         # EU AI Act
+│   ├── legislation/
+│   │   ├── 32017R0745/EN/         # MDR
+│   │   ├── 32017R0746/EN/         # IVDR
+│   │   └── 32024R1689/EN/         # EU AI Act
+│   └── guidance/
+│       ├── MDCG_2019_11/EN/       # MDCG guidance documents
+│       └── MDCG_2020_3/EN/
 │
 └── docs/
     └── embeddings_and_agent.md    # Architecture notes on embedding + agent design
@@ -100,7 +105,7 @@ crss/
 ├─────────────────────────────────────────────────────┤
 │   INGESTION (scrape → parse → parsed.json)          │  ← EUR-Lex HTML acquisition & parsing
 ├─────────────────────────────────────────────────────┤
-│   DOMAIN (regulations_catalog, ontology, schema)    │  ← Pure regulatory knowledge
+│   DOMAIN (legislation_catalog, ontology, schema)     │  ← Pure regulatory knowledge
 └─────────────────────────────────────────────────────┘
 
 Cross-cutting: INFRASTRUCTURE (Neo4j loader, batch embedder)
@@ -112,10 +117,10 @@ Cross-cutting: INFRASTRUCTURE (Neo4j loader, batch embedder)
 
 ```
 1. SCRAPE        EUR-Lex HTML (Playwright)
-                    → data/regulations/{celex}/{lang}/raw/raw.html
+                    → data/legislation/{celex}/{lang}/raw/raw.html
 
 2. PARSE         Structural + semantic parsing
-                    → data/regulations/{celex}/{lang}/parsed.json
+                    → data/legislation/{celex}/{lang}/parsed.json
 
 3. LOAD          parsed.json → Neo4j (:Provision nodes + :HAS_PART edges)
                     Script: python scripts/load_neo4j.py [--wipe]
@@ -140,11 +145,11 @@ Cross-cutting: INFRASTRUCTURE (Neo4j loader, batch embedder)
 
 **Key Principle**: Domain layer NEVER imports from `infrastructure/` or `application/`.
 
-#### `domain/regulations_catalog.py`
+#### `domain/legislation_catalog.py`
 
-Central registry mapping CELEX IDs to regulation metadata. Single source of truth for regulation identity.
+Central registry mapping CELEX IDs to legislation metadata. Single source of truth for legislative act identity.
 
-**Currently tracked regulations**:
+**Currently tracked legislation**:
 
 | CELEX | Name | Type |
 |-------|------|------|
@@ -183,7 +188,7 @@ JSON Schema (draft-07) defining provision and relation structures. Key provision
 
 #### `ingestion/run_pipeline.py`
 
-Main orchestrator. Validates CELEX against `regulations_catalog`, creates directory structure, sequences scraper → parser.
+Main orchestrator. Validates document ID against `legislation_catalog` / `mdcg_catalog`, creates directory structure, sequences scraper → parser.
 
 ```python
 from ingestion.run_pipeline import run
@@ -194,7 +199,7 @@ run("32024R1689", "EN")  # Scrape + parse AI Act
 
 Playwright-based scraping. Launches headless Chromium, navigates to EUR-Lex, waits for network idle, saves raw HTML.
 
-Output: `data/regulations/{celex}/{lang}/raw/raw.html`
+Output: `data/legislation/{celex}/{lang}/raw/raw.html`
 
 #### `ingestion/parse/dispatcher.py`
 
@@ -324,8 +329,8 @@ Additional labels: `:AnnexPart`, `:AnnexSubsection`
 
 **Usage**:
 ```bash
-python scripts/load_neo4j.py                           # Load all regulations
-python scripts/load_neo4j.py --celex 32024R1689 --wipe # Wipe + reload AI Act
+python scripts/load_neo4j.py                           # Load all legislation
+python scripts/load_neo4j.py --doc 32024R1689 --wipe   # Wipe + reload AI Act
 ```
 
 #### `infrastructure/embeddings/batch_embedder.py`
@@ -399,7 +404,7 @@ python scripts/embed_provisions.py  # ~6745 provisions, ~2min on MPS
 | Script | Purpose | Usage |
 |--------|---------|-------|
 | `chat.py` | Interactive REPL | `python scripts/chat.py` |
-| `load_neo4j.py` | Load data to Neo4j | `python scripts/load_neo4j.py [--wipe] [--celex X]` |
+| `load_neo4j.py` | Load data to Neo4j | `python scripts/load_neo4j.py [--wipe] [--doc X]` |
 | `embed_provisions.py` | Batch-embed provisions | `python scripts/embed_provisions.py` |
 | `analyze_graphrag.py` | Graph analytics | `python scripts/analyze_graphrag.py` |
 | `diagnose_html.py` | HTML structure diagnostics | `python scripts/diagnose_html.py` |
@@ -463,23 +468,26 @@ Cross-cutting:
 
 ```
 data/
-└── regulations/
-    ├── 32017R0745/          # MDR
-    │   └── EN/
-    │       ├── raw/
-    │       │   ├── raw.html
-    │       │   └── raw_legal_basis.html
-    │       └── parsed.json
-    ├── 32017R0746/          # IVDR
-    │   └── EN/
-    │       ├── raw/
-    │       │   └── raw.html
-    │       └── parsed.json
-    └── 32024R1689/          # EU AI Act
-        └── EN/
-            ├── raw/
-            │   └── raw.html
-            └── parsed.json
+├── legislation/
+│   ├── 32017R0745/          # MDR
+│   │   └── EN/
+│   │       ├── raw/
+│   │       │   ├── raw.html
+│   │       │   └── raw_legal_basis.html
+│   │       └── parsed.json
+│   ├── 32017R0746/          # IVDR
+│   │   └── EN/
+│   │       ├── raw/
+│   │       │   └── raw.html
+│   │       └── parsed.json
+│   └── 32024R1689/          # EU AI Act
+│       └── EN/
+│           ├── raw/
+│           │   └── raw.html
+│           └── parsed.json
+└── guidance/
+    ├── MDCG_2019_11/EN/     # MDCG guidance documents
+    └── MDCG_2020_3/EN/
 ```
 
 ---
@@ -497,7 +505,7 @@ IDs are deterministic and stable across re-parses.
 
 ## Key Takeaways for Developers
 
-1. **Domain is pure data**: `regulations_catalog.py` and `ontology/` contain no I/O — just metadata and regex patterns.
+1. **Domain is pure data**: `legislation_catalog.py`, `mdcg_catalog.py`, and `ontology/` contain no I/O — just metadata and regex patterns.
 
 2. **Parsing is two-pass**: Structural (HTML → provision nodes) then semantic (cross-reference resolution, definition extraction).
 

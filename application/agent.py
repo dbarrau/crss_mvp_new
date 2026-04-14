@@ -16,12 +16,15 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+from domain.ontology.defined_terms import DEFINITIONS_ARTICLES as _DEF_ARTICLES
+
 load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
 You are a European regulatory compliance expert specializing in \
-MDR 2017/745, IVDR 2017/746, and the EU AI Act (Regulation 2024/1689).
+MDR 2017/745, IVDR 2017/746, and the EU AI Act (Regulation 2024/1689), \
+as well as MDCG guidance documents that supplement these regulations.
 
 You answer questions based on the REGULATORY CONTEXT provided below.
 
@@ -46,6 +49,10 @@ or any other criterion.
 - When a sub-item text contains a qualifying reference (e.g. "offences referred \
 to in Annex II"), that qualifier MUST be reproduced in full; do not paraphrase \
 it away.
+- Use ONLY EU regulatory terminology. NEVER introduce concepts, terms, or \
+frameworks from non-EU jurisdictions (e.g. FDA "predicate device", "510(k)", \
+"PMA", "substantial equivalence" in US sense). If the user's question uses \
+such terms, translate them to the closest EU equivalent and flag the mapping.
 
 REGULATORY REASONING (permitted):
 - While you must quote text strictly from the provided context, you SHOULD use \
@@ -59,10 +66,87 @@ provisions in context.
 - Clearly distinguish between what the text explicitly states (quote it) and \
 what you logically infer from the text (label it as an inference).
 
+BALANCED ANALYSIS (required):
+- When the question asks whether something qualifies as a regulatory category \
+(e.g. "does this constitute a significant change?"), you MUST present BOTH the \
+arguments FOR and AGAINST based on the provisions in context.
+- When guidance documents state that assessments must be done "case-by-case", \
+explicitly flag this and do NOT give a categorical yes/no conclusion. Instead, \
+state which outcome is more likely and under what conditions the opposite could \
+apply.
+- If the context contains lists of both qualifying and non-qualifying examples \
+(e.g. Chart C significant vs non-significant software changes), cite BOTH lists \
+and explain which examples are closest to the scenario in question.
+- Clearly distinguish "likely" from "definitive" conclusions.
+
+CROSS-REGULATION AWARENESS (required):
+- When the context includes provisions from multiple regulations or frameworks \
+(e.g. MDR and AI Act, or a regulation and MDCG guidance), you MUST address how \
+they interact. Identify overlapping obligations, complementary requirements, or \
+potential conflicts.
+- When the question explicitly mentions concepts from multiple regulatory \
+domains (e.g. "High-Risk AI" + "Class IIa medical device"), address each \
+applicable framework even if one is less prominent in the question.
+- Distinguish binding regulation from non-binding guidance: provisions tagged \
+[GUIDANCE] are interpretive aids, not law. They carry persuasive but not legal \
+authority.
+
+LEGAL HIERARCHY RULES (critical):
+
+- Binding EU Regulations (e.g., MDR 2017/745, IVDR 2017/746, EU AI Act 2024/1689)
+  take precedence over all guidance documents.
+
+- MDCG guidance documents are NON-BINDING. They:
+  - interpret regulatory provisions,
+  - provide examples and decision frameworks,
+  - but do NOT create legal obligations.
+
+- Where guidance appears to suggest a categorical outcome, but the Regulation
+  requires a case-by-case assessment, you MUST:
+  - defer to the Regulation, and
+  - present the guidance as supportive, not determinative.
+
+- In case of overlap between regulations (e.g., MDR and AI Act):
+  - Apply the procedural rule explicitly stated in the Regulation text
+    (e.g., Article 43(3) AI Act → MDR conformity assessment applies),
+  - Then integrate additional requirements from the other regulation.
+
+- NEVER treat guidance examples (e.g., “Chart C”) as automatic legal conclusions.
+  They are indicators, not binding classifications.
+FORMAL DEFINITIONS vs. REGULATORY CONCEPTS (critical):
+- A term is "defined" in EU law ONLY if it appears in the regulation's \
+definitions article (Article 2 for MDR/IVDR, Article 3 for the AI Act) using \
+the canonical form: \u2018term\u2019 means \u2026
+- If the LEGAL DEFINITIONS section above contains a formal definition for a \
+concept, cite it as a legal definition.
+- If NO formal definition is provided for a concept, do NOT say it is \
+"defined" in any provision. Instead, identify the provisions that establish \
+criteria, requirements, or conditions for that concept and describe them as \
+such \u2014 not as definitions.
+- Example: \u201cequivalence\u201d is not defined in Article 2 of the MDR. Annex XIV Part A, \
+Point 3 establishes CRITERIA for demonstrating equivalence \u2014 these are \
+assessment requirements, not a definition.
+- A NOTE in the context may explicitly flag that a concept lacks a formal \
+definition. Respect that note.
+
+CONCEPT → REGULATORY USE LINKAGE (required):
+- When describing criteria, requirements, or conditions from a specific \
+provision (e.g. Annex XIV equivalence criteria), you MUST also identify the \
+substantive Article(s) that invoke or rely on those criteria (e.g. Article 61 \
+requires clinical evaluation and references Annex XIV for equivalence \
+assessment). This gives the reader the full regulatory picture.
+- If the invoking Article appears in the Cross-references section of the \
+context, cite it directly. If it does not appear but you know from the \
+regulatory structure that a linkage exists, state it as an inference: \
+"By regulatory structure, [Article X] invokes these criteria for [purpose]."
+- Always connect Annex criteria back to their parent obligation in the \
+enacting terms; never present Annex content in isolation.
+
 Format your answer with:
 1. A direct answer based on the provided context and sound regulatory reasoning
-2. Relevant quotes or paraphrases, each labelled with the provision reference \
-shown in the context header (e.g. "[1] Article 2")
+2. At least one VERBATIM quote (in quotation marks) per key provision cited — \
+the exact words from the REGULATORY CONTEXT, not a paraphrase. Label each with \
+the provision reference shown in the context header (e.g. [1] Article 2)
 3. Cross-references that appear explicitly in the context
 """
 
@@ -80,13 +164,35 @@ _REG_NAME_TO_CELEX: dict[str, str] = {
     "EU AI Act": "32024R1689",
     "MDR 2017/745": "32017R0745",
     "IVDR 2017/746": "32017R0746",
+    # MDCG guidance documents
+    "MDCG 2020-3": "MDCG_2020_3",
+    "MDCG 2019-11": "MDCG_2019_11",
 }
 
 # Regulation name patterns for detecting which regulations a question targets.
 _REG_PATTERNS: dict[str, list[str]] = {
-    "EU AI Act": ["ai act", "2024/1689", "eu ai"],
-    "MDR 2017/745": ["mdr", "2017/745", "medical device regulation"],
-    "IVDR 2017/746": ["ivdr", "2017/746", "in vitro"],
+    "EU AI Act": [
+        "ai act", "2024/1689", "eu ai",
+        "high-risk ai", "ai system", "artificial intelligence",
+    ],
+    "MDR 2017/745": [
+        "mdr", "2017/745", "medical device regulation",
+        "class i ", "class iia", "class iib", "class iii",
+    ],
+    "IVDR 2017/746": [
+        "ivdr", "2017/746", "in vitro",
+        "class a ", "class b ", "class c ", "class d ",
+    ],
+    # MDCG guidance documents
+    "MDCG 2020-3": [
+        "mdcg 2020-3", "mdcg 2020/3", "significant changes",
+        "significant change", "article 120",
+    ],
+    "MDCG 2019-11": [
+        "mdcg 2019-11", "mdcg 2019/11", "software qualification",
+        "software classification", "mdsw",
+        "software update", "software change", "algorithm",
+    ],
 }
 
 # Regex for detecting explicit provision references in a question.
@@ -175,6 +281,45 @@ def _hyde_query(question: str, client: Any) -> str:
         max_tokens=100,
     )
     return resp.choices[0].message.content.strip()
+
+
+# ---------------------------------------------------------------------------
+# Definition-question detection
+# ---------------------------------------------------------------------------
+
+# Patterns that signal the user is asking for the meaning/definition of a
+# concept.  Each pattern must contain a named group ``concept`` that
+# captures the subject term.
+_DEFINITION_Q_PATTERNS: list[re.Pattern] = [
+    re.compile(r"\bwhat\s+is\s+(?:an?\s+)?(?:the\s+)?(?:concept\s+of\s+)?(?P<concept>[^?.,]+)", re.I),
+    re.compile(r"\bwhat\s+are\s+(?:the\s+)?(?P<concept>[^?.,]+)", re.I),
+    re.compile(r"\bdefin(?:e|ition\s+of)\s+(?P<concept>[^?.,]+)", re.I),
+    re.compile(r"\bwhat\s+does\s+(?P<concept>[^?.,]+?)\s+mean\b", re.I),
+    re.compile(r"\bhow\s+is\s+(?P<concept>[^?.,]+?)\s+defined\b", re.I),
+    re.compile(r"\bwhat\s+is\s+meant\s+by\s+(?P<concept>[^?.,]+)", re.I),
+]
+
+
+def _is_definition_question(question: str) -> tuple[bool, str | None]:
+    """Detect if *question* asks for the definition/meaning of a concept.
+
+    Returns ``(True, concept_text)`` when matched, ``(False, None)`` otherwise.
+    The *concept_text* is the raw extracted subject, lowercased and stripped.
+    """
+    for pat in _DEFINITION_Q_PATTERNS:
+        m = pat.search(question)
+        if m:
+            concept = m.group("concept").strip().rstrip("?").strip()
+            # Drop trailing regulation references — the user already says
+            # "according to MDR" elsewhere, we just want the concept.
+            concept = re.sub(
+                r"\s+(?:according\s+to|pursuant\s+to|under|in|of|per)\s+"
+                r"(?:the\s+)?(?:MDR|IVDR|AI\s*Act|EU|Regulation|2017|2024).*$",
+                "", concept, flags=re.I,
+            ).strip()
+            if concept:
+                return True, concept.lower()
+    return False, None
 
 
 def _detect_defined_terms(
@@ -285,13 +430,23 @@ def _format_definitions(definitions: list[dict]) -> str:
         ref = d.get("article_ref", "")
         term = d.get("term", "")
         text = d.get("definition_text", "")
-        label = f"Definition of \u2018{term}\u2019"
+        dtype = d.get("definition_type", "formal")
+        if dtype == "contextual":
+            label = f"Scoped definition of \u2018{term}\u2019"
+        else:
+            label = f"Formal definition of \u2018{term}\u2019"
         if ref:
-            label += f" — {ref}"
+            label += f" \u2014 {ref}"
         if reg:
             label += f" ({reg})"
+        if dtype == "contextual":
+            label += " [scoped to this article]"
         parts.append(f"{label}:\n{text}")
     return "\n\n".join(parts)
+
+
+# CELEX prefixes that identify MDCG guidance documents.
+_GUIDANCE_CELEX_PREFIXES = ("MDCG_",)
 
 
 def _format_context(provisions: list[dict]) -> str:
@@ -299,7 +454,10 @@ def _format_context(provisions: list[dict]) -> str:
     parts: list[str] = []
     for i, p in enumerate(provisions, 1):
         regulation = p.get("regulation", "")
-        header = f"[{i}] {p.get('article_ref', 'Unknown')} ({regulation})"
+        celex = p.get("celex", "")
+        is_guidance = any(celex.startswith(pfx) for pfx in _GUIDANCE_CELEX_PREFIXES)
+        guidance_tag = " [GUIDANCE]" if is_guidance else ""
+        header = f"[{i}] {p.get('article_ref', 'Unknown')} ({regulation}){guidance_tag}"
         path = p.get("article_path", "")
         if path:
             header += f"\n    Path: {path}"
@@ -342,8 +500,9 @@ def _format_context(provisions: list[dict]) -> str:
         for c in cited:
             ref = c.get("ref", "")
             is_xreg = c.get("id") in cross_reg_ids
-            # Give more text budget to cross-regulation citations
-            limit = 500 if is_xreg else 300
+            # Give more text budget to cross-regulation citations;
+            # internal citations also need room for substantive annex content.
+            limit = 500 if is_xreg else 800
             text = (c.get("text") or "")[:limit]
             if text:
                 tag = " [CROSS-REG]" if is_xreg else ""
@@ -419,7 +578,15 @@ def ask(question: str, retriever, k: int = 20) -> str:
         if len(mentioned_regs) > 1:
             # For multi-regulation questions, increase k proportionally so each
             # regulation gets adequate coverage (min 3 slots per regulation).
-            k = max(k, len(mentioned_regs) * 3)
+            # Boost allocation when MDCG guidance documents are involved, since
+            # they often have complementary sections (e.g. significant vs
+            # non-significant examples) that both need to appear in context.
+            has_guidance = any(
+                _REG_NAME_TO_CELEX.get(r, "").startswith("MDCG_")
+                for r in mentioned_regs
+            )
+            per_reg = 4 if has_guidance else 3
+            k = max(k, len(mentioned_regs) * per_reg)
 
     # --- 3. Direct structural lookup for explicitly named provisions ---
     # e.g. "What does Annex I contain?" → exact display_ref lookup, no
@@ -542,6 +709,39 @@ def ask(question: str, retriever, k: int = 20) -> str:
             "LEGAL DEFINITIONS (from the definitions article):\n"
             + _format_definitions(definitions)
         )
+
+    # Negative-definition signal: when the user asks "what is X" and X
+    # has no formal DefinedTerm entry, inject an explicit note so the LLM
+    # knows NOT to invent a definition from Annex/Article criteria.
+    is_def_q, concept_text = _is_definition_question(question)
+    if is_def_q and concept_text:
+        # Check if any of the definitions we already found covers it
+        concept_covered = any(
+            concept_text in (d.get("term", "").lower())
+            or (d.get("term", "").lower() in concept_text)
+            for d in definitions
+        )
+        if not concept_covered:
+            # Build reference to the definitions article(s)
+            def_art_refs: list[str] = []
+            for reg_name in (mentioned_regs or _REG_NAME_TO_CELEX.keys()):
+                celex = _REG_NAME_TO_CELEX.get(reg_name, "")
+                art_info = _DEF_ARTICLES.get(celex)
+                if art_info:
+                    def_art_refs.append(
+                        f"{art_info['display_ref']} ({reg_name})"
+                    )
+            if def_art_refs:
+                note = (
+                    f"NOTE: \u2018{concept_text}\u2019 is NOT a formally defined term "
+                    f"in {', '.join(def_art_refs)}. "
+                    f"The provisions below may describe criteria, requirements, "
+                    f"or conditions related to this concept \u2014 they are NOT "
+                    f"definitions."
+                )
+                context_parts.append(note)
+                logger.info("Negative-definition signal injected for '%s'.", concept_text)
+
     if provisions:
         context_parts.append(_format_context(provisions))
     context = "\n\n---\n\n".join(context_parts)

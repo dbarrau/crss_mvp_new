@@ -6,7 +6,7 @@ from pathlib import Path
 results = []
 
 for celex in ["32017R0745", "32024R1689"]:
-    parsed = Path(__file__).resolve().parents[1] / "data" / "regulations" / celex / "EN" / "parsed.json"
+    parsed = Path(__file__).resolve().parents[1] / "data" / "legislation" / celex / "EN" / "parsed.json"
     with open(parsed) as f:
         data = json.load(f)
 

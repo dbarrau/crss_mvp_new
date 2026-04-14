@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
-from domain.regulations_catalog import REGULATIONS
+from domain.legislation_catalog import LEGISLATION
 from canonicalization.text_enrichment import enrich_text_for_analysis
 from .base.registry import PARSER_REGISTRY
 from .normalizer import normalize_consolidated_html
@@ -38,7 +38,7 @@ def parse_document(html_file: Path, lang: str, celex: str, out_dir: Path) -> Pat
     # Read HTML content and normalize if consolidated
     html_content = Path(html_file).read_text(encoding="utf-8")
     html_content = normalize_consolidated_html(html_content)
-    regulation_id = REGULATIONS.get(celex, {}).get("name", celex)
+    regulation_id = LEGISLATION.get(celex, {}).get("name", celex)
 
     # The universal parser returns a dict with 'provisions' and 'relations'.
     # Older parsers returned (provisions, relations). Support both.
@@ -67,7 +67,7 @@ def parse_document(html_file: Path, lang: str, celex: str, out_dir: Path) -> Pat
         except Exception:
             raise TypeError("Parser returned unexpected type; expected dict, List or (List, List)")
 
-    regulation_name = REGULATIONS.get(celex, {}).get("name")
+    regulation_name = LEGISLATION.get(celex, {}).get("name")
     out: Dict[str, Any] = {
         "graph_version": "0.1",
         "celex_id": celex,

@@ -2,10 +2,10 @@
 Parser Registry Module (moved to parse/base)
 """
 
-from domain.regulations_catalog import REGULATIONS
+from domain.legislation_catalog import LEGISLATION
 from ..universal_eurlex_parser import parse_eurlex_html
 
-# All currently supported regulations use the universal parser.
-# To assign a custom parser to a regulation, add a "parser" key to its
-# entry in domain/regulations_catalog.py and dispatch on it here.
-PARSER_REGISTRY = {celex: parse_eurlex_html for celex in REGULATIONS}
+# All currently supported legislation uses the universal parser.
+# To assign a custom parser to a legal act, add a "parser" key to its
+# entry in domain/legislation_catalog.py and dispatch on it here.
+PARSER_REGISTRY = {celex: parse_eurlex_html for celex in LEGISLATION}

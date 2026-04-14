@@ -1,6 +1,6 @@
 # CRSS — Compliance Readiness Support System
 
-A GraphRAG system for EU regulatory compliance analysis. It ingests EU regulations (MDR, IVDR, AI Act) from EUR-Lex, builds a knowledge graph in Neo4j with cross-references and embeddings, and provides an AI-powered agent that answers cross-regulation compliance questions grounded in the actual legal text.
+A GraphRAG system for EU regulatory compliance analysis. It ingests EU regulations (MDR, IVDR, AI Act) from EUR-Lex and MDCG guidance documents from PDF, builds a knowledge graph in Neo4j with cross-references and embeddings, and provides an AI-powered agent that answers cross-regulation compliance questions grounded in the actual legal text.
 
 ## Architecture
 
@@ -22,6 +22,13 @@ EUR-Lex HTML ──▶ Parse ──▶ parsed.json ──▶ Neo4j Graph ──�
 | `32017R0745` | MDR 2017/745 | Consolidated (`02017R0745-20260101`) |
 | `32017R0746` | IVDR 2017/746 | Consolidated (`02017R0746-20250110`) |
 | `32024R1689` | EU AI Act 2024/1689 | Legal-basis act |
+
+**Supported MDCG Guidance Documents:**
+
+| ID | Title | Source |
+|---|---|---|
+| `MDCG_2020_3` | MDCG 2020-3 Rev.1 — Significant changes (Article 120 MDR) | PDF |
+| `MDCG_2019_11` | MDCG 2019-11 — Qualification and classification of software (MDR/IVDR) | PDF |
 
 ---
 
@@ -121,6 +128,10 @@ python -m ingestion.run_pipeline --celex 32017R0745 --lang EN
 python -m ingestion.run_pipeline --celex 32017R0746 --lang EN
 python -m ingestion.run_pipeline --celex 32024R1689 --lang EN
 
+# 1b. Parse MDCG guidance documents (PDF)
+python -m ingestion.run_pipeline --celex MDCG_2020_3 --lang EN
+python -m ingestion.run_pipeline --celex MDCG_2019_11 --lang EN
+
 # 2. Load into Neo4j
 python scripts/load_neo4j.py --wipe
 
@@ -148,20 +159,20 @@ python -m ingestion.run_pipeline --celex <CELEX_ID> --lang <LANG>
 
 | Arg | Default | Description |
 |---|---|---|
-| `--celex` | `32017R0745` | CELEX identifier |
+| `--doc` | `32017R0745` | Document identifier (CELEX ID or MDCG ID) |
 | `--lang` | `EN` | Language code |
 
 **Output:**
 
 ```
-data/regulations/<celex>/<lang>/
+data/legislation/<celex>/<lang>/
 ├── raw/raw.html       ← cached; skipped on re-run if present
 └── parsed.json        ← provisions + relations + defined_terms
 ```
 
 If `raw/raw.html` already exists, scraping is skipped. To force a re-scrape, delete the HTML file first.
 
-> **Note:** MDR and IVDR use consolidated versions (current law with all amendments applied). The canonical CELEX key (`32017R0745`, `32017R0746`) stays the same for node IDs, cross-references, and queries. The `source_celex` field in `domain/regulations_catalog.py` controls which EUR-Lex URL is scraped. To update to a newer consolidation, change `source_celex`, delete `raw/raw.html`, and re-run.
+> **Note:** MDR and IVDR use consolidated versions (current law with all amendments applied). The canonical CELEX key (`32017R0745`, `32017R0746`) stays the same for node IDs, cross-references, and queries. The `source_celex` field in `domain/legislation_catalog.py` controls which EUR-Lex URL is scraped. To update to a newer consolidation, change `source_celex`, delete `raw/raw.html`, and re-run.
 
 ### 2. Load into Neo4j — `scripts/load_neo4j.py`
 
@@ -182,9 +193,11 @@ python scripts/load_neo4j.py --celex 32024R1689 32017R0745 --wipe
 
 **What gets created in Neo4j:**
 
-- **Nodes:** `Document`, `Citation`, `Recital`, `Chapter`, `Section`, `Article`, `Paragraph`, `Subparagraph`, `Point`, `Annex`, `AnnexChapter`, `AnnexSection`, `AnnexPoint`, `AnnexSubpoint`, `AnnexBullet`, `DefinedTerm`
+- **Regulation nodes (base label `:Provision`):** `Document`, `Citation`, `Recital`, `Chapter`, `Section`, `Article`, `Paragraph`, `Subparagraph`, `Point`, `Annex`, `AnnexChapter`, `AnnexSection`, `AnnexPoint`, `AnnexSubpoint`, `AnnexBullet`
+- **Guidance nodes (base label `:Guidance`):** `GuidanceDocument`, `GuidanceSection`, `GuidanceSubsection`, `GuidanceParagraph`, `GuidanceChart`
+- **Other nodes:** `DefinedTerm`, `ExternalAct`
 - **Edges:** `HAS_PART` (structural), `CITES` (internal cross-refs), `CITES_EXTERNAL`/`AMENDS` (external acts), `DEFINED_BY` (term → definition provision)
-- **Indexes:** Unique constraints on `Provision.id` and `DefinedTerm.id`; lookup indexes on `Provision.celex`, `Provision.kind`, `DefinedTerm.term_normalized`, `DefinedTerm.category`
+- **Indexes:** Unique constraints on `Provision.id`, `Guidance.id`, and `DefinedTerm.id`; lookup indexes on `.celex`, `.kind` for both base labels; `DefinedTerm.term_normalized`, `DefinedTerm.category`
 
 ### 3. Embed Provisions — `scripts/embed_provisions.py`
 
@@ -192,7 +205,7 @@ python scripts/load_neo4j.py --celex 32024R1689 32017R0745 --wipe
 python scripts/embed_provisions.py
 ```
 
-No arguments. Reads provisions from Neo4j, embeds with `intfloat/multilingual-e5-small` (384 dims), writes the `embedding` property back to each `:Provision` node.
+No arguments. Reads provisions and guidance nodes from Neo4j, embeds with `intfloat/multilingual-e5-small` (384 dims), writes the `embedding` property back to each `:Provision` / `:Guidance` node.
 
 - Prefix: `"passage: "` (asymmetric E5 encoding)
 - Batch: 64 texts per encode call, 500 nodes per Neo4j write
@@ -246,6 +259,8 @@ Runs a retriever test + a full agent test. Requires Neo4j (with embeddings) and 
 python -m ingestion.run_pipeline --celex 32017R0745
 python -m ingestion.run_pipeline --celex 32017R0746
 python -m ingestion.run_pipeline --celex 32024R1689
+python -m ingestion.run_pipeline --celex MDCG_2020_3
+python -m ingestion.run_pipeline --celex MDCG_2019_11
 python scripts/load_neo4j.py --wipe
 python scripts/embed_provisions.py
 python -m canonicalization.crosslinker --cleanup
@@ -263,14 +278,14 @@ python -m canonicalization.crosslinker --cleanup
 ### Force re-scrape from EUR-Lex
 
 ```bash
-rm data/regulations/32024R1689/EN/raw/raw.html
-python -m ingestion.run_pipeline --celex 32024R1689
+rm data/legislation/32024R1689/EN/raw/raw.html
+python -m ingestion.run_pipeline --doc 32024R1689
 ```
 
 ### Validate parsed output
 
 ```bash
-python scripts/analyze_graphrag.py data/regulations/32024R1689/EN/parsed.json
+python scripts/analyze_graphrag.py data/legislation/32024R1689/EN/parsed.json
 ```
 
 ### Verify Neo4j graph integrity
@@ -286,8 +301,9 @@ python scripts/_verify_neo4j.py
 ```
 application/          Agent (Mistral LLM + retrieval orchestration)
 canonicalization/     Crosslinker (inter-regulation CITES resolution)
-data/regulations/     Scraped HTML + parsed JSON (gitignored)
-domain/               Regulations catalog, ontology, graph schema
+data/legislation/     Scraped HTML + parsed JSON (gitignored)
+data/guidance/        MDCG guidance PDFs + parsed JSON (gitignored)
+domain/               Legislation catalog, MDCG catalog, ontology, graph schema
   ontology/           Cross-reference patterns, defined terms, EUR-Lex HTML patterns
   schema/             Graph schema (JSON)
 infrastructure/       Embeddings (sentence-transformers) + Neo4j driver

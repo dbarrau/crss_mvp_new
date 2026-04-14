@@ -32,6 +32,15 @@ ACTOR_SIGNALS = (
 # to avoid false positives where a definition merely mentions such a body.
 BODY_TERM_KEYWORDS = ("authority", "body", "office", "board")
 
+# Maps CELEX IDs to their official definitions article.
+# Used to distinguish formal (regulation-wide) definitions from contextual
+# (scoped) ones that appear elsewhere in the text.
+DEFINITIONS_ARTICLES: dict[str, dict[str, str]] = {
+    "32017R0745": {"article_id": "32017R0745_art_2",  "display_ref": "Article 2"},
+    "32017R0746": {"article_id": "32017R0746_art_2",  "display_ref": "Article 2"},
+    "32024R1689": {"article_id": "32024R1689_art_3",  "display_ref": "Article 3"},
+}
+
 
 def classify_category(term: str, definition_body: str) -> str:
     """Return the semantic category for a defined term: 'actor', 'body', or 'other'.

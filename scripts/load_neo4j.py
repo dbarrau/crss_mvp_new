@@ -2,19 +2,19 @@
 """
 scripts/load_neo4j.py
 ======================
-CLI entry-point: load one or more EU regulation ``parsed.json`` files
+CLI entry-point: load EU regulation and MDCG guidance ``parsed.json`` files
 into a running Neo4j instance.
 
 Quick start
 -----------
-# Load both regulations into the default local Neo4j (bolt://localhost:7687):
+# Load all regulations and guidance documents:
   python scripts/load_neo4j.py
 
 # Load only the AI Act, wiping previous data first:
-  python scripts/load_neo4j.py --celex 32024R1689 --wipe
+  python scripts/load_neo4j.py --doc 32024R1689 --wipe
 
-# Point to a remote instance via environment variables:
-  NEO4J_URI=bolt://myserver:7687 NEO4J_PASSWORD=secret python scripts/load_neo4j.py
+# Load only MDCG documents:
+  python scripts/load_neo4j.py --doc MDCG_2020_3
 
 # Show all options:
   python scripts/load_neo4j.py --help
@@ -52,11 +52,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ── project layout ───────────────────────────────────────────────────────────
-DATA_DIR = Path(__file__).parent.parent / "data" / "regulations"
+DATA_DIR     = Path(__file__).parent.parent / "data" / "legislation"
+GUIDANCE_DIR = Path(__file__).parent.parent / "data" / "guidance"
 
 
 def discover_parsed_files(lang: str) -> list[Path]:
-    return sorted(DATA_DIR.glob(f"*/{lang}/parsed.json"))
+    files = sorted(DATA_DIR.glob(f"*/{lang}/parsed.json"))
+    if GUIDANCE_DIR.is_dir():
+        files += sorted(GUIDANCE_DIR.glob(f"*/{lang}/parsed.json"))
+    return files
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -69,15 +73,17 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=__doc__,
     )
     p.add_argument(
-        "--celex",
+        "--doc",
         nargs="+",
-        metavar="CELEX",
+        metavar="DOC",
         help=(
-            "One or more CELEX IDs to load "
-            "(e.g. 32024R1689 32017R0745).  "
-            "Omit to load ALL discovered regulations."
+            "One or more document identifiers to load "
+            "(e.g. 32024R1689 32017R0745 MDCG_2020_3).  "
+            "Omit to load ALL discovered documents."
         ),
     )
+    # Deprecated alias kept for backward compatibility
+    p.add_argument("--celex", dest="doc", nargs="+", help=argparse.SUPPRESS)
     p.add_argument(
         "--lang",
         default="EN",
@@ -117,12 +123,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def resolve_files(args: argparse.Namespace) -> list[Path]:
-    if args.celex:
+    if args.doc:
         files: list[Path] = []
-        for celex in args.celex:
-            p = DATA_DIR / celex / args.lang / "parsed.json"
+        for doc_id in args.doc:
+            p = DATA_DIR / doc_id / args.lang / "parsed.json"
             if not p.exists():
-                logger.error("File not found: %s", p)
+                # Try guidance directory
+                p = GUIDANCE_DIR / doc_id / args.lang / "parsed.json"
+            if not p.exists():
+                logger.error("File not found for: %s", doc_id)
                 sys.exit(1)
             files.append(p)
         return files
@@ -143,8 +152,8 @@ def main() -> None:
     args   = parser.parse_args()
     files  = resolve_files(args)
 
-    celex_list = [f.parts[-3] for f in files]
-    print(f"Regulations to load : {celex_list}")
+    doc_list = [f.parts[-3] for f in files]
+    print(f"Documents to load   : {doc_list}")
     print(f"Neo4j               : {args.uri}  db={args.database}")
     print(f"Wipe before load    : {args.wipe}")
     print()
