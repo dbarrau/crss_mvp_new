@@ -174,7 +174,7 @@ class GraphRetriever:
     then expand top-k results via Cypher graph traversal.
     """
 
-    def __init__(self, model_name: str = "intfloat/multilingual-e5-small"):
+    def __init__(self, model_name: str = "intfloat/multilingual-e5-base"):
         self._model = SentenceTransformer(model_name)
         uri = _normalize_neo4j_uri(
             os.environ.get("NEO4J_URI", "bolt://localhost:7687")

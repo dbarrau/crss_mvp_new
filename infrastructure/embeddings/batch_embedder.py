@@ -28,12 +28,13 @@ load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=False)
 logger = logging.getLogger(__name__)
 
 PASSAGE_PREFIX = "passage: "
-MODEL_NAME = "intfloat/multilingual-e5-small"
-DIMENSIONS = 384
+MODEL_NAME = "intfloat/multilingual-e5-base"
+DIMENSIONS = 768
 
 EMBED_KINDS = {
     "article", "paragraph", "subparagraph", "point", "roman_item",
     "recital", "section",
+    "chapter", "annex_part",
     "annex", "annex_section", "annex_subsection",
     "annex_point", "annex_subpoint", "annex_bullet",
     # Guidance (MDCG)
@@ -66,11 +67,13 @@ def run(model_name: str = MODEL_NAME, batch_size: int = 64) -> int:
         rows = s.run(
             "MATCH (n:Provision) "
             "WHERE n.text_for_analysis IS NOT NULL AND n.kind IN $kinds "
-            "RETURN n.id AS id, n.text_for_analysis AS text "
+            "RETURN n.id AS id, n.text_for_analysis AS text, "
+            "       n.display_path AS display_path "
             "UNION ALL "
             "MATCH (n:Guidance) "
             "WHERE n.text_for_analysis IS NOT NULL AND n.kind IN $kinds "
-            "RETURN n.id AS id, n.text_for_analysis AS text",
+            "RETURN n.id AS id, n.text_for_analysis AS text, "
+            "       n.display_path AS display_path",
             kinds=list(EMBED_KINDS),
         ).data()
 
@@ -82,7 +85,10 @@ def run(model_name: str = MODEL_NAME, batch_size: int = 64) -> int:
     logger.info("Embedding %d provisions with %s …", len(rows), model_name)
 
     ids = [r["id"] for r in rows]
-    texts = [PASSAGE_PREFIX + r["text"] for r in rows]
+    texts = [
+        PASSAGE_PREFIX + (r["display_path"] + ": " if r.get("display_path") else "") + r["text"]
+        for r in rows
+    ]
 
     embeddings = model.encode(
         texts,

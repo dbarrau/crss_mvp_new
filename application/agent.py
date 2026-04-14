@@ -88,8 +88,8 @@ potential conflicts.
 domains (e.g. "High-Risk AI" + "Class IIa medical device"), address each \
 applicable framework even if one is less prominent in the question.
 - Distinguish binding regulation from non-binding guidance: provisions tagged \
-[GUIDANCE] are interpretive aids, not law. They carry persuasive but not legal \
-authority.
+[LEGISLATION] are binding law; provisions tagged [GUIDANCE] are interpretive \
+aids, not law. They carry persuasive but not legal authority.
 
 LEGAL HIERARCHY RULES (critical):
 
@@ -154,7 +154,7 @@ the provision reference shown in the context header (e.g. [1] Article 2)
 # Truncate rolled-up article/annex body to prevent definition-heavy articles
 # (e.g. Article 2 with 65 definitions) from flooding the context window and
 # crowding out actually-relevant children.
-_BODY_LIMIT = 2000
+_BODY_LIMIT = 4000
 
 # Maximum number of definition terms to inject into the context.
 _MAX_DEFINITIONS = 5
@@ -376,7 +376,7 @@ def _detect_defined_terms(
     return matched[:_MAX_DEFINITIONS]
 
 
-_MAX_POINTER_REFS = 5
+_MAX_POINTER_REFS = 10
 
 
 def _normalize_ref(raw: str) -> str:
@@ -456,8 +456,8 @@ def _format_context(provisions: list[dict]) -> str:
         regulation = p.get("regulation", "")
         celex = p.get("celex", "")
         is_guidance = any(celex.startswith(pfx) for pfx in _GUIDANCE_CELEX_PREFIXES)
-        guidance_tag = " [GUIDANCE]" if is_guidance else ""
-        header = f"[{i}] {p.get('article_ref', 'Unknown')} ({regulation}){guidance_tag}"
+        layer_tag = " [GUIDANCE]" if is_guidance else " [LEGISLATION]"
+        header = f"[{i}] {p.get('article_ref', 'Unknown')} ({regulation}){layer_tag}"
         path = p.get("article_path", "")
         if path:
             header += f"\n    Path: {path}"
@@ -476,7 +476,7 @@ def _format_context(provisions: list[dict]) -> str:
         for c in children:
             ref = c.get("ref") or c.get("kind", "")
             is_match = bool(matched_leaf and c.get("id") == matched_leaf)
-            limit = 1200 if is_match else 600
+            limit = 1200 if is_match else 1000
             text = (c.get("raw_text") or c.get("text") or "")
             if len(text) > limit:
                 cut = text[:limit]
@@ -502,7 +502,7 @@ def _format_context(provisions: list[dict]) -> str:
             is_xreg = c.get("id") in cross_reg_ids
             # Give more text budget to cross-regulation citations;
             # internal citations also need room for substantive annex content.
-            limit = 500 if is_xreg else 800
+            limit = 1000 if is_xreg else 1000
             text = (c.get("text") or "")[:limit]
             if text:
                 tag = " [CROSS-REG]" if is_xreg else ""
@@ -751,18 +751,31 @@ def ask(question: str, retriever, k: int = 20) -> str:
         len(provisions), len(definitions), len(context),
     )
 
-    response = client.chat.complete(
-        model=os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": (
-                    f"REGULATORY CONTEXT:\n{context}\n\n"
-                    f"QUESTION: {question}"
-                ),
-            },
-        ],
-        temperature=0.1,
-    )
-    return response.choices[0].message.content
+    import time
+
+    _MAX_RETRIES = 4
+    _messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": (
+                f"REGULATORY CONTEXT:\n{context}\n\n"
+                f"QUESTION: {question}"
+            ),
+        },
+    ]
+    for attempt in range(_MAX_RETRIES):
+        try:
+            response = client.chat.complete(
+                model=os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
+                messages=_messages,
+                temperature=0.1,
+            )
+            return response.choices[0].message.content
+        except Exception as exc:
+            if "429" in str(exc) and attempt < _MAX_RETRIES - 1:
+                wait = 2 ** attempt  # 1s, 2s, 4s
+                logger.warning("Rate-limited (429). Retrying in %ds…", wait)
+                time.sleep(wait)
+            else:
+                raise
