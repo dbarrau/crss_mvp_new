@@ -3,14 +3,15 @@
 
 Usage::
 
-    python scripts/demo_server.py          # http://localhost:5050
-    python scripts/demo_server.py --port 8080
+    python demo/server.py          # http://localhost:5050
+    python demo/server.py --port 8080
 """
 import sys
 from pathlib import Path
 
 # Ensure project root is importable (same pattern as chat.py)
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent))  # for export module
 
 import argparse
 import logging
@@ -23,6 +24,7 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
 logging.basicConfig(level=logging.WARNING)
 
 from application.agent import ask
+from export import generate_markdown
 from retrieval.graph_retriever import GraphRetriever
 
 # ---------------------------------------------------------------------------
@@ -90,6 +92,46 @@ def api_debug():
         return jsonify({"provisions": items})
     except Exception as exc:
         logging.exception("Error in retrieve()")
+        return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Export endpoints
+# ---------------------------------------------------------------------------
+
+def _parse_conversation(body: dict) -> list[dict] | None:
+    """Validate and return the conversation list, or *None* on error."""
+    conv = body.get("conversation")
+    if not isinstance(conv, list) or not conv:
+        return None
+    # Keep only well-formed entries
+    return [
+        {"role": m["role"], "content": m["content"]}
+        for m in conv
+        if isinstance(m, dict)
+        and m.get("role") in ("user", "agent")
+        and isinstance(m.get("content"), str)
+    ] or None
+
+
+@app.route("/api/export/md", methods=["POST"])
+def api_export_md():
+    body = request.get_json(silent=True) or {}
+    conversation = _parse_conversation(body)
+    if not conversation:
+        return jsonify({"error": "conversation is required (non-empty list)"}), 400
+    try:
+        md_text = generate_markdown(conversation)
+        response = app.response_class(
+            md_text,
+            mimetype="text/markdown; charset=utf-8",
+        )
+        response.headers["Content-Disposition"] = (
+            'attachment; filename="crss_demo_report.md"'
+        )
+        return response
+    except Exception as exc:
+        logging.exception("Error generating Markdown")
         return jsonify({"error": str(exc)}), 500
 
 

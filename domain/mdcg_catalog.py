@@ -101,6 +101,17 @@ MDCG_DOCUMENTS = {
         "pdf_filename": "mdcg_2019_5_en.pdf",
         "download_url": None,  # TODO: Add download URL
     },
+    "MDCG_2025_6": {
+        "name": "MDCG 2025-6",
+        "title": (
+            "Interplay between the Medical DevicesRegulation (MDR) & In vitro Diagnostic"
+            "Medical Devices Regulation (IVDR) andthe Artificial Intelligence Act (AIA)"
+        ),
+        "type": "guidance",
+        "jurisdiction": "EU",
+        "pdf_filename": "mdcg_2025_6_en.pdf",
+        "download_url": "https://health.ec.europa.eu/document/download/b78a17d7-e3cd-4943-851d-e02a2f22bbb4_en?filename=mdcg_2025-6_en.pdf",
+    },
 
 # ═══════════════════════════════════════════════════════════════════════════
 # TIER 2: Post-market + classification guidance

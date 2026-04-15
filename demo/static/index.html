@@ -257,6 +257,30 @@
     transition: background 0.2s;
   }
   .welcome .example:hover { background: #dce3f0; }
+
+  /* ── Export button ── */
+  .export-btn {
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.25);
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: background 0.2s, opacity 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .export-btn:hover { background: rgba(255,255,255,0.25); }
+  .export-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .export-btn svg { width: 14px; height: 14px; fill: currentColor; }
+  .export-divider {
+    width: 1px;
+    height: 22px;
+    background: rgba(255,255,255,0.18);
+    margin: 0 4px;
+  }
 </style>
 </head>
 <body>
@@ -270,6 +294,11 @@
     <span class="k-label">k=</span>
     <input class="k-input" id="k-val" type="number" min="1" max="50" value="5">
     <button class="toggle-btn" id="debug-toggle">Debug</button>
+    <div class="export-divider"></div>
+    <button class="export-btn" id="export-md" disabled title="Export conversation as Markdown">
+      <svg viewBox="0 0 16 16"><path d="M2 3h12v10H2V3zm2 2v6l2-3 2 3V5m3 0v4m0 0l1.5-2M11 9l-1.5-2"/></svg>
+      .md
+    </button>
   </div>
 </header>
 
@@ -303,6 +332,11 @@ const welcome = document.getElementById('welcome');
 
 let debugMode = false;
 let busy = false;
+const conversationHistory = [];  // {role, content} — raw text
+
+function enableExportButtons() {
+  document.getElementById('export-md').disabled = false;
+}
 
 debugToggle.addEventListener('click', () => {
   debugMode = !debugMode;
@@ -369,6 +403,7 @@ async function sendQuestion() {
 
   // Show user message
   addMessage('user', escapeHtml(q));
+  conversationHistory.push({role: 'user', content: q});
   input.value = '';
   input.style.height = 'auto';
 
@@ -416,6 +451,8 @@ async function sendQuestion() {
       addMessage('agent', '<em>Error: ' + escapeHtml(data.error) + '</em>');
     } else {
       addMessage('agent', marked.parse(data.answer));
+      conversationHistory.push({role: 'agent', content: data.answer});
+      enableExportButtons();
     }
   } catch (err) {
     removeTyping();
@@ -426,6 +463,36 @@ async function sendQuestion() {
   sendBtn.disabled = false;
   input.focus();
 }
+
+// ── Export helper ──
+async function exportConversation() {
+  if (!conversationHistory.length) return;
+  try {
+    const res = await fetch('/api/export/md', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({conversation: conversationHistory}),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({error: 'Export failed'}));
+      alert('Export error: ' + (err.error || res.statusText));
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'crss_demo_report.md';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert('Export failed — is the server running?');
+  }
+}
+
+document.getElementById('export-md').addEventListener('click', exportConversation);
 </script>
 </body>
 </html>
