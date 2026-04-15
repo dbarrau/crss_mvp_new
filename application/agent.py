@@ -16,6 +16,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+from domain.mdcg_catalog import MDCG_DOCUMENTS as _MDCG_DOCS
 from domain.ontology.defined_terms import DEFINITIONS_ARTICLES as _DEF_ARTICLES
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
@@ -164,9 +165,6 @@ _REG_NAME_TO_CELEX: dict[str, str] = {
     "EU AI Act": "32024R1689",
     "MDR 2017/745": "32017R0745",
     "IVDR 2017/746": "32017R0746",
-    # MDCG guidance documents
-    "MDCG 2020-3": "MDCG_2020_3",
-    "MDCG 2019-11": "MDCG_2019_11",
 }
 
 # Regulation name patterns for detecting which regulations a question targets.
@@ -183,17 +181,45 @@ _REG_PATTERNS: dict[str, list[str]] = {
         "ivdr", "2017/746", "in vitro",
         "class a ", "class b ", "class c ", "class d ",
     ],
-    # MDCG guidance documents
-    "MDCG 2020-3": [
-        "mdcg 2020-3", "mdcg 2020/3", "significant changes",
-        "significant change", "article 120",
+}
+
+# Extra keyword patterns for MDCG documents that benefit from implicit topic
+# detection (beyond their ID).  Keyed by catalog ID (e.g. "MDCG_2020_3").
+_MDCG_EXTRA_PATTERNS: dict[str, list[str]] = {
+    "MDCG_2020_3": [
+        "significant changes", "significant change", "article 120",
     ],
-    "MDCG 2019-11": [
-        "mdcg 2019-11", "mdcg 2019/11", "software qualification",
-        "software classification", "mdsw",
+    "MDCG_2019_11": [
+        "software qualification", "software classification", "mdsw",
         "software update", "software change", "algorithm",
     ],
 }
+
+
+def _build_mdcg_mappings() -> None:
+    """Auto-register every MDCG catalog entry in the agent lookup dicts."""
+    for celex_key in _MDCG_DOCS:
+        # Derive a human-readable name from the catalog key:
+        #   MDCG_2020_3  → "MDCG 2020-3"
+        #   MDCG_2025_6  → "MDCG 2025-6"
+        parts = celex_key.split("_")        # ["MDCG", "2020", "3"]
+        human_name = f"{parts[0]} {parts[1]}-{'_'.join(parts[2:])}"
+
+        _REG_NAME_TO_CELEX[human_name] = celex_key
+
+        # Base patterns: the dash and slash forms of the identifier
+        dash_form = human_name.lower()                     # "mdcg 2020-3"
+        slash_form = dash_form.replace("-", "/")           # "mdcg 2020/3"
+        patterns: list[str] = [dash_form, slash_form]
+
+        # Merge any manually-curated extra keywords
+        extras = _MDCG_EXTRA_PATTERNS.get(celex_key, [])
+        patterns.extend(extras)
+
+        _REG_PATTERNS[human_name] = patterns
+
+
+_build_mdcg_mappings()
 
 # Regex for detecting explicit provision references in a question.
 # Matches "Annex I", "Annex XIV", "Article 5", "Article 26a", "Recital 47".
