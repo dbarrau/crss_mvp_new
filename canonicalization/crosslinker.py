@@ -2,8 +2,12 @@
 canonicalization/crosslinker.py
 ===============================
 Resolve CITES_EXTERNAL references whose target regulation is already loaded
-in the Neo4j graph.  Creates concrete **CITES** edges between existing
-Provision nodes — never creates new nodes.
+in the Neo4j graph. Creates concrete edges between existing graph nodes:
+
+- legislation source -> **CITES** -> Provision
+- guidance source -> **INTERPRETS** -> Provision
+
+Never creates new Provision nodes.
 
 After resolving, cleans up stale ExternalAct stub nodes and CITES_EXTERNAL
 edges that correspond to loaded regulations.
@@ -53,12 +57,12 @@ def discover_resolvable_refs() -> list[dict[str, Any]]:
     Scans both ``data/legislation/`` and ``data/guidance/`` directories.
     """
     results: list[dict[str, Any]] = []
-    dirs_to_scan: list[Path] = []
+    dirs_to_scan: list[tuple[Path, str]] = []
     if _DATA_ROOT.is_dir():
-        dirs_to_scan.extend(sorted(_DATA_ROOT.iterdir()))
+        dirs_to_scan.extend((path, "legislation") for path in sorted(_DATA_ROOT.iterdir()))
     if _GUIDANCE_ROOT.is_dir():
-        dirs_to_scan.extend(sorted(_GUIDANCE_ROOT.iterdir()))
-    for celex_dir in dirs_to_scan:
+        dirs_to_scan.extend((path, "guidance") for path in sorted(_GUIDANCE_ROOT.iterdir()))
+    for celex_dir, source_family in dirs_to_scan:
         parsed = celex_dir / "EN" / "parsed.json"
         if not parsed.exists():
             continue
@@ -72,12 +76,13 @@ def discover_resolvable_refs() -> list[dict[str, Any]]:
             number = props.get("number", "")
             target_celex = CELEX_BY_NUMBER.get(number)
             if target_celex is None:
-                results.append({**rel, "_resolution": "skip"})
+                results.append({**rel, "_resolution": "skip", "_source_family": source_family})
             elif target_celex == source_celex:
                 # Self-reference — skip (already handled as internal CITES)
                 continue
             else:
                 results.append({**rel, "_resolution": "resolvable",
+                                "_source_family": source_family,
                                 "_target_celex": target_celex})
     return results
 
@@ -221,28 +226,49 @@ def verify_targets(tx, target_ids: set[str]) -> set[str]:
 # 5. Write CITES edges (idempotent via MERGE, never creates nodes)
 # ---------------------------------------------------------------------------
 
-def write_edges(tx, edges: list[dict[str, Any]]) -> int:
-    """MERGE CITES edges between existing nodes.
+def write_edges(tx, edges: list[dict[str, Any]]) -> dict[str, int]:
+    """MERGE materialized cross-document edges between existing nodes.
 
-    Source may be either a ``:Provision`` or ``:Guidance`` node (MDCG
-    guidance citing regulations).  Targets are always ``:Provision``.
+    Legislation sources produce ``:CITES`` edges.
+    Guidance sources produce ``:INTERPRETS`` edges.
+    Targets are always ``:Provision`` nodes.
     """
     if not edges:
-        return 0
-    result = tx.run(
-        "UNWIND $batch AS e "
-        "OPTIONAL MATCH (s1:Provision {id: e.source}) "
-        "OPTIONAL MATCH (s2:Guidance  {id: e.source}) "
-        "WITH e, coalesce(s1, s2) AS s "
-        "WHERE s IS NOT NULL "
-        "MATCH (t:Provision {id: e.target}) "
-        "MERGE (s)-[r:CITES]->(t) "
-        "  ON CREATE SET r.resolved_from = 'crosslinker', "
-        "                r.ref_text = e.ref_text "
-        "RETURN count(r) AS c",
-        batch=edges,
-    )
-    return result.single()["c"]
+        return {"cites": 0, "interprets": 0}
+
+    cites = [e for e in edges if e["rel_type"] == "CITES"]
+    interprets = [e for e in edges if e["rel_type"] == "INTERPRETS"]
+    written = {"cites": 0, "interprets": 0}
+
+    if cites:
+        result = tx.run(
+            "UNWIND $batch AS e "
+            "MATCH (s:Provision {id: e.source}) "
+            "MATCH (t:Provision {id: e.target}) "
+            "MERGE (s)-[r:CITES]->(t) "
+            "  ON CREATE SET r.resolved_from = 'crosslinker', "
+            "                r.ref_text = e.ref_text "
+            "RETURN count(r) AS c",
+            batch=cites,
+        )
+        written["cites"] = result.single()["c"]
+
+    if interprets:
+        result = tx.run(
+            "UNWIND $batch AS e "
+            "MATCH (s:Guidance {id: e.source}) "
+            "MATCH (t:Provision {id: e.target}) "
+            "MERGE (s)-[r:INTERPRETS]->(t) "
+            "  ON CREATE SET r.resolved_from = 'crosslinker', "
+            "                r.ref_text = e.ref_text, "
+            "                r.authority = 'persuasive', "
+            "                r.document_type = 'guidance' "
+            "RETURN count(r) AS c",
+            batch=interprets,
+        )
+        written["interprets"] = result.single()["c"]
+
+    return written
 
 
 # ---------------------------------------------------------------------------
@@ -307,7 +333,8 @@ def crosslink(dry_run: bool = False, cleanup: bool = False) -> dict[str, int]:
     skipped = sum(1 for r in refs if r["_resolution"] == "skip")
     resolvable = [r for r in refs if r["_resolution"] == "resolvable"]
 
-    # Build candidate edges — all are CITES (provision or document-level)
+    # Build candidate edges — legislation sources stay CITES, guidance
+    # sources materialize as INTERPRETS.
     candidate_edges: list[dict[str, Any]] = []
     provision_targets: set[str] = set()
     document_targets: set[str] = set()
@@ -316,6 +343,7 @@ def crosslink(dry_run: bool = False, cleanup: bool = False) -> dict[str, int]:
         source = rel["source"]
         target_celex = rel["_target_celex"]
         ref_text = rel.get("properties", {}).get("ref_text", "")
+        rel_type = "INTERPRETS" if rel.get("_source_family") == "guidance" else "CITES"
 
         parts = parse_ref_text(ref_text)
         target_id = build_target_id(target_celex, parts)
@@ -333,6 +361,7 @@ def crosslink(dry_run: bool = False, cleanup: bool = False) -> dict[str, int]:
                 "alternatives": alts,
                 "fallback": doc_fallback,
                 "ref_text": ref_text,
+                "rel_type": rel_type,
             })
         else:
             doc_target = f"{target_celex}_document"
@@ -342,6 +371,7 @@ def crosslink(dry_run: bool = False, cleanup: bool = False) -> dict[str, int]:
                 "target": doc_target,
                 "fallback": None,
                 "ref_text": ref_text,
+                "rel_type": rel_type,
             })
 
     # Connect to Neo4j, verify targets, write edges
@@ -353,18 +383,21 @@ def crosslink(dry_run: bool = False, cleanup: bool = False) -> dict[str, int]:
     driver = GraphDatabase.driver(uri, auth=(user, password))
     provision_matched = 0
     document_fallback = 0
+    written = {"cites": 0, "interprets": 0}
 
     try:
         with driver.session(database=database) as session:
             # Reset previous crosslinker output so re-runs are idempotent
             if not dry_run:
                 reset = session.run(
-                    "MATCH ()-[r:CITES {resolved_from: 'crosslinker'}]->() "
+                    "MATCH ()-[r]->() "
+                    "WHERE type(r) IN ['CITES', 'INTERPRETS'] "
+                    "  AND r.resolved_from = 'crosslinker' "
                     "DELETE r RETURN count(r) AS c"
                 )
                 reset_count = reset.single()["c"]
                 if reset_count:
-                    logger.info("Cleared %d stale crosslinker CITES edges.", reset_count)
+                    logger.info("Cleared %d stale crosslinker materialized edges.", reset_count)
 
             all_targets = provision_targets | document_targets
             existing = session.execute_read(verify_targets, all_targets)
@@ -397,7 +430,6 @@ def crosslink(dry_run: bool = False, cleanup: bool = False) -> dict[str, int]:
                         edge["target"], edge.get("fallback", "—"),
                     )
 
-            written = 0
             if not dry_run and final_edges:
                 written = session.execute_write(write_edges, final_edges)
 
@@ -413,16 +445,20 @@ def crosslink(dry_run: bool = False, cleanup: bool = False) -> dict[str, int]:
     summary = {
         "provision_level": provision_matched,
         "document_level": document_fallback,
-        "edges_written": written if not dry_run else 0,
+        "cites_written": written["cites"] if not dry_run else 0,
+        "interprets_written": written["interprets"] if not dry_run else 0,
+        "edges_written": (written["cites"] + written["interprets"]) if not dry_run else 0,
         "skipped_not_in_catalog": skipped,
         "total_cites_external": len(refs),
         **cleanup_stats,
     }
 
     print("\n=== Crosslinker Summary ===")
-    print(f"  {'CITES (provision-level):':<40} {provision_matched:>4}")
-    print(f"  {'CITES (document-level fallback):':<40} {document_fallback:>4}")
-    print(f"  {'Edges written:':<40} {summary['edges_written']:>4}")
+    print(f"  {'Resolved (provision-level):':<40} {provision_matched:>4}")
+    print(f"  {'Resolved (document-level fallback):':<40} {document_fallback:>4}")
+    print(f"  {'CITES written:':<40} {summary['cites_written']:>4}")
+    print(f"  {'INTERPRETS written:':<40} {summary['interprets_written']:>4}")
+    print(f"  {'Edges written total:':<40} {summary['edges_written']:>4}")
     print(f"  {'Skipped (not in catalog):':<40} {skipped:>4}")
     print(f"  {'Total CITES_EXTERNAL processed:':<40} {len(refs):>4}")
     if cleanup and not dry_run:
@@ -443,7 +479,7 @@ def crosslink(dry_run: bool = False, cleanup: bool = False) -> dict[str, int]:
 if __name__ == "__main__":
     import argparse
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    parser = argparse.ArgumentParser(description="Resolve CITES_EXTERNAL → CITES")
+    parser = argparse.ArgumentParser(description="Resolve CITES_EXTERNAL → CITES/INTERPRETS")
     parser.add_argument("--dry-run", action="store_true", help="Preview only")
     parser.add_argument("--cleanup", action="store_true",
                         help="Delete stale ExternalAct nodes and legacy edge types")

@@ -159,6 +159,8 @@ _BODY_LIMIT = 4000
 
 # Maximum number of definition terms to inject into the context.
 _MAX_DEFINITIONS = 5
+_MAX_RELATED_DEFINITIONS = 5
+_RELATED_DEFINITION_SCAN_LIMIT = 3
 
 # Regulation name → CELEX lookup for multi-regulation retrieval.
 _REG_NAME_TO_CELEX: dict[str, str] = {
@@ -400,6 +402,87 @@ def _detect_defined_terms(
                 break
 
     return matched[:_MAX_DEFINITIONS]
+
+
+def _expand_definitions_from_provisions(
+    provisions: list[dict],
+    retriever,
+    existing: list[dict],
+    target_celexes: set[str] | None = None,
+) -> list[dict]:
+    """Add formal definitions for defined terms mentioned in retrieved context.
+
+    This captures cases where the user asks about a provision that relies on a
+    formally defined concept without naming that concept explicitly in the
+    question. For example, Article 25(1)(b) uses "substantial modification",
+    whose formal definition lives in Article 3(23).
+    """
+    try:
+        term_index = retriever.get_defined_terms_index()
+    except Exception:
+        logger.debug(
+            "Could not load defined-terms index for context expansion.",
+            exc_info=True,
+        )
+        return existing
+
+    seen_terms = {d.get("term", "").lower() for d in existing}
+    expanded = list(existing)
+
+    text_parts: list[str] = []
+    for prov in provisions[:_RELATED_DEFINITION_SCAN_LIMIT]:
+        article_text = prov.get("article_text") or ""
+        if article_text:
+            text_parts.append(article_text)
+        matched_leaf = prov.get("matched_leaf_id")
+        if not matched_leaf:
+            continue
+        for child in prov.get("children") or []:
+            if child.get("id") != matched_leaf:
+                continue
+            child_text = child.get("raw_text") or child.get("text") or ""
+            if child_text:
+                text_parts.append(child_text)
+            break
+
+    context_text = "\n".join(text_parts).lower()
+    if not context_text:
+        return expanded
+
+    added = 0
+    for term_lower, _tn in sorted(
+        term_index.items(), key=lambda x: len(x[0]), reverse=True,
+    ):
+        if term_lower in seen_terms:
+            continue
+        if not re.search(r"\b" + re.escape(term_lower) + r"\b", context_text):
+            continue
+
+        results = retriever.find_by_term(term_lower)
+        if target_celexes:
+            filtered = [r for r in results if r.get("celex") in target_celexes]
+            if filtered:
+                results = filtered
+        formal = [r for r in results if r.get("definition_type") == "formal"]
+        if formal:
+            results = formal
+        if not results:
+            continue
+
+        expanded.append(results[0])
+        seen_terms.add(term_lower)
+        added += 1
+        if added >= _MAX_RELATED_DEFINITIONS:
+            break
+
+    if added:
+        logger.info(
+            "Expanded context with %d related definition(s): %s",
+            added,
+            ", ".join(d.get("term", "?") for d in expanded[len(existing):]),
+        )
+
+    return expanded
 
 
 _MAX_POINTER_REFS = 10
@@ -676,6 +759,13 @@ def ask(question: str, retriever, k: int = 20) -> str:
 
     provisions = retriever.retrieve(
         question, k=k, target_celexes=target_celexes, query_vec=hyde_vec,
+    )
+
+    definitions = _expand_definitions_from_provisions(
+        provisions,
+        retriever,
+        definitions,
+        target_celexes=target_celexes,
     )
 
     # --- 5. Merge: inject direct-lookup results that vector search missed ---
