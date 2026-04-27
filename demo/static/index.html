@@ -235,17 +235,53 @@
     color: var(--text-muted);
   }
   .msg.agent strong { font-weight: 600; }
+  .msg.agent table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.87em; }
+  .msg.agent th, .msg.agent td { border: 1px solid #d1d9e6; padding: 5px 10px; text-align: left; }
+  .msg.agent th { background: #eef2f8; font-weight: 600; }
+  .msg.agent tr:nth-child(even) td { background: #f8f9fc; }
+  .msg.agent h1:first-child, .msg.agent h2:first-child, .msg.agent h3:first-child { margin-top: 0; }
+  .msg.agent p:last-child { margin-bottom: 0; }
+
+  /* ── Copy button ── */
+  .msg.agent { position: relative; padding-bottom: 36px; }
+  .copy-btn {
+    position: absolute;
+    bottom: 10px;
+    right: 14px;
+    background: none;
+    border: 1px solid #d1d9e6;
+    border-radius: 5px;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    padding: 3px 9px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s, background 0.15s;
+  }
+  .msg.agent:hover .copy-btn { opacity: 1; }
+  .copy-btn:hover { background: var(--accent); color: var(--primary); }
+  .copy-btn.copied { color: #2a8a4c; border-color: #2a8a4c; opacity: 1; }
 
   /* ── Welcome ── */
   .welcome {
     text-align: center;
     margin: auto;
     color: var(--text-muted);
-    max-width: 500px;
+    max-width: 540px;
   }
   .welcome h2 { font-size: 1.15rem; color: var(--primary); margin-bottom: 8px; }
   .welcome p { font-size: 0.88rem; line-height: 1.5; }
-  .welcome .examples { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .welcome .reg-pills {
+    display: flex; flex-wrap: wrap; justify-content: center;
+    gap: 6px; margin: 12px 0 4px;
+  }
+  .welcome .reg-pill {
+    background: var(--primary); color: #fff;
+    border-radius: 20px; padding: 3px 11px;
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.3px;
+    opacity: 0.85;
+  }
+  .welcome .examples { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
   .welcome .example {
     background: var(--accent);
     border: 1px solid #d1d9e6;
@@ -254,9 +290,80 @@
     font-size: 0.84rem;
     text-align: left;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: background 0.2s, border-color 0.2s;
+    display: flex; align-items: flex-start; gap: 8px;
   }
-  .welcome .example:hover { background: #dce3f0; }
+  .welcome .example::before { content: '›'; color: var(--primary-light); font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+  .welcome .example:hover { background: #dce3f0; border-color: #b0bfd4; }
+
+  /* ── Reasoning / pipeline progress panel ── */
+  .reasoning-panel {
+    align-self: flex-start;
+    background: #f0f4f8;
+    border: 1px solid #c7d2e0;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    max-width: 78%;
+    margin-bottom: -4px;
+  }
+  .reasoning-panel summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--primary-light);
+    user-select: none;
+  }
+  .reasoning-panel ul {
+    list-style: none;
+    margin: 6px 0 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .reasoning-panel li {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 2px 0;
+    font-size: 0.76rem;
+    line-height: 1.4;
+  }
+  .reasoning-panel li .step-icon {
+    flex-shrink: 0;
+    width: 14px;
+    text-align: center;
+    margin-top: 1px;
+  }
+  .reasoning-panel li.done .step-icon::before  { content: "✓"; color: #2a8a4c; }
+  .reasoning-panel li.running .step-icon::before { content: "◌"; color: var(--primary-light); animation: spin-icon 1s linear infinite; display: inline-block; }
+  .reasoning-panel li.pending .step-icon::before { content: "·"; color: #aaa; }
+  @keyframes spin-icon { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  .reasoning-panel .step-count {
+    margin-left: auto;
+    background: var(--primary);
+    color: #fff;
+    border-radius: 10px;
+    padding: 1px 7px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    opacity: 0.75;
+    flex-shrink: 0;
+  }
+
+  /* inline cursor blink while streaming */
+  .stream-cursor::after {
+    content: "▌";
+    animation: blink 0.8s step-end infinite;
+    color: var(--primary-light);
+    font-size: 0.9em;
+  }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+  /* fade-in re-render when markdown finalises */
+  @keyframes mdReveal { from { opacity: 0.6; } to { opacity: 1; } }
+  .msg.agent.md-ready { animation: mdReveal 0.3s ease; }
 
   /* ── Export button ── */
   .export-btn {
@@ -305,11 +412,18 @@
 <div id="chat">
   <div class="welcome" id="welcome">
     <h2>EU Regulatory Compliance Agent</h2>
-    <p>Ask questions about MDR 2017/745, IVDR 2017/746, the EU AI Act, and MDCG guidance documents. Answers are grounded in the actual legal text.</p>
+    <p>Ask questions grounded in the actual legal text of EU regulations and MDCG guidance. Every answer is traceable to a specific provision.</p>
+    <div class="reg-pills">
+      <span class="reg-pill">MDR 2017/745</span>
+      <span class="reg-pill">IVDR 2017/746</span>
+      <span class="reg-pill">EU AI Act 2024/1689</span>
+      <span class="reg-pill">MDCG Guidance</span>
+    </div>
     <div class="examples">
       <div class="example" onclick="askExample(this)">What are the requirements for clinical evaluation of equivalent devices under the MDR?</div>
       <div class="example" onclick="askExample(this)">What is the definition of 'placing on the market' in the AI Act?</div>
       <div class="example" onclick="askExample(this)">How does MDCG 2019-11 classify standalone software as a medical device?</div>
+      <div class="example" onclick="askExample(this)">How does the EU AI Act interact with the MDR conformity assessment for AI-enabled medical devices?</div>
     </div>
   </div>
 </div>
@@ -342,6 +456,53 @@ debugToggle.addEventListener('click', () => {
   debugMode = !debugMode;
   debugToggle.classList.toggle('active', debugMode);
 });
+
+// ── Reasoning panel helpers ──
+const STEP_LABELS = {
+  definitions: 'Term detection',
+  regulations: 'Regulation targeting',
+  direct:      'Direct provision lookup',
+  hyde:        'HyDE query generation',
+  retrieval:   'Vector retrieval',
+  pointers:    'Cross-reference expansion',
+  context:     'Context assembly',
+};
+
+function createReasoningPanel() {
+  const details = document.createElement('details');
+  details.className = 'reasoning-panel';
+  if (debugMode) details.open = true;
+  details.innerHTML = '<summary>Agent reasoning</summary><ul id="reason-steps"></ul>';
+  chat.appendChild(details);
+  chat.scrollTop = chat.scrollHeight;
+  return details;
+}
+
+function upsertStep(stepsList, id, label, state, badge) {
+  let li = stepsList.querySelector(`[data-step-id="${id}"]`);
+  if (!li) {
+    li = document.createElement('li');
+    li.dataset.stepId = id;
+    li.innerHTML = '<span class="step-icon"></span><span class="step-text"></span>';
+    stepsList.appendChild(li);
+  }
+  li.className = state;
+  li.querySelector('.step-text').textContent = label;
+  if (badge) {
+    let b = li.querySelector('.step-count');
+    if (!b) { b = document.createElement('span'); b.className = 'step-count'; li.appendChild(b); }
+    b.textContent = badge;
+  }
+  return li;
+}
+
+// Smart scroll: only auto-scroll if already near the bottom
+function smartScroll() {
+  const threshold = 120;
+  if (chat.scrollHeight - chat.scrollTop - chat.clientHeight < threshold) {
+    chat.scrollTop = chat.scrollHeight;
+  }
+}
 
 // Auto-resize textarea
 input.addEventListener('input', () => {
@@ -398,6 +559,142 @@ async function sendQuestion() {
   const q = input.value.trim();
   if (!q) return;
 
+  // ── Streaming path ──────────────────────────────────────────────
+  if (typeof window.ReadableStream !== 'undefined') {
+    // Hide welcome
+    if (welcome) welcome.style.display = 'none';
+
+    addMessage('user', escapeHtml(q));
+    conversationHistory.push({role: 'user', content: q});
+    input.value = '';
+    input.style.height = 'auto';
+
+    const k = parseInt(kInput.value) || 5;
+    busy = true;
+    sendBtn.disabled = true;
+
+    // Reasoning panel (always created; open only when debug is on)
+    const reasonPanel = createReasoningPanel();
+    const stepsList = reasonPanel.querySelector('#reason-steps');
+
+    // Empty agent bubble — will fill as tokens arrive
+    const agentBubble = document.createElement('div');
+    agentBubble.className = 'msg agent stream-cursor';
+    chat.appendChild(agentBubble);
+    chat.scrollTop = chat.scrollHeight;
+
+    let fullAnswer = '';
+    let streamError = null;
+    let renderScheduled = false;
+
+    function scheduleMarkdownRender() {
+      if (renderScheduled) return;
+      renderScheduled = true;
+      requestAnimationFrame(() => {
+        agentBubble.innerHTML = marked.parse(fullAnswer);
+        smartScroll();
+        renderScheduled = false;
+      });
+    }
+
+    try {
+      const res = await fetch('/api/ask/stream', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({question: q, k: k}),
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, {stream: true});
+
+        // SSE: split on double-newline boundaries
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop();  // keep incomplete last chunk
+
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith('data: ')) continue;
+          let event;
+          try { event = JSON.parse(line.slice(6)); } catch { continue; }
+
+          if (event.type === 'step') {
+            const label = event.label || (STEP_LABELS[event.id] || event.id);
+            // Extract a numeric badge from labels like "5 provision(s)"
+            const badgeMatch = label.match(/(\d+)\s+provision/);
+            const badge = badgeMatch ? badgeMatch[1] : null;
+            upsertStep(stepsList, event.id, label, 'done', badge);
+            smartScroll();
+
+          } else if (event.type === 'generating') {
+            stepsList.querySelectorAll('li.running').forEach(li => li.classList.replace('running', 'done'));
+            const stepCount = stepsList.querySelectorAll('li').length;
+            if (!debugMode) reasonPanel.removeAttribute('open');
+            reasonPanel.querySelector('summary').textContent =
+              `Reasoning ✓ (${stepCount} step${stepCount !== 1 ? 's' : ''}) — generating answer…`;
+
+          } else if (event.type === 'token') {
+            fullAnswer += event.content;
+            // Render markdown progressively — batched via rAF for smoothness
+            scheduleMarkdownRender();
+
+          } else if (event.type === 'done') {
+            fullAnswer = event.answer || fullAnswer;
+            agentBubble.classList.remove('stream-cursor');
+            agentBubble.classList.add('md-ready');
+            agentBubble.innerHTML = marked.parse(fullAnswer);
+
+            // Add copy button
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'copy-btn';
+            copyBtn.textContent = 'Copy';
+            copyBtn.addEventListener('click', () => {
+              navigator.clipboard.writeText(fullAnswer).then(() => {
+                copyBtn.textContent = 'Copied!';
+                copyBtn.classList.add('copied');
+                setTimeout(() => { copyBtn.textContent = 'Copy'; copyBtn.classList.remove('copied'); }, 2000);
+              });
+            });
+            agentBubble.appendChild(copyBtn);
+
+            const stepCount = stepsList.querySelectorAll('li').length;
+            reasonPanel.querySelector('summary').textContent =
+              `Reasoning ✓ (${stepCount} step${stepCount !== 1 ? 's' : ''})`;
+            conversationHistory.push({role: 'agent', content: fullAnswer});
+            enableExportButtons();
+            chat.scrollTop = chat.scrollHeight;
+
+          } else if (event.type === 'error') {
+            streamError = event.message;
+          }
+        }
+      }
+    } catch (err) {
+      streamError = err.message || 'Network error';
+    }
+
+    if (streamError) {
+      agentBubble.classList.remove('stream-cursor');
+      agentBubble.innerHTML = '<em>Error: ' + escapeHtml(streamError) + '</em>';
+    }
+
+    busy = false;
+    sendBtn.disabled = false;
+    input.focus();
+    return;
+  }
+
+  // ── Fallback (non-streaming) path — kept for environments without ReadableStream ──
+
   // Hide welcome
   if (welcome) welcome.style.display = 'none';
 
@@ -411,33 +708,7 @@ async function sendQuestion() {
   busy = true;
   sendBtn.disabled = true;
 
-  // Debug: show retrieved provisions
-  if (debugMode) {
-    try {
-      const dRes = await fetch('/api/debug', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({question: q, k: k}),
-      });
-      const dData = await dRes.json();
-      if (dData.provisions && dData.provisions.length) {
-        let rows = dData.provisions.map(p =>
-          `<tr><td>${escapeHtml(p.ref)}</td><td>${escapeHtml(p.regulation)}</td><td>${p.score}</td><td>${p.children}</td><td>${p.cited}</td></tr>`
-        ).join('');
-        const panel = document.createElement('details');
-        panel.className = 'debug-panel';
-        panel.open = true;
-        panel.innerHTML = `<summary>${dData.provisions.length} provisions retrieved</summary>
-          <table><tr><th>Ref</th><th>Regulation</th><th>Score</th><th>Children</th><th>Cited</th></tr>${rows}</table>`;
-        chat.appendChild(panel);
-        chat.scrollTop = chat.scrollHeight;
-      }
-    } catch (e) {
-      console.warn('Debug fetch failed:', e);
-    }
-  }
-
-  // Agent answer
+  // Agent answer (non-streaming fallback)
   addTyping();
   try {
     const res = await fetch('/api/ask', {

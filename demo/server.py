@@ -14,16 +14,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))  # for export module
 
 import argparse
+import json
 import logging
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_from_directory, stream_with_context
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
 
 logging.basicConfig(level=logging.WARNING)
 
-from application.agent import ask
+from application.agent import ask, ask_stream
 from export import generate_markdown
 from retrieval.graph_retriever import GraphRetriever
 
@@ -62,6 +63,38 @@ def api_ask():
     except Exception as exc:
         logging.exception("Error in ask()")
         return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/ask/stream", methods=["POST"])
+def api_ask_stream():
+    """Stream pipeline steps + LLM tokens as Server-Sent Events."""
+    body = request.get_json(silent=True) or {}
+    question = (body.get("question") or "").strip()
+    if not question:
+        return jsonify({"error": "question is required"}), 400
+
+    k = body.get("k", 5)
+    try:
+        k = int(k)
+    except (TypeError, ValueError):
+        k = 5
+
+    def generate():
+        try:
+            for event in ask_stream(question, retriever, k=k):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as exc:
+            logging.exception("Error in ask_stream()")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.route("/api/debug", methods=["POST"])

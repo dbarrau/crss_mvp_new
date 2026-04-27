@@ -631,8 +631,303 @@ def _format_context(provisions: list[dict]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
+def ask_stream(question: str, retriever, k: int = 20):
+    """Streaming version of :func:`ask`.
+
+    Yields JSON-serializable dicts at each pipeline stage so the caller can
+    surface progress to the user in real time, followed by token-by-token LLM
+    output.
+
+    Event shapes
+    ------------
+    ``{"type": "step",       "id": <str>, "label": <str>}``
+        A named pipeline step completed.  Callers may show or hide these.
+    ``{"type": "generating"}``
+        Context assembly is done; LLM generation is starting.
+    ``{"type": "token",      "content": <str>}``
+        One streamed chunk of LLM output text.
+    ``{"type": "done",       "answer": <str>}``
+        Generation finished.  ``answer`` is the full concatenated response.
+    ``{"type": "error",      "message": <str>}``
+        An exception was raised.  No further events will follow.
+    """
+    import time
+    from mistralai.client import Mistral
+
+    try:
+        client = Mistral(api_key=os.environ["MISTRAL_API_KEY"])
+
+        # --- 1. Fetch legal definitions ---
+        definitions = _detect_defined_terms(question, retriever)
+        if definitions:
+            logger.info(
+                "Injecting %d definition(s): %s",
+                len(definitions),
+                ", ".join(d.get("term", "?") for d in definitions),
+            )
+        term_names = [d.get("term", "?") for d in definitions]
+        yield {
+            "type": "step",
+            "id": "definitions",
+            "label": (
+                f"Found {len(definitions)} defined term(s): {', '.join(term_names)}"
+                if definitions
+                else "No defined terms detected in question"
+            ),
+        }
+
+        # --- 2. Regulation detection + CELEX filter ---
+        mentioned_regs = _detect_mentioned_regulations(question)
+        for d in definitions:
+            reg = d.get("regulation", "")
+            if reg and reg not in mentioned_regs and reg in _REG_NAME_TO_CELEX:
+                mentioned_regs.add(reg)
+                logger.info(
+                    "Implicit regulation detected via defined term '%s': %s",
+                    d.get("term", "?"), reg,
+                )
+
+        target_celexes: set[str] | None = None
+        if len(mentioned_regs) >= 1:
+            target_celexes = {
+                _REG_NAME_TO_CELEX[r]
+                for r in mentioned_regs
+                if r in _REG_NAME_TO_CELEX
+            }
+            if len(mentioned_regs) > 1:
+                has_guidance = any(
+                    _REG_NAME_TO_CELEX.get(r, "").startswith("MDCG_")
+                    for r in mentioned_regs
+                )
+                per_reg = 4 if has_guidance else 3
+                k = max(k, len(mentioned_regs) * per_reg)
+
+        yield {
+            "type": "step",
+            "id": "regulations",
+            "label": (
+                f"Targeting {len(mentioned_regs)} regulation(s): "
+                + ", ".join(sorted(mentioned_regs))
+                if mentioned_regs
+                else "No specific regulation detected — searching all"
+            ),
+        }
+
+        # --- 3. Direct structural lookup ---
+        explicit_refs = _extract_provision_refs(question)
+        direct_provisions: list[dict] = []
+        if explicit_refs:
+            direct_provisions = retriever.retrieve_by_refs(
+                explicit_refs, celex_filter=target_celexes,
+            )
+            if direct_provisions and target_celexes and len(target_celexes) < len(_REG_NAME_TO_CELEX):
+                _para_m = re.search(r"paragraph\s+(\d+)", question, re.IGNORECASE)
+                if _para_m:
+                    wanted_para = _para_m.group(1)
+                    has_para = False
+                    para_ref = f"Paragraph {wanted_para}"
+                    for dp in direct_provisions:
+                        for c in dp.get("children") or []:
+                            if c.get("ref") == para_ref:
+                                has_para = True
+                                break
+                        if has_para:
+                            break
+                    if not has_para:
+                        wider = retriever.retrieve_by_refs(explicit_refs, celex_filter=None)
+                        new_ids = {p["article_id"] for p in direct_provisions}
+                        for wp in wider:
+                            if wp["article_id"] not in new_ids:
+                                direct_provisions.append(wp)
+                                new_ids.add(wp["article_id"])
+            logger.info("Direct lookup: %s → %d provision(s)", explicit_refs, len(direct_provisions))
+            yield {
+                "type": "step",
+                "id": "direct",
+                "label": (
+                    f"Direct lookup for {explicit_refs}: "
+                    f"{len(direct_provisions)} provision(s) found"
+                ),
+            }
+
+        # --- 4. HyDE retrieval ---
+        hyde_text = _hyde_query(question, client)
+        logger.debug("HyDE text: %s", hyde_text[:120])
+        yield {
+            "type": "step",
+            "id": "hyde",
+            "label": f"HyDE query: \"{hyde_text[:100]}{'…' if len(hyde_text) > 100 else ''}\"",
+        }
+
+        hyde_vec = retriever.encode_as_passage(hyde_text)
+        provisions = retriever.retrieve(
+            question, k=k, target_celexes=target_celexes, query_vec=hyde_vec,
+        )
+        yield {
+            "type": "step",
+            "id": "retrieval",
+            "label": f"Vector retrieval: {len(provisions)} provision(s) retrieved",
+        }
+
+        definitions = _expand_definitions_from_provisions(
+            provisions, retriever, definitions, target_celexes=target_celexes,
+        )
+
+        # --- 5. Merge direct-lookup results ---
+        if direct_provisions:
+            seen_ids: set[str] = {p["article_id"] for p in provisions}
+            new_count = 0
+            for p in direct_provisions:
+                if p["article_id"] not in seen_ids:
+                    provisions.insert(0, p)
+                    seen_ids.add(p["article_id"])
+                    new_count += 1
+            if new_count:
+                logger.info(
+                    "Direct-lookup merge: added %d provision(s) (total %d).",
+                    new_count, len(provisions),
+                )
+
+        if not provisions and not definitions:
+            yield {"type": "error", "message": (
+                "No relevant provisions were found in the knowledge graph. "
+                "Please check that embeddings have been generated "
+                "(run scripts/embed_provisions.py)."
+            )}
+            return
+
+        # --- 6. Pointer expansion ---
+        inline_refs = _extract_inline_refs(provisions)
+        if inline_refs:
+            pointer_provisions = retriever.retrieve_by_refs(
+                inline_refs, celex_filter=target_celexes,
+            )
+            if pointer_provisions:
+                seen_ids = {p["article_id"] for p in provisions}
+                added = 0
+                for p in pointer_provisions:
+                    if p["article_id"] not in seen_ids:
+                        p["_pointer_expansion"] = True
+                        provisions.append(p)
+                        seen_ids.add(p["article_id"])
+                        added += 1
+                        if added >= _MAX_POINTER_REFS:
+                            break
+                if added:
+                    logger.info(
+                        "Pointer expansion: %s → added %d provision(s) (total %d).",
+                        inline_refs[:5], added, len(provisions),
+                    )
+                    yield {
+                        "type": "step",
+                        "id": "pointers",
+                        "label": (
+                            f"Cross-reference expansion: {added} additional "
+                            f"provision(s) pulled in via inline references"
+                        ),
+                    }
+
+        # --- 7. Assemble context ---
+        context_parts: list[str] = []
+        if definitions:
+            context_parts.append(
+                "LEGAL DEFINITIONS (from the definitions article):\n"
+                + _format_definitions(definitions)
+            )
+
+        is_def_q, concept_text = _is_definition_question(question)
+        if is_def_q and concept_text:
+            concept_covered = any(
+                concept_text in (d.get("term", "").lower())
+                or (d.get("term", "").lower() in concept_text)
+                for d in definitions
+            )
+            if not concept_covered:
+                def_art_refs: list[str] = []
+                for reg_name in (mentioned_regs or _REG_NAME_TO_CELEX.keys()):
+                    celex = _REG_NAME_TO_CELEX.get(reg_name, "")
+                    art_info = _DEF_ARTICLES.get(celex)
+                    if art_info:
+                        def_art_refs.append(f"{art_info['display_ref']} ({reg_name})")
+                if def_art_refs:
+                    note = (
+                        f"NOTE: \u2018{concept_text}\u2019 is NOT a formally defined term "
+                        f"in {', '.join(def_art_refs)}. "
+                        f"The provisions below may describe criteria, requirements, "
+                        f"or conditions related to this concept \u2014 they are NOT "
+                        f"definitions."
+                    )
+                    context_parts.append(note)
+                    logger.info("Negative-definition signal injected for '%s'.", concept_text)
+
+        if provisions:
+            context_parts.append(_format_context(provisions))
+        context = "\n\n---\n\n".join(context_parts)
+
+        logger.debug(
+            "Context assembled: %d provisions + %d definitions, %d chars",
+            len(provisions), len(definitions), len(context),
+        )
+
+        yield {
+            "type": "step",
+            "id": "context",
+            "label": (
+                f"Context ready: {len(provisions)} provision(s), "
+                f"{len(definitions)} definition(s) — sending to LLM"
+            ),
+        }
+
+        # --- 8. Stream LLM response ---
+        yield {"type": "generating"}
+
+        _messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    f"REGULATORY CONTEXT:\n{context}\n\n"
+                    f"QUESTION: {question}"
+                ),
+            },
+        ]
+
+        _MAX_RETRIES = 4
+        full_answer = ""
+        for attempt in range(_MAX_RETRIES):
+            try:
+                full_answer = ""
+                with client.chat.stream(
+                    model=os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
+                    messages=_messages,
+                    temperature=0.1,
+                ) as stream:
+                    for chunk in stream:
+                        delta = chunk.data.choices[0].delta.content
+                        if delta:
+                            full_answer += delta
+                            yield {"type": "token", "content": delta}
+                break  # success — exit retry loop
+            except Exception as exc:
+                if "429" in str(exc) and attempt < _MAX_RETRIES - 1:
+                    wait = 2 ** attempt
+                    logger.warning("Rate-limited (429). Retrying in %ds…", wait)
+                    time.sleep(wait)
+                else:
+                    raise
+
+        yield {"type": "done", "answer": full_answer}
+
+    except Exception as exc:
+        logger.exception("Error in ask_stream()")
+        yield {"type": "error", "message": str(exc)}
+
+
 def ask(question: str, retriever, k: int = 20) -> str:
     """Retrieve context from the graph and generate an answer via Mistral.
+
+    Delegates to :func:`ask_stream` and accumulates the result.  Kept for
+    backward compatibility with ``scripts/chat.py`` and any other CLI callers.
 
     Parameters
     ----------
@@ -648,250 +943,9 @@ def ask(question: str, retriever, k: int = 20) -> str:
     str
         The LLM-generated answer grounded in regulatory text.
     """
-    from mistralai.client import Mistral
-
-    client = Mistral(api_key=os.environ["MISTRAL_API_KEY"])
-
-    # --- 1. Fetch legal definitions for terms mentioned in the question ---
-    definitions = _detect_defined_terms(question, retriever)
-    if definitions:
-        logger.info(
-            "Injecting %d definition(s): %s",
-            len(definitions),
-            ", ".join(d.get("term", "?") for d in definitions),
-        )
-
-    # --- 2. Regulation detection + CELEX filter ---
-    mentioned_regs = _detect_mentioned_regulations(question)
-
-    # Enrich: if definitions were found from regulations NOT already
-    # mentioned, the question implicitly touches those regulations too.
-    # e.g. "testing in real-world conditions" is an AI Act defined term
-    # even if the user only says "MDR" explicitly.
-    for d in definitions:
-        reg = d.get("regulation", "")
-        if reg and reg not in mentioned_regs and reg in _REG_NAME_TO_CELEX:
-            mentioned_regs.add(reg)
-            logger.info(
-                "Implicit regulation detected via defined term '%s': %s",
-                d.get("term", "?"), reg,
-            )
-
-    target_celexes: set[str] | None = None
-    if len(mentioned_regs) >= 1:
-        target_celexes = {
-            _REG_NAME_TO_CELEX[r]
-            for r in mentioned_regs
-            if r in _REG_NAME_TO_CELEX
-        }
-        if len(mentioned_regs) > 1:
-            # For multi-regulation questions, increase k proportionally so each
-            # regulation gets adequate coverage (min 3 slots per regulation).
-            # Boost allocation when MDCG guidance documents are involved, since
-            # they often have complementary sections (e.g. significant vs
-            # non-significant examples) that both need to appear in context.
-            has_guidance = any(
-                _REG_NAME_TO_CELEX.get(r, "").startswith("MDCG_")
-                for r in mentioned_regs
-            )
-            per_reg = 4 if has_guidance else 3
-            k = max(k, len(mentioned_regs) * per_reg)
-
-    # --- 3. Direct structural lookup for explicitly named provisions ---
-    # e.g. "What does Annex I contain?" → exact display_ref lookup, no
-    # vector similarity needed.
-    explicit_refs = _extract_provision_refs(question)
-    direct_provisions: list[dict] = []
-    if explicit_refs:
-        direct_provisions = retriever.retrieve_by_refs(
-            explicit_refs, celex_filter=target_celexes,
-        )
-        # Cross-regulation fallback: if the question requests a specific
-        # paragraph (e.g. "Article 2, paragraph 8") but the provision found
-        # in the filtered regulation doesn't have that paragraph, widen
-        # the search to all regulations.  This handles implicit cross-reg
-        # questions where the user names a provision from a regulation they
-        # didn't explicitly mention.
-        if direct_provisions and target_celexes and len(target_celexes) < len(_REG_NAME_TO_CELEX):
-            _para_m = re.search(
-                r"paragraph\s+(\d+)", question, re.IGNORECASE,
-            )
-            if _para_m:
-                wanted_para = _para_m.group(1)
-                # Check if any direct-lookup result actually has the
-                # requested paragraph among its children.
-                has_para = False
-                para_ref = f"Paragraph {wanted_para}"
-                for dp in direct_provisions:
-                    for c in dp.get("children") or []:
-                        if c.get("ref") == para_ref:
-                            has_para = True
-                            break
-                    if has_para:
-                        break
-                if not has_para:
-                    wider = retriever.retrieve_by_refs(
-                        explicit_refs, celex_filter=None,
-                    )
-                    new_ids = {p["article_id"] for p in direct_provisions}
-                    for wp in wider:
-                        if wp["article_id"] not in new_ids:
-                            direct_provisions.append(wp)
-                            new_ids.add(wp["article_id"])
-                    logger.info(
-                        "Cross-reg fallback: widened direct lookup for "
-                        "paragraph %s → %d provision(s) total.",
-                        wanted_para, len(direct_provisions),
-                    )
-        logger.info(
-            "Direct lookup: %s → %d provision(s)",
-            explicit_refs, len(direct_provisions),
-        )
-
-    # --- 4. HyDE: generate a hypothetical answer, encode as a passage ---
-    # Encoding a passage-like hypothetical answer instead of the question
-    # itself places the query vector in the same embedding space as the
-    # stored provisions (document↔document rather than query↔document),
-    # yielding much better cosine scores for semantically complex questions.
-    hyde_text = _hyde_query(question, client)
-    logger.debug("HyDE text: %s", hyde_text[:120])
-    hyde_vec = retriever.encode_as_passage(hyde_text)
-
-    provisions = retriever.retrieve(
-        question, k=k, target_celexes=target_celexes, query_vec=hyde_vec,
-    )
-
-    definitions = _expand_definitions_from_provisions(
-        provisions,
-        retriever,
-        definitions,
-        target_celexes=target_celexes,
-    )
-
-    # --- 5. Merge: inject direct-lookup results that vector search missed ---
-    if direct_provisions:
-        seen_ids: set[str] = {p["article_id"] for p in provisions}
-        new_count = 0
-        for p in direct_provisions:
-            if p["article_id"] not in seen_ids:
-                provisions.insert(0, p)  # direct matches rank first
-                seen_ids.add(p["article_id"])
-                new_count += 1
-        if new_count:
-            logger.info(
-                "Direct-lookup merge: added %d provision(s) not found by "
-                "vector search (total %d).",
-                new_count, len(provisions),
-            )
-
-    if not provisions and not definitions:
-        return (
-            "No relevant provisions were found in the knowledge graph. "
-            "Please check that embeddings have been generated "
-            "(run scripts/embed_provisions.py)."
-        )
-
-    # --- 6. Pointer expansion: fetch provisions referenced inside context ---
-    # Scan the retrieved text for inline references ("Annex VII",
-    # "Article 17", etc.) and pull those provisions into the context so
-    # the LLM has the full cross-referenced material.
-    inline_refs = _extract_inline_refs(provisions)
-    if inline_refs:
-        pointer_provisions = retriever.retrieve_by_refs(
-            inline_refs, celex_filter=target_celexes,
-        )
-        if pointer_provisions:
-            seen_ids = {p["article_id"] for p in provisions}
-            added = 0
-            for p in pointer_provisions:
-                if p["article_id"] not in seen_ids:
-                    p["_pointer_expansion"] = True
-                    provisions.append(p)
-                    seen_ids.add(p["article_id"])
-                    added += 1
-                    if added >= _MAX_POINTER_REFS:
-                        break
-            if added:
-                logger.info(
-                    "Pointer expansion: %s → added %d provision(s) "
-                    "(total %d).",
-                    inline_refs[:5], added, len(provisions),
-                )
-
-    # --- 7. Assemble context: definitions first, then provisions ---
-    context_parts: list[str] = []
-    if definitions:
-        context_parts.append(
-            "LEGAL DEFINITIONS (from the definitions article):\n"
-            + _format_definitions(definitions)
-        )
-
-    # Negative-definition signal: when the user asks "what is X" and X
-    # has no formal DefinedTerm entry, inject an explicit note so the LLM
-    # knows NOT to invent a definition from Annex/Article criteria.
-    is_def_q, concept_text = _is_definition_question(question)
-    if is_def_q and concept_text:
-        # Check if any of the definitions we already found covers it
-        concept_covered = any(
-            concept_text in (d.get("term", "").lower())
-            or (d.get("term", "").lower() in concept_text)
-            for d in definitions
-        )
-        if not concept_covered:
-            # Build reference to the definitions article(s)
-            def_art_refs: list[str] = []
-            for reg_name in (mentioned_regs or _REG_NAME_TO_CELEX.keys()):
-                celex = _REG_NAME_TO_CELEX.get(reg_name, "")
-                art_info = _DEF_ARTICLES.get(celex)
-                if art_info:
-                    def_art_refs.append(
-                        f"{art_info['display_ref']} ({reg_name})"
-                    )
-            if def_art_refs:
-                note = (
-                    f"NOTE: \u2018{concept_text}\u2019 is NOT a formally defined term "
-                    f"in {', '.join(def_art_refs)}. "
-                    f"The provisions below may describe criteria, requirements, "
-                    f"or conditions related to this concept \u2014 they are NOT "
-                    f"definitions."
-                )
-                context_parts.append(note)
-                logger.info("Negative-definition signal injected for '%s'.", concept_text)
-
-    if provisions:
-        context_parts.append(_format_context(provisions))
-    context = "\n\n---\n\n".join(context_parts)
-
-    logger.debug(
-        "Context assembled: %d provisions + %d definitions, %d chars",
-        len(provisions), len(definitions), len(context),
-    )
-
-    import time
-
-    _MAX_RETRIES = 4
-    _messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": (
-                f"REGULATORY CONTEXT:\n{context}\n\n"
-                f"QUESTION: {question}"
-            ),
-        },
-    ]
-    for attempt in range(_MAX_RETRIES):
-        try:
-            response = client.chat.complete(
-                model=os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
-                messages=_messages,
-                temperature=0.1,
-            )
-            return response.choices[0].message.content
-        except Exception as exc:
-            if "429" in str(exc) and attempt < _MAX_RETRIES - 1:
-                wait = 2 ** attempt  # 1s, 2s, 4s
-                logger.warning("Rate-limited (429). Retrying in %ds…", wait)
-                time.sleep(wait)
-            else:
-                raise
+    for event in ask_stream(question, retriever, k=k):
+        if event.get("type") == "done":
+            return event["answer"]
+        if event.get("type") == "error":
+            raise RuntimeError(event["message"])
+    return "No answer generated."
