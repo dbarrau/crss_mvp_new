@@ -17,6 +17,7 @@ from typing import Any
 from dotenv import load_dotenv
 
 from domain.mdcg_catalog import MDCG_DOCUMENTS as _MDCG_DOCS
+from domain.ontology.actor_roles import detect_role_specs as _detect_role_specs
 from domain.ontology.defined_terms import DEFINITIONS_ARTICLES as _DEF_ARTICLES
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
@@ -280,6 +281,19 @@ def _extract_provision_refs(question: str) -> list[str]:
             seen.add(normalized)
             result.append(normalized)
     return result
+
+
+def _detect_question_roles(
+    question: str,
+    *,
+    target_celexes: set[str] | None = None,
+) -> list[tuple[str, str]]:
+    """Resolve role-bearing entities mentioned in the question.
+
+    Returns ``[(term_normalized, celex), ...]`` suitable for the retriever's
+    role-aware lookup path.
+    """
+    return _detect_role_specs(question, target_celexes=target_celexes)
 
 
 def _hyde_query(question: str, client: Any) -> str:
@@ -702,6 +716,8 @@ def ask_stream(question: str, retriever, k: int = 20):
                 per_reg = 4 if has_guidance else 3
                 k = max(k, len(mentioned_regs) * per_reg)
 
+        role_specs = _detect_question_roles(question, target_celexes=target_celexes)
+
         yield {
             "type": "step",
             "id": "regulations",
@@ -712,6 +728,14 @@ def ask_stream(question: str, retriever, k: int = 20):
                 else "No specific regulation detected — searching all"
             ),
         }
+        if role_specs:
+            yield {
+                "type": "step",
+                "id": "roles",
+                "label": "Detected actor role(s): " + ", ".join(
+                    f"{term}@{celex}" for term, celex in role_specs
+                ),
+            }
 
         # --- 3. Direct structural lookup ---
         explicit_refs = _extract_provision_refs(question)
@@ -763,10 +787,31 @@ def ask_stream(question: str, retriever, k: int = 20):
         provisions = retriever.retrieve(
             question, k=k, target_celexes=target_celexes, query_vec=hyde_vec,
         )
+
+        role_provisions: list[dict] = []
+        if role_specs:
+            role_provisions = retriever.retrieve_by_roles(role_specs, k=max(6, k // 2))
+            if role_provisions:
+                seen_ids = {p["article_id"] for p in provisions}
+                added = 0
+                for provision in role_provisions:
+                    if provision["article_id"] not in seen_ids:
+                        provisions.insert(0, provision)
+                        seen_ids.add(provision["article_id"])
+                        added += 1
+                if added:
+                    logger.info(
+                        "Role retrieval merge: added %d provision(s) for %s.",
+                        added,
+                        ", ".join(f"{term}@{celex}" for term, celex in role_specs),
+                    )
         yield {
             "type": "step",
             "id": "retrieval",
-            "label": f"Vector retrieval: {len(provisions)} provision(s) retrieved",
+            "label": (
+                f"Hybrid retrieval: {len(provisions)} provision(s) retrieved"
+                + (f" ({len(role_provisions)} from role-aware path)" if role_provisions else "")
+            ),
         }
 
         definitions = _expand_definitions_from_provisions(

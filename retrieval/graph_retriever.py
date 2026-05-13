@@ -165,6 +165,31 @@ ORDER BY art.hierarchy_depth ASC
 LIMIT 20
 """
 
+# Role-aware provision lookup. Starts from one or more ActorRole nodes,
+# expands through composite-role and curated equivalence edges, then returns
+# obligation-bearing provisions linked to any reachable role.
+_ROLE_OBLIGATIONS_CYPHER = """\
+UNWIND $role_ids AS rid
+MATCH (seed:ActorRole {id: rid})
+OPTIONAL MATCH (seed)-[:INCLUDES_ROLE]->(included:ActorRole)
+OPTIONAL MATCH (seed)-[:EQUIVALENT_ROLE]->(equiv:ActorRole)
+WITH collect(DISTINCT seed) + collect(DISTINCT included) + collect(DISTINCT equiv) AS roles
+UNWIND roles AS role
+WITH DISTINCT role
+MATCH (p:Provision)-[:OBLIGATION_OF]->(role)
+WHERE p.kind IN ['article', 'annex_section', 'annex_subsection', 'annex_point', 'annex_part', 'recital', 'section']
+RETURN DISTINCT
+    p.id AS article_id,
+    p.celex AS celex,
+    p.regulation_id AS regulation,
+    p.display_ref AS article_ref,
+    p.display_path AS article_path,
+    p.text_for_analysis AS article_text,
+    role.id AS matched_role_id,
+    role.term_normalized AS matched_role
+LIMIT 40
+"""
+
 
 class GraphRetriever:
     """Hybrid vector + graph retriever backed by Neo4j.
@@ -600,6 +625,54 @@ ORDER BY d.celex, d.term_normalized
             r["score"] = 1.0  # perfect score — explicit structural match
             r["matched_leaf_id"] = None
             r["_direct_ref_match"] = True
+
+        return results
+
+    def retrieve_by_roles(
+        self,
+        role_specs: list[tuple[str, str]],
+        *,
+        k: int = 8,
+    ) -> list[dict[str, Any]]:
+        """Return provisions linked to one or more resolved actor roles.
+
+        Parameters
+        ----------
+        role_specs:
+            ``[(term_normalized, celex), ...]`` pairs resolved by the agent.
+        k:
+            Maximum number of expanded parent provisions to return.
+        """
+        if not role_specs:
+            return []
+
+        role_ids = [f"{celex}::role::{term_normalized}" for term_normalized, celex in role_specs]
+        with self._driver.session(database=self._db) as s:
+            rows = s.run(_ROLE_OBLIGATIONS_CYPHER, role_ids=role_ids).data()
+
+        if not rows:
+            return []
+
+        top_ids: list[str] = []
+        role_hits: dict[str, tuple[str | None, str | None]] = {}
+        for row in rows:
+            art_id = row["article_id"]
+            if art_id not in role_hits:
+                role_hits[art_id] = (row.get("matched_role_id"), row.get("matched_role"))
+                top_ids.append(art_id)
+            if len(top_ids) >= k:
+                break
+
+        with self._driver.session(database=self._db) as s:
+            results = s.run(_EXPAND_CYPHER, ids=top_ids).data()
+
+        for r in results:
+            matched_role_id, matched_role = role_hits.get(r["article_id"], (None, None))
+            r["score"] = 1.0
+            r["matched_leaf_id"] = None
+            r["matched_role_id"] = matched_role_id
+            r["matched_role"] = matched_role
+            r["_role_retrieval"] = True
 
         return results
 

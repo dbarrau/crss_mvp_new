@@ -78,6 +78,10 @@ def parse_document(html_file: Path, lang: str, celex: str, out_dir: Path) -> Pat
         "relations": relations,
     }
 
+    for provision in provisions:
+        provision["binding_force"] = "binding"
+        provision["source_type"] = "regulation"
+
     # Enrich text_for_analysis for multi-granularity embeddings
     enrich_text_for_analysis(provisions)
 

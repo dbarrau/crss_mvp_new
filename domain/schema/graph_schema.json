@@ -74,6 +74,16 @@
         "regulation_id": {"type": "string"},
         "lang": {"type": "string"},
         "source": {"type": "string"},
+        "binding_force": {
+          "type": ["null", "string"],
+          "enum": [null, "binding", "non_binding"],
+          "description": "Explicit legal force of the provision source"
+        },
+        "source_type": {
+          "type": ["null", "string"],
+          "enum": [null, "regulation", "guidance"],
+          "description": "Document family from which the provision was parsed"
+        },
 
         "kind": {"type": "string"},
         "level": {"type": "string"},

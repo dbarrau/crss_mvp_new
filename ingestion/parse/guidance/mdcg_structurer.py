@@ -433,6 +433,8 @@ def _make_provision(
         display_ref = title or kind
     return {
         "id": id,
+        "binding_force": "non_binding",
+        "source_type": "guidance",
         "kind": kind,
         "text": text,
         "title": title,

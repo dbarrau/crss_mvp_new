@@ -268,6 +268,15 @@ class RegulationGraphLoader:
             "FOR (d:DefinedTerm) ON (d.term_normalized)",
             "CREATE INDEX defined_term_category IF NOT EXISTS "
             "FOR (d:DefinedTerm) ON (d.category)",
+            # ── ActorRole ──────────────────────────────────────────
+            "CREATE CONSTRAINT actor_role_id IF NOT EXISTS "
+            "FOR (r:ActorRole) REQUIRE r.id IS UNIQUE",
+            "CREATE INDEX actor_role_celex IF NOT EXISTS "
+            "FOR (r:ActorRole) ON (r.celex)",
+            "CREATE INDEX actor_role_normalized IF NOT EXISTS "
+            "FOR (r:ActorRole) ON (r.term_normalized)",
+            "CREATE INDEX actor_role_source_type IF NOT EXISTS "
+            "FOR (r:ActorRole) ON (r.source_type)",
         ]
         with self._driver.session(database=self._database) as session:
             for stmt in stmts:
@@ -499,6 +508,14 @@ class RegulationGraphLoader:
                 "celex":           celex,
                 "regulation_id":   regulation_id,
                 "lang":            prov.get("lang", "EN"),
+                "binding_force":   prov.get(
+                    "binding_force",
+                    "non_binding" if prov.get("kind", "") in _GUIDANCE_KINDS else "binding",
+                ),
+                "source_type":     prov.get(
+                    "source_type",
+                    "guidance" if prov.get("kind", "") in _GUIDANCE_KINDS else "regulation",
+                ),
                 "kind":            prov.get("kind", ""),
                 "level":           prov.get("kind", ""),
                 "text":            prov.get("text", ""),
@@ -539,6 +556,8 @@ class RegulationGraphLoader:
                 p.celex           = n.celex,
                 p.regulation_id   = n.regulation_id,
                 p.lang            = n.lang,
+                p.binding_force   = n.binding_force,
+                p.source_type     = n.source_type,
                 p.kind            = n.kind,
                 p.level           = n.level,
                 p.text            = n.text,

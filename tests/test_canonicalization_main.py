@@ -16,9 +16,14 @@ def test_run_pipeline_orders_stages_and_passes_flags(monkeypatch):
         calls.append(("terms", dry_run, None))
         return {"edges": 4}
 
+    def fake_roles(*, dry_run):
+        calls.append(("roles", dry_run, None))
+        return {"actor_roles": 5, "obligation_of": 9}
+
     monkeypatch.setattr(canonicalization_main, "crosslink", fake_crosslink)
     monkeypatch.setattr(canonicalization_main, "link_delegations", fake_delegations)
     monkeypatch.setattr(canonicalization_main, "link_terms", fake_terms)
+    monkeypatch.setattr(canonicalization_main, "link_roles", fake_roles)
 
     summary = canonicalization_main.run_pipeline(dry_run=True, cleanup=True)
 
@@ -26,9 +31,11 @@ def test_run_pipeline_orders_stages_and_passes_flags(monkeypatch):
         ("crosslink", True, True),
         ("delegations", True, None),
         ("terms", True, None),
+        ("roles", True, None),
     ]
     assert summary == {
         "crosslinker": {"cites": 1, "interprets": 2},
         "delegation_linker": {"edges_written": 3},
         "term_linker": {"edges": 4},
+        "role_linker": {"actor_roles": 5, "obligation_of": 9},
     }

@@ -7,6 +7,7 @@ import logging
 
 from .crosslinker import crosslink
 from .delegation_linker import link_delegations
+from .role_linker import link_roles
 from .term_linker import link_terms
 
 
@@ -14,7 +15,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Run the full canonicalization pipeline: "
-            "crosslinker -> delegation_linker -> term_linker."
+            "crosslinker -> delegation_linker -> term_linker -> role_linker."
         )
     )
     parser.add_argument(
@@ -37,19 +38,23 @@ def run_pipeline(*, dry_run: bool = False, cleanup: bool = False) -> dict[str, d
     print("\n=== Canonicalization Pipeline ===")
     print(f"  dry_run={dry_run}  cleanup={cleanup}\n")
 
-    print("[1/3] Crosslinking external references...")
+    print("[1/4] Crosslinking external references...")
     crosslink_summary = crosslink(dry_run=dry_run, cleanup=cleanup)
 
-    print("[2/3] Materializing delegation edges...")
+    print("[2/4] Materializing delegation edges...")
     delegation_summary = link_delegations(dry_run=dry_run)
 
-    print("[3/3] Materializing defined-term usage edges...")
+    print("[3/4] Materializing defined-term usage edges...")
     term_summary = link_terms(dry_run=dry_run)
+
+    print("[4/4] Materializing actor-role awareness edges...")
+    role_summary = link_roles(dry_run=dry_run)
 
     return {
         "crosslinker": crosslink_summary,
         "delegation_linker": delegation_summary,
         "term_linker": term_summary,
+        "role_linker": role_summary,
     }
 
 
