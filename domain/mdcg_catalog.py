@@ -99,7 +99,7 @@ MDCG_DOCUMENTS = {
         "type": "guidance",
         "jurisdiction": "EU",
         "pdf_filename": "mdcg_2019_5_en.pdf",
-        "download_url": None,  # TODO: Add download URL
+        "download_url": "https://ec.europa.eu/docsroom/documents/34922/attachments/1/translations/en/renditions/native"
     },
     "MDCG_2025_6": {
         "name": "MDCG 2025-6",
@@ -112,6 +112,15 @@ MDCG_DOCUMENTS = {
         "pdf_filename": "mdcg_2025_6_en.pdf",
         "download_url": "https://health.ec.europa.eu/document/download/b78a17d7-e3cd-4943-851d-e02a2f22bbb4_en?filename=mdcg_2025-6_en.pdf",
     },
+    "MDCG_2022_18": {
+        "name": "MDCG 2022-18",
+        "title": ("MDCG Position Paper on the applicationof Article 97 MDR to legacy devices forwhich the MDD or AIMDD certificateexpires before the issuance of a MDRcertificate"),
+        "type": "guidance",
+        "jurisdiction": "EU",
+        "pdf_filename": "mdcg_2022-18_en_1.pdf",
+        "download_url": "https://health.ec.europa.eu/system/files/2022-12/mdcg_2022-18_en_1.pdf",
+    },
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # TIER 2: Post-market + classification guidance
@@ -126,7 +135,7 @@ MDCG_DOCUMENTS = {
         "type": "guidance",
         "jurisdiction": "EU",
         "pdf_filename": "mdcg_2020_7_en.pdf",
-        "download_url": None,  # TODO: Add download URL
+        "download_url": "https://health.ec.europa.eu/system/files/2020-09/md_mdcg_2020_7_guidance_pmcf_plan_template_en_0.pdf"
     },
     "MDCG_2022_21": {
         "name": "MDCG 2022-21",
@@ -137,7 +146,18 @@ MDCG_DOCUMENTS = {
         "type": "guidance",
         "jurisdiction": "EU",
         "pdf_filename": "mdcg_2022_21_en.pdf",
-        "download_url": None,  # TODO: Add download URL
+        "download_url": "https://health.ec.europa.eu/document/download/a7df24c3-d4a3-4218-a8e0-726febfa01c2_en?filename=mdcg_2022-21_en.pdf"
+    },
+    "MDCG_2024_3": {
+        "name": "MDCG 2024-3",
+        "title": (
+            "Benefits and risks of the investigational device, clinical procedures "
+            "and clinical investigation"
+        ),
+        "type": "guidance",
+        "jurisdiction": "EU",
+        "pdf_filename": "mdcg_2024_3_en.pdf",
+        "download_url": None,  # TODO: Add official download URL
     },
     "MDCG_2021_24": {
         "name": "MDCG 2021-24",

@@ -34,12 +34,13 @@ def main() -> None:
     print("║  Neo4j graph · multilingual-e5 · Mistral     ║")
     print("╚══════════════════════════════════════════════╝")
     print()
-    print("Commands:  quit · debug · k=N")
+    print("Commands:  quit · debug · k=N · clear")
     print()
 
     retriever = GraphRetriever()
     show_debug = False
     k = 5
+    history: list[dict[str, str]] = []
 
     try:
         while True:
@@ -51,6 +52,10 @@ def main() -> None:
             if question.lower() == "debug":
                 show_debug = not show_debug
                 print(f"  [Debug mode: {'ON' if show_debug else 'OFF'}]")
+                continue
+            if question.lower() == "clear":
+                history.clear()
+                print("  [Conversation history cleared]")
                 continue
             if question.lower().startswith("k="):
                 try:
@@ -76,7 +81,9 @@ def main() -> None:
                     )
                 print()
 
-            answer = ask(question, retriever, k=k)
+            answer = ask(question, retriever, k=k, history=history)
+            history.append({"role": "user", "content": question})
+            history.append({"role": "assistant", "content": answer})
             print(f"\nAgent: {answer}\n")
 
     except (KeyboardInterrupt, EOFError):

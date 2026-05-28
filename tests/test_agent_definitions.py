@@ -74,11 +74,13 @@ def test_expand_definitions_from_provisions_ignores_lower_ranked_noise():
             "children": [],
             "matched_leaf_id": None,
         },
-        {
-            "article_text": "Article 50 mentions remote biometric identification system.",
-            "children": [],
-            "matched_leaf_id": None,
-        },
+        ] + [
+            {
+                "article_text": f"Dummy padding {i}.",
+                "children": [],
+                "matched_leaf_id": None,
+            } for i in range(10)
+        ] + [
     ]
 
     expanded = _expand_definitions_from_provisions(

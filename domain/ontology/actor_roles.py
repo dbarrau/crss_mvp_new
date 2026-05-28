@@ -178,6 +178,32 @@ COMPOSITE_ROLE_BASIS: dict[tuple[str, str], str] = {
 }
 
 
+_ENTITY_CONTEXT_PHRASES: tuple[str, ...] = (
+    "hospital",
+    "clinic",
+    "health institution",
+    "healthcare institution",
+    "healthcare provider",
+)
+
+_PROVIDER_ACTION_RE = re.compile(
+    r"\b(develop(?:s|ed|ing)?|build(?:s|ing)?|train(?:s|ed|ing)?|"
+    r"put(?:s|ting)?\s+(?:an?\s+)?(?:ai\s+system\s+)?into\s+service|"
+    r"place(?:s|d|ing)?\s+(?:an?\s+)?(?:ai\s+system\s+)?on\s+the\s+market)\b",
+    re.I,
+)
+
+_MANUFACTURER_ACTION_RE = re.compile(
+    r"\b(develop(?:s|ed|ing)?|manufactur(?:e|es|ed|ing)|produce(?:s|d|ing)|design(?:s|ed|ing)?)\b",
+    re.I,
+)
+
+
+def _contains_phrase(text: str, phrase: str) -> bool:
+    """Return whether *phrase* appears in *text* as a whole phrase."""
+    return bool(re.search(r"\b" + re.escape(phrase) + r"\b", text))
+
+
 def detect_role_specs(
     question: str,
     *,
@@ -191,15 +217,25 @@ def detect_role_specs(
     seen: set[tuple[str, str]] = set()
     q_lower = question.lower()
 
+    def add(term: str, celex: str) -> None:
+        if target_celexes and celex not in target_celexes:
+            return
+        pair = (normalize_role_term(term), celex)
+        if pair not in seen:
+            seen.add(pair)
+            detected.append(pair)
+
     for phrase, specs in sorted(ENTITY_SYNONYMS.items(), key=lambda item: len(item[0]), reverse=True):
         if not re.search(r"\b" + re.escape(phrase) + r"\b", q_lower):
             continue
         for term, celex in specs:
-            if target_celexes and celex not in target_celexes:
-                continue
-            pair = (normalize_role_term(term), celex)
-            if pair not in seen:
-                seen.add(pair)
-                detected.append(pair)
+            add(term, celex)
+
+    has_entity_context = any(_contains_phrase(q_lower, phrase) for phrase in _ENTITY_CONTEXT_PHRASES)
+    if has_entity_context and _PROVIDER_ACTION_RE.search(q_lower):
+        add("provider", "32024R1689")
+    if has_entity_context and _MANUFACTURER_ACTION_RE.search(q_lower):
+        add("manufacturer", "32017R0745")
+        add("manufacturer", "32017R0746")
 
     return detected

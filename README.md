@@ -7,8 +7,8 @@ A GraphRAG system for EU regulatory compliance analysis. It ingests EU regulatio
 ```
 EUR-Lex HTML ──▶ Parse ──▶ parsed.json ──▶ Neo4j Graph ──▶ Embeddings
                                                 │
-                                          Crosslinker
-                                          (inter-regulation CITES)
+               Canonicalization Pipeline
+        (crosslinker + delegation + term + role linkers)
                                                 │
                                           Retriever (vector + graph)
                                                 │
@@ -138,8 +138,8 @@ python scripts/load_neo4j.py --wipe
 # 3. Embed provisions (vector search)
 python scripts/embed_provisions.py
 
-# 4. Crosslink regulations (resolve inter-regulation references)
-python -m canonicalization.crosslinker --cleanup
+# 4. Refresh canonical relationships and semantic edges
+python -m canonicalization --cleanup
 
 # 5. Chat
 python scripts/chat.py
@@ -210,24 +210,29 @@ No arguments. Reads provisions and guidance nodes from Neo4j, embeds with `intfl
 - Prefix: `"passage: "` (asymmetric E5 encoding)
 - Batch: 64 texts per encode call, 500 nodes per Neo4j write
 
-### 4. Crosslink Regulations — `canonicalization/crosslinker.py`
+### 4. Canonicalize Relationships — `canonicalization`
 
-Resolves `CITES_EXTERNAL` references between loaded regulations into concrete `CITES` edges between existing Provision nodes.
+Runs the full post-load canonicalization pipeline in a safe execution order:
+
+1. `crosslinker` — resolves `CITES_EXTERNAL` references into concrete `CITES` and `INTERPRETS` edges
+2. `delegation_linker` — materializes `DELEGATES_TO` edges from enacting provisions to annex provisions
+3. `term_linker` — materializes `USES_TERM` edges from provisions and guidance nodes to `DefinedTerm`
+4. `role_linker` — materializes `ActorRole`, `INSTANTIATES`, `INCLUDES_ROLE`, `OBLIGATION_OF`, and `EQUIVALENT_ROLE`
 
 ```bash
-# Preview without writing
-python -m canonicalization.crosslinker --dry-run
+# Preview all stages without writing
+python -m canonicalization --dry-run
 
-# Run and clean up stale ExternalAct nodes
-python -m canonicalization.crosslinker --cleanup
+# Run all stages and clean up stale ExternalAct nodes in the crosslinker stage
+python -m canonicalization --cleanup
 ```
 
 | Flag | Effect |
 |---|---|
-| `--dry-run` | Preview matches without writing to Neo4j |
-| `--cleanup` | Remove stale `ExternalAct` nodes and resolved `CITES_EXTERNAL` edges |
+| `--dry-run` | Preview all canonicalization stages without writing to Neo4j |
+| `--cleanup` | Pass cleanup through to the crosslinker stage; remove stale `ExternalAct` nodes and resolved `CITES_EXTERNAL` edges |
 
-**Run this after loading all regulations**, so cross-references between MDR, IVDR, and AI Act are resolved.
+Run this after loading documents into Neo4j so cross-document relationships and derived semantic edges stay current.
 
 ### 5. Interactive Chat — `scripts/chat.py`
 
@@ -263,7 +268,7 @@ python -m ingestion.run_pipeline --celex MDCG_2020_3
 python -m ingestion.run_pipeline --celex MDCG_2019_11
 python scripts/load_neo4j.py --wipe
 python scripts/embed_provisions.py
-python -m canonicalization.crosslinker --cleanup
+python -m canonicalization --cleanup
 ```
 
 ### Re-parse only (HTML already cached)
@@ -272,7 +277,7 @@ python -m canonicalization.crosslinker --cleanup
 python -m ingestion.run_pipeline --celex 32024R1689
 python scripts/load_neo4j.py --celex 32024R1689 --wipe
 python scripts/embed_provisions.py
-python -m canonicalization.crosslinker --cleanup
+python -m canonicalization --cleanup
 ```
 
 ### Force re-scrape from EUR-Lex
@@ -300,7 +305,7 @@ python scripts/_verify_neo4j.py
 
 ```
 application/          Agent (Mistral LLM + retrieval orchestration)
-canonicalization/     Crosslinker (inter-regulation CITES resolution)
+canonicalization/     Post-load graph enrichment pipeline and individual linkers
 data/legislation/     Scraped HTML + parsed JSON (gitignored)
 data/guidance/        MDCG guidance PDFs + parsed JSON (gitignored)
 domain/               Legislation catalog, MDCG catalog, ontology, graph schema

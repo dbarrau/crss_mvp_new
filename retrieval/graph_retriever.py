@@ -49,10 +49,22 @@ OPTIONAL MATCH (p2:Guidance  {id: aid})
 WITH coalesce(p1, p2) AS art
 WHERE art IS NOT NULL
 
+// Parent expansion: get the higher-level context (e.g., if art is a point, get its Annex/Section)
+OPTIONAL MATCH (art)<-[:HAS_PART*1..3]-(parent:Provision)
+WHERE parent.text_for_analysis IS NOT NULL
+
+WITH art,
+     collect(DISTINCT {
+       id: parent.id,
+       kind: parent.kind,
+       text: parent.text_for_analysis,
+       ref: parent.display_ref
+     })[..3] AS parents
+
 OPTIONAL MATCH (art)-[:HAS_PART*1..5]->(leaf)
 WHERE leaf.text_for_analysis IS NOT NULL
 
-WITH art,
+WITH art, parents,
      collect(DISTINCT {
        id: leaf.id,
        kind: leaf.kind,
@@ -64,12 +76,12 @@ WITH art,
 // Sibling expansion for Guidance nodes: when a guidance_paragraph is
 // retrieved, also pull its siblings under the same parent so both the
 // "significant" and "non-significant" example lists appear together.
-OPTIONAL MATCH (parent:Guidance)-[:HAS_PART]->(art)
+OPTIONAL MATCH (parent_guidance:Guidance)-[:HAS_PART]->(art)
 WHERE art:Guidance
-OPTIONAL MATCH (parent)-[:HAS_PART]->(sibling:Guidance)
+OPTIONAL MATCH (parent_guidance)-[:HAS_PART]->(sibling:Guidance)
 WHERE sibling <> art AND sibling.text_for_analysis IS NOT NULL
 
-WITH art, children,
+WITH art, parents, children,
      collect(DISTINCT {
        id:   sibling.id,
        kind: sibling.kind,
@@ -79,11 +91,11 @@ WITH art, children,
      })[..10] AS siblings
 
 // Internal citations (same regulation)
-OPTIONAL MATCH (art)-[:HAS_PART*1..5]->()-[:CITES]->(cited:Provision)
+OPTIONAL MATCH (art)-[:HAS_PART*0..5]->()-[:CITES]->(cited:Provision)
 WHERE cited.text_for_analysis IS NOT NULL
   AND cited.celex = art.celex
 
-WITH art, children, siblings,
+WITH art, parents, children, siblings,
      [x IN collect(DISTINCT {
        id:   cited.id,
        ref:  cited.display_ref,
@@ -91,11 +103,11 @@ WITH art, children, siblings,
      }) WHERE x.id IS NOT NULL][..12] AS internal_cited
 
 // Cross-regulation citations (different regulation)
-OPTIONAL MATCH (art)-[:HAS_PART*1..5]->()-[:CITES]->(xref:Provision)
+OPTIONAL MATCH (art)-[:HAS_PART*0..5]->()-[:CITES]->(xref:Provision)
 WHERE xref.text_for_analysis IS NOT NULL
   AND xref.celex <> art.celex
 
-WITH art, children, siblings, internal_cited,
+WITH art, parents, children, siblings, internal_cited,
      collect(DISTINCT {
        id:   xref.id,
        ref:  xref.display_ref,
@@ -109,7 +121,7 @@ RETURN
   art.display_ref     AS article_ref,
   art.display_path    AS article_path,
   art.text_for_analysis AS article_text,
-  children + siblings AS children,
+  parents + children + siblings AS children,
   internal_cited + cross_reg_cited AS cited_provisions,
   cross_reg_cited
 """
@@ -126,14 +138,17 @@ MATCH (srcArt:Provision)-[:HAS_PART*0..5]->(src)
 WHERE srcArt.kind IN ['article', 'annex_section', 'annex_subsection',
                        'annex_point', 'annex_part', 'recital', 'section']
   AND NOT srcArt.id IN $ids
+WITH srcArt, COUNT(src) AS citation_freq
 RETURN DISTINCT
   srcArt.id            AS article_id,
   srcArt.celex         AS celex,
   srcArt.regulation_id AS regulation,
   srcArt.display_ref   AS article_ref,
   srcArt.display_path  AS article_path,
-  srcArt.text_for_analysis AS article_text
-LIMIT 3
+  srcArt.text_for_analysis AS article_text,
+  citation_freq
+ORDER BY citation_freq DESC
+LIMIT 10
 """
 
 # Cited-container drilldown: when a CITES edge points to a high-level
@@ -451,9 +466,8 @@ class GraphRetriever:
         # provisions from the other regulation(s).  This ensures that
         # when a question spans multiple regulations, both sides of the
         # cross-reference chain appear in context.
-        celexes_seen = {r["celex"] for r in results}
-        if len(celexes_seen) < 2 and not target_celexes:
-            # All results come from one regulation — try reverse xref
+        if not target_celexes:
+            # Try reverse xref to expand cross-references even if multiple regs are hit
             with self._driver.session(database=self._db) as s:
                 reverse = s.run(
                     _REVERSE_XREF_CYPHER, ids=top_ids

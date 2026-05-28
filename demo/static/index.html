@@ -459,6 +459,7 @@ debugToggle.addEventListener('click', () => {
 
 // ── Reasoning panel helpers ──
 const STEP_LABELS = {
+  rewrite:     'Query rewrite',
   definitions: 'Term detection',
   regulations: 'Regulation targeting',
   direct:      'Direct provision lookup',
@@ -601,7 +602,7 @@ async function sendQuestion() {
       const res = await fetch('/api/ask/stream', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({question: q, k: k}),
+        body: JSON.stringify({question: q, k: k, history: conversationHistory.slice(0, -1)}),
       });
 
       if (!res.ok) {
@@ -714,7 +715,7 @@ async function sendQuestion() {
     const res = await fetch('/api/ask', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({question: q, k: k}),
+      body: JSON.stringify({question: q, k: k, history: conversationHistory.slice(0, -1)}),
     });
     removeTyping();
     const data = await res.json();

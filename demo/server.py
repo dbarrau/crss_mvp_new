@@ -24,7 +24,7 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
 
 logging.basicConfig(level=logging.WARNING)
 
-from application.agent import ask, ask_stream
+from application.agent import ask_stream, ask_with_trace
 from export import generate_markdown
 from retrieval.graph_retriever import GraphRetriever
 
@@ -57,11 +57,16 @@ def api_ask():
     except (TypeError, ValueError):
         k = 5
 
+    history = _parse_history(body)
+
     try:
-        answer = ask(question, retriever, k=k)
-        return jsonify({"answer": answer})
+        result = ask_with_trace(question, retriever, k=k, history=history)
+        return jsonify({
+            "answer": result["answer"],
+            "audit_trace": result.get("audit_trace"),
+        })
     except Exception as exc:
-        logging.exception("Error in ask()")
+        logging.exception("Error in ask_with_trace()")
         return jsonify({"error": str(exc)}), 500
 
 
@@ -79,9 +84,11 @@ def api_ask_stream():
     except (TypeError, ValueError):
         k = 5
 
+    history = _parse_history(body)
+
     def generate():
         try:
-            for event in ask_stream(question, retriever, k=k):
+            for event in ask_stream(question, retriever, k=k, history=history):
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as exc:
             logging.exception("Error in ask_stream()")
@@ -131,6 +138,21 @@ def api_debug():
 # ---------------------------------------------------------------------------
 # Export endpoints
 # ---------------------------------------------------------------------------
+
+def _parse_history(body: dict) -> list[dict[str, str]] | None:
+    """Extract and validate the conversation history from a request body."""
+    history = body.get("history")
+    if not isinstance(history, list) or not history:
+        return None
+    valid = [
+        {"role": turn["role"], "content": turn["content"]}
+        for turn in history
+        if isinstance(turn, dict)
+        and turn.get("role") in ("user", "agent", "assistant")
+        and isinstance(turn.get("content"), str)
+    ]
+    return valid or None
+
 
 def _parse_conversation(body: dict) -> list[dict] | None:
     """Validate and return the conversation list, or *None* on error."""
