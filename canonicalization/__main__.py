@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 
+from .community_linker import link_communities
 from .crosslinker import crosslink
 from .delegation_linker import link_delegations
 from .role_linker import link_roles
@@ -15,7 +16,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Run the full canonicalization pipeline: "
-            "crosslinker -> delegation_linker -> term_linker -> role_linker."
+            "crosslinker -> delegation_linker -> term_linker -> role_linker "
+            "-> community_linker."
         )
     )
     parser.add_argument(
@@ -31,37 +33,67 @@ def build_parser() -> argparse.ArgumentParser:
             "ExternalAct nodes and resolved CITES_EXTERNAL edges."
         ),
     )
+    parser.add_argument(
+        "--no-communities",
+        action="store_true",
+        help="Skip the community_linker stage (graph partitioning + Community nodes).",
+    )
+    parser.add_argument(
+        "--community-seed",
+        type=int,
+        default=42,
+        help="Deterministic random seed for community detection (default: 42).",
+    )
     return parser
 
 
-def run_pipeline(*, dry_run: bool = False, cleanup: bool = False) -> dict[str, dict[str, int]]:
+def run_pipeline(
+    *,
+    dry_run: bool = False,
+    cleanup: bool = False,
+    skip_communities: bool = False,
+    community_seed: int = 42,
+) -> dict[str, dict[str, int]]:
     print("\n=== Canonicalization Pipeline ===")
-    print(f"  dry_run={dry_run}  cleanup={cleanup}\n")
+    print(f"  dry_run={dry_run}  cleanup={cleanup}  skip_communities={skip_communities}\n")
 
-    print("[1/4] Crosslinking external references...")
+    print("[1/5] Crosslinking external references...")
     crosslink_summary = crosslink(dry_run=dry_run, cleanup=cleanup)
 
-    print("[2/4] Materializing delegation edges...")
+    print("[2/5] Materializing delegation edges...")
     delegation_summary = link_delegations(dry_run=dry_run)
 
-    print("[3/4] Materializing defined-term usage edges...")
+    print("[3/5] Materializing defined-term usage edges...")
     term_summary = link_terms(dry_run=dry_run)
 
-    print("[4/4] Materializing actor-role awareness edges...")
+    print("[4/5] Materializing actor-role awareness edges...")
     role_summary = link_roles(dry_run=dry_run)
+
+    if skip_communities:
+        print("[5/5] Community detection skipped (--no-communities).")
+        community_summary: dict[str, int] = {"nodes": 0, "edges": 0, "communities": 0}
+    else:
+        print("[5/5] Building graph communities...")
+        community_summary = link_communities(dry_run=dry_run, seed=community_seed)
 
     return {
         "crosslinker": crosslink_summary,
         "delegation_linker": delegation_summary,
         "term_linker": term_summary,
         "role_linker": role_summary,
+        "community_linker": community_summary,
     }
 
 
 def main() -> dict[str, dict[str, int]]:
     parser = build_parser()
     args = parser.parse_args()
-    return run_pipeline(dry_run=args.dry_run, cleanup=args.cleanup)
+    return run_pipeline(
+        dry_run=args.dry_run,
+        cleanup=args.cleanup,
+        skip_communities=args.no_communities,
+        community_seed=args.community_seed,
+    )
 
 
 if __name__ == "__main__":

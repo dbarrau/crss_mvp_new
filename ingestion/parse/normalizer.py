@@ -273,8 +273,12 @@ def _reconstruct_paragraphs(soup: BeautifulSoup) -> None:
         if not art_match:
             continue
         art_num_raw = art_match.group(1)
-        # Numeric article number for the NNN prefix (zero-padded to 3 digits)
-        art_num = int(re.match(r"(\d+)", art_num_raw).group(1))
+        # Numeric part of the article number (zero-padded to 3 digits).
+        art_num_digits = int(re.match(r"(\d+)", art_num_raw).group(1))
+        # Include any alpha suffix (e.g. "a" for art_10a) so that amended articles
+        # get distinct paragraph IDs: art_10 → "010.001", art_10a → "010a.001".
+        _art_alpha_m = re.search(r"([a-z]+)$", art_num_raw)
+        art_id_prefix = f"{art_num_digits:03d}{_art_alpha_m.group(1) if _art_alpha_m else ''}"
 
         # Collect direct child <div class="oj-normal"> (after class remap)
         # that contain a <span class="no-parag"> with a paragraph number.
@@ -302,12 +306,12 @@ def _reconstruct_paragraphs(soup: BeautifulSoup) -> None:
             # For numeric-only labels use the number; for "3a" keep as-is
             try:
                 para_num_int = int(para_label)
-                para_id = f"{art_num:03d}.{para_num_int:03d}"
+                para_id = f"{art_id_prefix}.{para_num_int:03d}"
             except ValueError:
-                # e.g. "3a" → "120.003a"
+                # e.g. "3a" → "120.003a" (or "120a.003a" for an amended article)
                 num_part = int(re.match(r"(\d+)", para_label).group(1))
                 suffix = re.search(r"([a-z]+)$", para_label).group(1)
-                para_id = f"{art_num:03d}.{num_part:03d}{suffix}"
+                para_id = f"{art_id_prefix}.{num_part:03d}{suffix}"
             para_counter += 1
 
             # Build a new wrapper div

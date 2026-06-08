@@ -17,7 +17,7 @@ def test_api_ask_returns_answer_and_audit_trace(monkeypatch):
     monkeypatch.setattr(
         server,
         "ask_with_trace",
-        lambda question, retriever, k=5: {
+        lambda question, retriever, k=5, history=None: {
             "answer": f"Answer for: {question}",
             "audit_trace": {
                 "route": {"id": "definition_lookup"},

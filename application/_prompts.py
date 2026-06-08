@@ -20,8 +20,9 @@ from application._routing import (
 
 SYSTEM_PROMPT = """\
 You are a European regulatory compliance expert specializing in \
-MDR 2017/745, IVDR 2017/746, and the EU AI Act (Regulation 2024/1689), \
-as well as MDCG guidance documents that supplement these regulations.
+MDR 2017/745, IVDR 2017/746, the EU AI Act (Regulation 2024/1689), \
+and the General Data Protection Regulation (GDPR, Regulation 2016/679), \
+as well as MDCG guidance documents that supplement the medical device regulations.
 
 You answer questions based on the REGULATORY CONTEXT provided below.
 
@@ -64,7 +65,7 @@ aids, not law. They carry persuasive but not legal authority.
 
 LEGAL HIERARCHY RULES (critical):
 
-- Binding EU Regulations (e.g., MDR 2017/745, IVDR 2017/746, EU AI Act 2024/1689)
+- Binding EU Regulations (e.g., MDR 2017/745, IVDR 2017/746, EU AI Act 2024/1689, GDPR 2016/679)
   take precedence over all guidance documents.
 
 - MDCG guidance documents are NON-BINDING. They:
@@ -133,6 +134,128 @@ def _build_route_answer_guidance(
     sufficiency: dict[str, Any],
 ) -> str | None:
     """Return route-specific answer discipline for the final LLM prompt."""
+
+    # ── Obligation-breadth questions (community summary + role obligations) ──
+    # When a backbone master article was force-retrieved, instruct the LLM to
+    # use it as a structural skeleton rather than free-forming the answer.
+    if route.id in {"community_summary_search", "role_obligations"} and sufficiency.get("has_backbone"):
+        backbone_label = sufficiency.get("backbone_label", "the obligations master list article")
+        lines: list[str] = []
+        lines.append("ANSWER DISCIPLINE — OBLIGATION COMPLETENESS:")
+        lines.append(
+            f"The REGULATORY CONTEXT begins with [{backbone_label}] marked as the "
+            "OBLIGATIONS MASTER LIST. This is the authoritative statutory checklist for "
+            "the actor in question — it was written specifically to enumerate all of that "
+            "actor's obligations in one place."
+        )
+        lines.append(
+            "Structure your answer by addressing each item on that master list in order. "
+            "For each item, state the obligation and cite the specific article/paragraph "
+            "it cross-references. If an item falls outside the question's scope, note it "
+            "in one sentence and skip the detail."
+        )
+        lines.append(
+            "After covering the master list, add any obligations from other parts of "
+            "the regulation not captured in the master list (e.g. GPAI-specific tiers "
+            "under Articles 51-56, prohibited-practice gates under Article 5). Label "
+            "this section 'Additional obligations beyond the master list'."
+        )
+        lines.append(
+            "Use precise article-level citations. Do NOT reorganise or omit items "
+            "from the master list without explicit acknowledgment."
+        )
+        if not sufficiency.get("ok", True):
+            lines.append(
+                "Retrieval sufficiency is partial. Flag remaining uncertainty and "
+                "avoid a definitive bottom-line conclusion."
+            )
+        return "\n".join(lines)
+
+    if route.id == "classification_chain":
+        lines: list[str] = []
+        lines.append("ANSWER DISCIPLINE — AI ACT CLASSIFICATION SEQUENCE:")
+        lines.append(
+            "MANDATORY: Apply the classification analysis in this exact order. "
+            "Do NOT skip or reorder these steps."
+        )
+        lines.append(
+            "STEP 0 — PROHIBITED PRACTICES GATE (Article 5): "
+            "Before any classification analysis, check whether the AI system falls "
+            "within a prohibited practice under Article 5 (e.g. subliminal manipulation, "
+            "social scoring, real-time remote biometric identification in public spaces). "
+            "If it does, the system is PROHIBITED regardless of high-risk classification. "
+            "The Article 6 and Article 51 analyses are legally moot for prohibited systems. "
+            "Always surface this gate even if the question does not explicitly mention Article 5."
+        )
+        lines.append(
+            "STEP 1 — IS THE SYSTEM AN AI SYSTEM? (Article 3(1)): "
+            "Confirm the product meets the Article 3(1) definition of 'AI system' before "
+            "proceeding to classification. If the context does not confirm this, flag it."
+        )
+        lines.append(
+            "STEP 2 — GPAI MODEL CHECK (Article 3(63)): "
+            "Determine whether the system is a 'general-purpose AI model' under Article 3(63). "
+            "CRITICAL: Meeting the Article 3(63) definition ALONE — regardless of systemic risk — "
+            "triggers the Article 53 BASELINE obligations (technical documentation, copyright "
+            "policy, transparency to downstream providers). Do NOT conflate this with the "
+            "systemic-risk assessment. A GPAI model that does NOT meet the Article 51 "
+            "systemic-risk threshold still carries full Article 53 obligations."
+        )
+        lines.append(
+            "STEP 3 — GPAI SYSTEMIC RISK (Article 51 — TWO DISTINCT ROUTES): "
+            "If the system is a GPAI model (Step 2), assess systemic risk via BOTH routes:\n"
+            "  Route A (provider-triggered): Article 51(1)(a) + Article 51(2). "
+            "If training computation exceeds 10²⁵ FLOPs, the model is PRESUMED to have "
+            "high impact capabilities. This is a rebuttable presumption: the provider may "
+            "argue against it. The provider must notify the AI Office before placing the "
+            "model on the market (Article 52(1)(c)).\n"
+            "  Route B (Commission-triggered): Article 51(1)(b) + Annex XIII. "
+            "The Commission may, ex officio or following a scientific panel alert, issue a "
+            "decision that a model below the 10²⁵ FLOPs threshold has equivalent impact. "
+            "Annex XIII criteria (parameters, data, modalities, capabilities) govern this "
+            "Commission assessment — Annex XIII does NOT govern the Route A self-assessment.\n"
+            "State which route applies (or both if relevant) and what the legal effect is "
+            "(Article 55 additional obligations: adversarial testing, incident reporting, "
+            "AI Office cooperation)."
+        )
+        lines.append(
+            "STEP 4 — HIGH-RISK CLASSIFICATION (Article 6): "
+            "Apply the two high-risk routes in order:\n"
+            "  Route I (Article 6(1) + Annex I): AI system is a safety component or "
+            "product under Union harmonisation legislation listed in Annex I AND requires "
+            "third-party conformity assessment. Both conditions must be satisfied. "
+            "No derogation applies to this route.\n"
+            "  Route II (Article 6(2) + Annex III): AI system falls within one of the "
+            "8 Annex III use-case categories. Subject to derogation under Article 6(3) "
+            "for narrow procedural/preparatory tasks — EXCEPT for profiling of natural "
+            "persons, which is always high-risk regardless of Article 6(3) conditions.\n"
+            "Always check Route I before Route II. Do not invoke Annex III if the Annex I "
+            "route is more specific to the facts."
+        )
+        lines.append(
+            "STEP 5 — LEGAL EFFECTS: "
+            "After classification, state what obligations the classification triggers: "
+            "Article 53 baseline (all GPAI), Article 55 additional (systemic-risk GPAI), "
+            "Articles 9-17 + 43 + 47-49 + 72 cluster (high-risk AI), "
+            "Article 5 prohibition (prohibited practices). "
+            "These effects are the legal consequence of the classification — state them "
+            "as conclusions, not as the starting point for analysis."
+        )
+        lines.append(
+            "CALIBRATION: Distinguish explicit law from inference. "
+            "Where the classification depends on factual assessment (intended purpose, "
+            "whether third-party conformity assessment is required, FLOPs count), "
+            "flag what the classifier must verify and what cannot be concluded without it. "
+            "Use 'likely', 'presumed', or 'subject to verification' as appropriate."
+        )
+        if not sufficiency.get("ok", True):
+            lines.append(
+                "Retrieval sufficiency is partial. Explicitly flag any provision "
+                "missing from context and do not draw definitive conclusions from "
+                "incomplete grounding."
+            )
+        return "\n".join(lines)
+
     if route.id != "legal_qualification":
         return None
 
@@ -249,12 +372,30 @@ def _build_user_message(
     context: str,
     route: _QuestionRoute,
     sufficiency: dict[str, Any],
+    mentioned_regs: set[str] | None = None,
 ) -> str:
     """Build the final user message sent to the answer-generation model."""
     route_guidance = _build_route_answer_guidance(route, question=question, sufficiency=sufficiency)
     parts: list[str] = []
     if route_guidance:
         parts.append(route_guidance)
+    # Single-regulation scope constraint — prevents cross-regulation citation contamination.
+    # When exactly one regulation is in scope, the LLM receives an explicit prohibition
+    # on importing citations from other regulations.  For multi-regulation questions the
+    # CROSS-REGULATION AWARENESS instruction in the system prompt remains fully active.
+    if mentioned_regs and len(mentioned_regs) == 1:
+        reg_name = next(iter(mentioned_regs))
+        parts.append(
+            f"REGULATORY SCOPE CONSTRAINT:\n"
+            f"This question is scoped EXCLUSIVELY to {reg_name}. "
+            f"Every provision citation in your answer MUST come from {reg_name}. "
+            f"If a concept (e.g. 'reasonably foreseeable misuse', 'intended purpose', "
+            f"'substantial modification') also appears in another regulation, cite ONLY "
+            f"the {reg_name} version. "
+            f"Cross-regulation citations are PROHIBITED unless a provision from another "
+            f"regulation appears explicitly in the REGULATORY CONTEXT below, tagged "
+            f"[LEGISLATION] with its own regulation name."
+        )
     parts.append(f"REGULATORY CONTEXT:\n{context}")
     parts.append(f"QUESTION: {question}")
     return "\n\n".join(parts)

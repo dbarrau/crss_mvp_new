@@ -71,6 +71,8 @@ from application._retrieval import (                     # noqa: F401
     _retrieve_route_provisions,
     _collect_context_celexes,
     _collect_context_refs,
+    _collect_context_communities,
+    _has_community_diversity,
     _has_role_context,
     _evaluate_route_sufficiency,
     _run_corrective_retrieval_pass,
@@ -83,6 +85,7 @@ from application._context import (                       # noqa: F401
     _extract_inline_refs,
     _format_definitions,
     _format_context,
+    _community_summary_header,
 )
 from application._prompts import (                       # noqa: F401
     SYSTEM_PROMPT,
@@ -311,6 +314,10 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
         role_provisions = retrieval_result["role_provisions"]
         hyde_text = retrieval_result["hyde_text"]
         provisions = retrieval_result["provisions"]
+        map_results: list[dict] = retrieval_result.get("map_results") or []
+        has_backbone: bool = retrieval_result.get("has_backbone", False)
+        backbone_provisions: list[dict] = retrieval_result.get("backbone_provisions") or []
+        backbone_label: str | None = retrieval_result.get("backbone_label")
 
         if explicit_refs and direct_provisions:
             logger.info("Direct lookup: %s → %d provision(s)", explicit_refs, len(direct_provisions))
@@ -363,6 +370,10 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
             role_provisions=role_provisions,
             legal_qualification_targets=legal_qualification_targets,
         )
+        # Inject backbone metadata so prompts and self-check can consume it.
+        sufficiency["has_backbone"] = has_backbone
+        if backbone_label:
+            sufficiency["backbone_label"] = backbone_label
         corrective_actions: list[str] = []
         if not sufficiency["ok"]:
             recovery = _run_corrective_retrieval_pass(
@@ -498,6 +509,34 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                     logger.info("Negative-definition signal injected for '%s'.", concept_text)
 
         if provisions:
+            if route.id == "community_summary_search":
+                # Map-reduce coverage block: inject partial answers from chapter
+                # summaries so the LLM sees the full regulatory landscape even
+                # for chapters not captured by provision-level retrieval.
+                if map_results:
+                    map_block_lines = [
+                        "[Regulatory Coverage Overview — from chapter-level community summaries]\n"
+                    ]
+                    for mr in map_results:
+                        score_tag = f" [relevance {mr['score']}/100]" if mr.get("score") else ""
+                        map_block_lines.append(
+                            f"• {mr.get('label', mr['community_id'])}{score_tag}: {mr['partial_answer']}"
+                        )
+                    context_parts.append("\n".join(map_block_lines))
+                header = _community_summary_header(provisions)
+                if header:
+                    context_parts.append(header)
+
+            # Backbone block: force-retrieved master list article rendered
+            # before the main provisions so it anchors the LLM's structure.
+            if has_backbone and backbone_provisions:
+                backbone_header = (
+                    f"[OBLIGATIONS MASTER LIST — {backbone_label} — "
+                    "Authoritative statutory checklist for this actor. "
+                    "Address each item in order.]\n"
+                )
+                context_parts.append(backbone_header + _format_context(backbone_provisions))
+
             context_parts.append(_format_context(provisions))
         context = "\n\n---\n\n".join(context_parts)
 
@@ -545,6 +584,7 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                     context=context,
                     route=route,
                     sufficiency=sufficiency,
+                    mentioned_regs=mentioned_regs,
                 ),
             },
         ]
@@ -573,6 +613,100 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                     time.sleep(wait)
                 else:
                     raise
+
+        # --- 7b. Backbone self-check (bounded, 1 call) ---
+        # When a master-list article was injected, verify the answer covers all
+        # its items.  Uses the actual retrieved text — no training-memory risk.
+        # Set env CRSS_BACKBONE_SELFCHECK=0 to disable.
+        if (
+            has_backbone
+            and backbone_provisions
+            and os.environ.get("CRSS_BACKBONE_SELFCHECK", "1") != "0"
+            and full_answer
+        ):
+            try:
+                _backbone_text = _format_context(backbone_provisions[:1])[:2000]
+                _check_resp = client.chat.complete(
+                    model=os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
+                    messages=[{
+                        "role": "user",
+                        "content": (
+                            "BACKBONE ARTICLE (authoritative master list):\n"
+                            f"{_backbone_text}\n\n"
+                            "GENERATED ANSWER:\n"
+                            f"{full_answer[:3000]}\n\n"
+                            "Does the generated answer address each of the obligation "
+                            "categories listed in the BACKBONE ARTICLE?\n"
+                            "Output exactly COMPLETE if yes.\n"
+                            "If no, output only the missing article numbers or "
+                            "obligation headings, one per line. Max 30 words total."
+                        ),
+                    }],
+                    temperature=0.0,
+                    max_tokens=80,
+                )
+                _check_text = _check_resp.choices[0].message.content.strip()
+                if not _check_text.upper().startswith("COMPLETE"):
+                    full_answer += (
+                        "\n\n---\n> **⚠ Completeness note:** "
+                        "The following obligations from the statutory master list "
+                        f"({backbone_label}) may not be fully addressed above: "
+                        f"{_check_text}. Independent legal review recommended."
+                    )
+                    logger.info("Backbone self-check flagged gaps: %s", _check_text)
+                else:
+                    logger.debug("Backbone self-check: COMPLETE")
+            except Exception as _exc:
+                logger.warning("Backbone self-check skipped: %s", _exc)
+
+        # --- 7c. Citation scope self-check (bounded, 1 call) ---
+        # When the question is scoped to a single regulation, verify the answer
+        # does not cite provisions from other regulations.  This encodes the
+        # evaluation rubric (cross-regulation contamination = major weakness)
+        # as an internal quality gate that fires on every single-regulation answer.
+        # Set env CRSS_CITATION_SCOPE_CHECK=0 to disable.
+        if (
+            target_celexes
+            and len(target_celexes) == 1
+            and mentioned_regs
+            and len(mentioned_regs) == 1
+            and os.environ.get("CRSS_CITATION_SCOPE_CHECK", "1") != "0"
+            and full_answer
+        ):
+            _scope_reg_name = next(iter(mentioned_regs))
+            try:
+                _scope_resp = client.chat.complete(
+                    model=os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
+                    messages=[{
+                        "role": "user",
+                        "content": (
+                            f"The answer below was written for a question scoped to "
+                            f"{_scope_reg_name} only.\n"
+                            "Respond with EXACTLY the word CLEAN if every provision "
+                            "citation in the answer belongs to "
+                            f"{_scope_reg_name}. "
+                            "Otherwise list ONLY the out-of-scope citations, one per "
+                            "line, in the format: [article ref] ([wrong regulation]). "
+                            "No preamble, no explanation — just CLEAN or the list.\n\n"
+                            f"ANSWER:\n{full_answer[:3000]}"
+                        ),
+                    }],
+                    temperature=0.0,
+                    max_tokens=60,
+                )
+                _scope_text = _scope_resp.choices[0].message.content.strip()
+                if "CLEAN" not in _scope_text.upper():
+                    full_answer += (
+                        "\n\n---\n> **\u26a0 Citation scope note:** "
+                        "The following citations may reference regulations outside the "
+                        f"scope of this question (scoped to {_scope_reg_name}): "
+                        f"{_scope_text}. Please verify against the retrieved context."
+                    )
+                    logger.info("Citation scope self-check flagged: %s", _scope_text)
+                else:
+                    logger.debug("Citation scope self-check: CLEAN")
+            except Exception as _exc:
+                logger.warning("Citation scope self-check skipped: %s", _exc)
 
         final_answer = _postprocess_answer(
             full_answer,

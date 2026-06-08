@@ -16,7 +16,7 @@ def test_ask_with_trace_returns_answer_and_audit_trace(monkeypatch):
         },
     ]
 
-    def fake_ask_stream(question, retriever, k=20):
+    def fake_ask_stream(question, retriever, k=20, history=None):
         assert question == "What does Article 26 require?"
         assert retriever == "fake-retriever"
         assert k == 7

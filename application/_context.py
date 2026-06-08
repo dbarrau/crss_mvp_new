@@ -98,6 +98,30 @@ def _format_definitions(definitions: list[dict]) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _community_summary_header(provisions: list[dict]) -> str:
+    """Build a de-duplicated community-summary preamble for community-route context.
+
+    Returns an empty string when no provisions carry a ``community_summary``
+    field (e.g. older data or HyDE fallback), so the caller can skip it safely.
+    """
+    seen: dict[str, str] = {}  # community_id -> summary_text (ordered, deduped)
+    for p in provisions:
+        cid = p.get("community_id") or ""
+        summary = p.get("community_summary") or ""
+        if cid and summary and cid not in seen:
+            seen[cid] = summary
+
+    if not seen:
+        return ""
+
+    lines: list[str] = ["[Community Overview]"]
+    for cid, summary in seen.items():
+        short_id = cid.replace("community::", "").lstrip("0") or "0"
+        lines.append(f"  Community {short_id}: {summary}")
+    lines.append("─" * 60)
+    return "\n".join(lines)
+
+
 def _format_context(provisions: list[dict]) -> str:
     """Turn retriever results into a structured text block for the LLM."""
     parts: list[str] = []
@@ -106,7 +130,8 @@ def _format_context(provisions: list[dict]) -> str:
         celex = p.get("celex", "")
         is_guidance = any(celex.startswith(pfx) for pfx in _GUIDANCE_CELEX_PREFIXES)
         layer_tag = " [GUIDANCE]" if is_guidance else " [LEGISLATION]"
-        header = f"[{i}] {p.get('article_ref', 'Unknown')} ({regulation}){layer_tag}"
+        celex_badge = f" (CELEX: {celex})" if celex and not is_guidance else ""
+        header = f"[{i}] {p.get('article_ref', 'Unknown')} — {regulation}{celex_badge}{layer_tag}"
         path = p.get("article_path", "")
         if path:
             header += f"\n    Path: {path}"

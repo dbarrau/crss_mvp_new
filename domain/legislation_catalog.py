@@ -46,6 +46,13 @@ LEGISLATION = {
         "jurisdiction": "EU",
         "source_celex": "02017R0746-20250110",
     },
+    "32016R0679": {
+        "name": "General Data Protection Regulation (GDPR) 2016/679",
+        "number": "2016/679",
+        "type": "data_protection_regulation",
+        "jurisdiction": "EU",
+        "source_celex": "02016R0679-20160504",
+    },
 }
 
 # Backward-compatible alias

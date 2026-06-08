@@ -54,6 +54,11 @@ _LEGISLATION_PATTERNS: dict[str, list[str]] = {
         "ivdr", "2017/746", "in vitro",
         "class a ", "class b ", "class c ", "class d ",
     ],
+    "General Data Protection Regulation (GDPR) 2016/679": [
+        "gdpr", "2016/679", "general data protection",
+        "data protection regulation", "data subject", "personal data",
+        "data controller", "data processor",
+    ],
 }
 
 # Validate that every curated legislation pattern key exists in the catalog.
@@ -154,6 +159,34 @@ def _detect_mentioned_regulations(question: str) -> set[str]:
         if any(p in q_lower for p in patterns):
             found.add(reg_name)
     return found
+
+
+# ---------------------------------------------------------------------------
+# Obligation master articles — authoritative statutory checklists per actor
+#
+# Values are lists so multiple anchor articles can be force-retrieved for a
+# single actor (e.g. AI Act providers span two separate obligation regimes:
+# Article 16 covers High-Risk AI systems, Article 53 covers GPAI models).
+# Force-retrieving all anchors for obligation-breadth questions gives the LLM
+# a complete statutory skeleton across every tier, not just the densest one.
+# ---------------------------------------------------------------------------
+
+_OBLIGATION_MASTER_ARTICLES: dict[tuple[str, str], list[str]] = {
+    # AI Act providers span two obligation regimes: High-Risk (Art. 16) and
+    # GPAI model providers (Art. 53).  Both are needed for full coverage.
+    ("provider", "32024R1689"):                     ["Article 16", "Article 53"],
+    ("deployer", "32024R1689"):                     ["Article 26"],
+    ("importer", "32024R1689"):                     ["Article 23"],
+    ("distributor", "32024R1689"):                  ["Article 24"],
+    ("manufacturer", "32017R0745"):                 ["Article 10"],
+    ("manufacturer", "32017R0746"):                 ["Article 10"],
+    ("authorised representative", "32017R0745"):    ["Article 11"],
+    ("authorised representative", "32017R0746"):    ["Article 11"],
+    ("importer", "32017R0745"):                     ["Article 13"],
+    ("importer", "32017R0746"):                     ["Article 13"],
+    ("distributor", "32017R0745"):                  ["Article 14"],
+    ("distributor", "32017R0746"):                  ["Article 14"],
+}
 
 
 def _extract_provision_refs(question: str) -> list[str]:

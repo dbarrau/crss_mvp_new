@@ -469,6 +469,95 @@ def test_evaluate_route_sufficiency_flags_missing_cross_regulation_coverage():
     assert sufficiency["missing_celexes"] == ["32017R0745"]
 
 
+def test_evaluate_route_sufficiency_flags_single_community_concentration():
+    route = _select_question_route(
+        "How do AI Act and MDR deployer obligations compare?",
+        explicit_refs=[],
+        mentioned_regs={"EU AI Act", "MDR 2017/745"},
+        role_specs=[("deployer", "32024R1689")],
+        is_definition_question=False,
+    )
+
+    sufficiency = _evaluate_route_sufficiency(
+        route=route,
+        question="How do AI Act and MDR deployer obligations compare?",
+        explicit_refs=[],
+        target_celexes={"32024R1689", "32017R0745"},
+        role_specs=[("deployer", "32024R1689")],
+        provisions=[
+            {
+                "article_id": "ai-art-26",
+                "celex": "32024R1689",
+                "community_id": "community::deployer",
+                "matched_role": "deployer",
+            },
+            {
+                "article_id": "mdr-art-10",
+                "celex": "32017R0745",
+                "community_id": "community::deployer",
+                "matched_role": "deployer",
+            },
+        ],
+        definitions=[],
+        direct_provisions=[],
+        role_provisions=[{"article_id": "ai-art-26", "celex": "32024R1689"}],
+        legal_qualification_targets=[],
+    )
+
+    assert sufficiency["ok"] is False
+    assert sufficiency["context_communities"] == ["community::deployer"]
+    assert any(
+        check["name"] == "community_diversity" and check["passed"] is False
+        for check in sufficiency["checks"]
+    )
+
+
+def test_evaluate_route_sufficiency_passes_with_multi_community_coverage():
+    route = _select_question_route(
+        "How do AI Act and MDR deployer obligations compare?",
+        explicit_refs=[],
+        mentioned_regs={"EU AI Act", "MDR 2017/745"},
+        role_specs=[("deployer", "32024R1689")],
+        is_definition_question=False,
+    )
+
+    sufficiency = _evaluate_route_sufficiency(
+        route=route,
+        question="How do AI Act and MDR deployer obligations compare?",
+        explicit_refs=[],
+        target_celexes={"32024R1689", "32017R0745"},
+        role_specs=[("deployer", "32024R1689")],
+        provisions=[
+            {
+                "article_id": "ai-art-26",
+                "celex": "32024R1689",
+                "community_id": "community::deployer",
+                "matched_role": "deployer",
+            },
+            {
+                "article_id": "mdr-art-10",
+                "celex": "32017R0745",
+                "community_id": "community::manufacturer",
+                "matched_role": "deployer",
+            },
+        ],
+        definitions=[],
+        direct_provisions=[],
+        role_provisions=[{"article_id": "ai-art-26", "celex": "32024R1689"}],
+        legal_qualification_targets=[],
+    )
+
+    assert sufficiency["ok"] is True
+    assert sufficiency["context_communities"] == [
+        "community::deployer",
+        "community::manufacturer",
+    ]
+    assert any(
+        check["name"] == "community_diversity" and check["passed"] is True
+        for check in sufficiency["checks"]
+    )
+
+
 def test_evaluate_route_sufficiency_flags_missing_qualification_backbone():
     question = (
         "When does a hospital using an in-house AI medical device under "

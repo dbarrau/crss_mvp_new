@@ -118,6 +118,7 @@ RETURN
   art.id              AS article_id,
   art.celex           AS celex,
   art.regulation_id   AS regulation,
+    art.community_id    AS community_id,
   art.display_ref     AS article_ref,
   art.display_path    AS article_path,
   art.text_for_analysis AS article_text,
@@ -164,6 +165,39 @@ RETURN cid               AS container_id,
        child.display_ref  AS ref,
        child.text_for_analysis AS text
 ORDER BY cid, child.hierarchy_depth, child.id
+"""
+
+# Traverse legal reasoning edges from a seed provision.
+# Returns all provisions reachable via TRIGGERS_OBLIGATION_CLUSTER or
+# IS_PREREQUISITE_FOR edges within 2 hops.  Used by retrieve_by_chain.
+_CHAIN_SEED_LOOKUP_CYPHER = """\
+UNWIND $refs AS ref
+OPTIONAL MATCH (p1:Provision {celex: $celex})
+  WHERE toLower(p1.display_ref) = toLower(ref)
+  AND p1.kind IN ['article', 'annex_section', 'annex_part', 'annex',
+                  'recital', 'section', 'chapter', 'title']
+OPTIONAL MATCH (p2:Guidance {celex: $celex})
+  WHERE toLower(p2.display_ref) = toLower(ref)
+WITH coalesce(p1, p2) AS seed
+WHERE seed IS NOT NULL
+RETURN seed.id AS seed_id
+ORDER BY seed.hierarchy_depth ASC
+LIMIT 5
+"""
+
+_CHAIN_TRAVERSE_CYPHER = """\
+UNWIND $seed_ids AS sid
+MATCH (seed) WHERE seed.id = sid
+OPTIONAL MATCH (seed)-[:TRIGGERS_OBLIGATION_CLUSTER|IS_PREREQUISITE_FOR*1..2]->(linked)
+WHERE linked IS NOT NULL
+  AND linked.kind IN ['article', 'annex_section', 'annex_part', 'annex',
+                      'recital', 'section']
+RETURN DISTINCT
+  linked.id           AS article_id,
+  linked.celex        AS celex,
+  linked.display_ref  AS article_ref,
+  linked.display_path AS article_path,
+  linked.text_for_analysis AS article_text
 """
 
 # Direct provision lookup by display_ref.  Used for structural questions
@@ -280,6 +314,18 @@ class GraphRetriever:
         """
         return self._model.encode(
             PASSAGE_PREFIX + text, normalize_embeddings=True,
+        ).astype(np.float32)
+
+    def encode_as_query(self, text: str) -> np.ndarray:
+        """Encode *text* with the query prefix.
+
+        Use this when you want to embed the raw question for community-level
+        retrieval, bypassing HyDE.  Community summaries are semantically rich
+        enough to match a plain question vector; using a query prefix (rather
+        than a passage prefix) aligns with how the model was trained.
+        """
+        return self._model.encode(
+            QUERY_PREFIX + text, normalize_embeddings=True,
         ).astype(np.float32)
 
     def _find_anchor(self, node_id: str, node_kind: str, path_string: str) -> str:
@@ -689,6 +735,303 @@ ORDER BY d.celex, d.term_normalized
             r["_role_retrieval"] = True
 
         return results
+
+    # ------------------------------------------------------------------
+    # Community-based (summary-first) retrieval
+    # ------------------------------------------------------------------
+
+    def _load_community_index(self) -> None:
+        """Lazily fetch Community summaries into an in-memory numpy matrix.
+
+        Loads **Level-0** community embeddings into the cosine-similarity
+        matrix used for community-first retrieval.  Level-1 (chapter-level)
+        summaries are stored separately in ``_l1_community_summaries`` and
+        used for the map-reduce pass.
+        """
+        if hasattr(self, "_community_ids"):
+            return
+        with self._driver.session(database=self._db) as s:
+            rows = s.run(
+                "MATCH (c:Community) "
+                "WHERE c.summary_embedding IS NOT NULL "
+                "  AND (c.level IS NULL OR c.level = 0) "
+                "RETURN c.id AS id, c.summary_text AS summary_text, "
+                "c.member_count AS member_count, "
+                "c.regulations AS regulations, "
+                "c.summary_embedding AS emb"
+            ).data()
+            l1_rows = s.run(
+                "MATCH (c:Community) "
+                "WHERE c.level = 1 AND c.summary_text IS NOT NULL "
+                "RETURN c.id AS id, c.summary_text AS summary_text, "
+                "c.regulations AS regulations, c.label AS label, "
+                "c.member_count AS member_count, "
+                "c.summary_embedding AS emb"
+            ).data()
+        if not rows:
+            self._community_ids: list[str] = []
+            self._community_meta: list[dict] = []
+            self._community_matrix: np.ndarray | None = None
+            logger.warning(
+                "No community summary embeddings found. "
+                "Run scripts/generate_community_summaries.py first."
+            )
+        else:
+            self._community_ids = [r["id"] for r in rows]
+            self._community_meta = [
+                {
+                    "id": r["id"],
+                    "summary_text": r.get("summary_text") or "",
+                    "member_count": r.get("member_count") or 0,
+                    "regulations": r.get("regulations") or [],
+                }
+                for r in rows
+            ]
+            self._community_matrix = np.array(
+                [r["emb"] for r in rows], dtype=np.float32
+            )
+            logger.info(
+                "Loaded %d Level-0 community summary embeddings into memory.",
+                len(self._community_ids),
+            )
+
+        # Level-1 summaries (no embedding search needed — map-reduce uses all)
+        self._l1_community_summaries: list[dict] = [
+            {
+                "id": r["id"],
+                "summary_text": r.get("summary_text") or "",
+                "regulations": r.get("regulations") or [],
+                "label": r.get("label") or r["id"],
+                "member_count": r.get("member_count") or 0,
+            }
+            for r in l1_rows
+        ]
+        if l1_rows:
+            logger.info(
+                "Loaded %d Level-1 chapter-community summaries.",
+                len(l1_rows),
+            )
+
+    def retrieve_by_communities_hierarchical(
+        self,
+        question: str,
+        *,
+        k_communities: int = 5,
+        k_provisions: int = 20,
+        target_celexes: set[str] | None = None,
+        query_vec: np.ndarray | None = None,
+    ) -> list[dict[str, Any]]:
+        """Community-first retrieval: search summaries, then fetch member provisions.
+
+        Two-stage search:
+        1. Encode question (or use *query_vec*) → cosine similarity against
+           ~300 community summary embeddings → top-``k_communities``.
+        2. For each matched community, fetch up to ``k_provisions`` member
+           Provision nodes (anchored to parent kinds), then run the same
+           graph expansion used by :meth:`retrieve`.
+
+        Returns the same dict shape as :meth:`retrieve` so results can be
+        merged transparently.  Each provision dict gains two extra keys:
+
+        * ``community_id`` — the community it came from
+        * ``_community_retrieval`` — ``True`` for attribution in audit traces
+        * ``community_summary`` — the community's summary text
+
+        Falls back to an empty list when no community embeddings are loaded.
+        """
+        self._load_community_index()
+        if not self._community_ids or self._community_matrix is None:
+            return []
+
+        if query_vec is not None:
+            q_vec = query_vec
+        else:
+            q_vec = self._model.encode(
+                QUERY_PREFIX + question, normalize_embeddings=True
+            ).astype(np.float32)
+
+        # Step 1 — rank communities by summary similarity
+        scores = self._community_matrix @ q_vec
+        sorted_indices = scores.argsort()[::-1]
+
+        top_community_ids: list[str] = []
+        top_community_meta: dict[str, dict] = {}
+        for idx in sorted_indices:
+            cid = self._community_ids[idx]
+            meta = self._community_meta[idx]
+            # Optional CELEX filter: include community if any of its
+            # regulations match, or if it has no regulation tagging.
+            if target_celexes:
+                regs = set(meta.get("regulations") or [])
+                if regs and not regs.intersection(target_celexes):
+                    continue
+            top_community_ids.append(cid)
+            top_community_meta[cid] = {**meta, "score": float(scores[idx])}
+            if len(top_community_ids) >= k_communities:
+                break
+
+        if not top_community_ids:
+            return []
+
+        # Step 2 — fetch member provisions for matched communities
+        per_community = max(1, k_provisions // len(top_community_ids))
+        member_query = """\
+UNWIND $community_ids AS cid
+MATCH (p:Provision)-[:MEMBER_OF]->(c:Community {id: cid})
+WHERE p.kind IN ['article', 'annex_section', 'annex_subsection', 'annex_point',
+                  'annex_part', 'recital', 'section',
+                  'guidance_section', 'guidance_subsection']
+  AND p.text_for_analysis IS NOT NULL
+WITH cid, p
+ORDER BY p.hierarchy_depth ASC
+WITH cid, collect(p.id)[..$per_community] AS ids
+UNWIND ids AS pid
+RETURN pid AS provision_id, cid AS community_id
+"""
+        with self._driver.session(database=self._db) as s:
+            member_rows = s.run(
+                member_query,
+                community_ids=top_community_ids,
+                per_community=per_community,
+            ).data()
+
+        if not member_rows:
+            return []
+
+        provision_to_community: dict[str, str] = {
+            row["provision_id"]: row["community_id"] for row in member_rows
+        }
+        top_ids = list(dict.fromkeys(provision_to_community))  # preserves order, deduplicates
+
+        # Step 3 — graph expansion (same as retrieve())
+        with self._driver.session(database=self._db) as s:
+            results = s.run(_EXPAND_CYPHER, ids=top_ids).data()
+
+        # Attach community metadata to each result
+        for r in results:
+            cid = provision_to_community.get(r["article_id"], "")
+            meta = top_community_meta.get(cid, {})
+            r["community_id"] = cid
+            r["community_summary"] = meta.get("summary_text", "")
+            r["score"] = meta.get("score", 0.0)
+            r["matched_leaf_id"] = None
+            r["_community_retrieval"] = True
+
+        self._expand_cited_containers(results)
+        return results
+
+    def get_all_community_summaries(self, *, level: int = 1) -> list[dict]:
+        """Return all Community summaries for the given level.
+
+        Used by the map-reduce pass in the community_summary_search route.
+        Each dict has keys: ``id``, ``summary_text``, ``regulations``, ``label``.
+
+        Level-0 results include summaries loaded at startup.
+        Level-1 results are the chapter-level aggregation summaries.
+        """
+        self._load_community_index()
+        if level == 1:
+            return list(self._l1_community_summaries)
+        # level == 0: return from the standard community meta list
+        return [
+            {
+                "id": m["id"],
+                "summary_text": m["summary_text"],
+                "regulations": m["regulations"],
+                "label": m["id"],
+            }
+            for m in self._community_meta
+        ]
+
+    # ------------------------------------------------------------------
+    # Legal reasoning chain retrieval
+    # ------------------------------------------------------------------
+
+    def retrieve_by_chain(
+        self,
+        refs: list[str],
+        celex: str,
+        *,
+        seed_only: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Retrieve provisions reachable via legal reasoning edges.
+
+        Given one or more seed provision references (e.g. ``["Article 6"]``),
+        this method:
+
+        1. Resolves the seed nodes in Neo4j by ``display_ref`` + ``celex``.
+        2. Traverses ``TRIGGERS_OBLIGATION_CLUSTER`` and
+           ``IS_PREREQUISITE_FOR`` edges up to 2 hops.
+        3. Returns the expanded graph context for all reachable provisions
+           (same structure as :meth:`retrieve`).
+
+        Falls back to :meth:`retrieve_by_refs` when no legal reasoning edges
+        exist for the seed provisions (e.g. for newly loaded regulations
+        before the edge loading script has run).
+
+        Parameters
+        ----------
+        refs:
+            List of ``display_ref`` strings to start from.
+        celex:
+            CELEX of the regulation.
+        seed_only:
+            When ``True``, skip the chain traversal and return only the seed
+            provisions' expanded context.  Useful for provisions that are
+            already a complete obligation cluster (e.g. ``Article 26``).
+        """
+        if not refs:
+            return []
+
+        with self._driver.session(database=self._db) as s:
+            seed_rows = s.run(
+                _CHAIN_SEED_LOOKUP_CYPHER, refs=refs, celex=celex,
+            ).data()
+
+        seed_ids = [r["seed_id"] for r in seed_rows]
+        if not seed_ids:
+            logger.debug(
+                "retrieve_by_chain: no seed nodes found for %s in %s — "
+                "falling back to retrieve_by_refs",
+                refs, celex,
+            )
+            return self.retrieve_by_refs(refs, celex_filter={celex})
+
+        if seed_only:
+            linked_ids = seed_ids
+        else:
+            with self._driver.session(database=self._db) as s:
+                chain_rows = s.run(
+                    _CHAIN_TRAVERSE_CYPHER, seed_ids=seed_ids,
+                ).data()
+
+            linked_ids = [r["article_id"] for r in chain_rows if r["article_id"]]
+            if not linked_ids:
+                logger.debug(
+                    "retrieve_by_chain: no linked provisions found for %s — "
+                    "returning seed provisions only",
+                    seed_ids,
+                )
+                linked_ids = seed_ids
+
+        # Merge: seeds first, then chain-linked provisions
+        all_ids = list(dict.fromkeys(seed_ids + linked_ids))
+
+        with self._driver.session(database=self._db) as s:
+            results = s.run(_EXPAND_CYPHER, ids=all_ids).data()
+
+        for r in results:
+            is_seed = r["article_id"] in set(seed_ids)
+            r["score"] = 1.0 if is_seed else 0.9
+            r["matched_leaf_id"] = None
+            r["_chain_retrieval"] = True
+            r["_chain_seed"] = is_seed
+
+        self._expand_cited_containers(results)
+        results.sort(key=lambda r: r["score"], reverse=True)
+        return results
+
+    # ------------------------------------------------------------------
 
     def close(self) -> None:
         self._driver.close()

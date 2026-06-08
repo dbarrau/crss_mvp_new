@@ -86,6 +86,30 @@ _MODIFICATION_Q_RE = re.compile(
     re.I,
 )
 
+# Signals that the user is asking about the classification criteria or
+# obligation chain that flows FROM a classification gate article.
+# Triggers chain retrieval through TRIGGERS_OBLIGATION_CLUSTER edges.
+_CHAIN_CLASSIFICATION_Q_RE = re.compile(
+    r"\b(classif(?:y|ication|ied)|trigger(?:s|ed|ing)?|oblig(?:ation|ations)\s+"
+    r"(?:that\s+)?(?:flow|arise|result|apply)\b|"
+    r"what\s+(?:obligations|requirements|duties)\s+(?:does|do|will)\s+"
+    r"(?:an?|the)?\s*classification|"
+    r"obligations?\s+for\s+(?:an?\s+)?high.risk|"
+    r"high.risk\s+(?:ai\s+)?(?:system\s+)?(?:obligations?|requirements?|duties?)|"
+    r"what\s+(?:must|shall)\s+(?:an?\s+)?(?:provider|deployer|manufacturer)\s+"
+    r"(?:do|comply))\b",
+    re.I,
+)
+
+# Signals that the user wants broad, corpus-level coverage rather than a
+# specific provision.  Triggers community-summary-first retrieval.
+_COMMUNITY_SUMMARY_Q_RE = re.compile(
+    r"\b(all|every|comprehensive|complete|overview|survey|full\s+list|"
+    r"across\s+(?:all|both|the)|summarise|summarize|enumerate|list\s+all|"
+    r"what\s+are\s+all|which\s+are\s+all)\b",
+    re.I,
+)
+
 _MEDICAL_DEVICE_AI_Q_RE = re.compile(
     r"\b(medical\s+device|device|hospital|health\s+institution|"
     r"healthcare\s+institution|in-house|pathology|surgery|"
@@ -169,6 +193,55 @@ def _has_role_transition_focus(question: str) -> bool:
 def _has_modification_focus(question: str) -> bool:
     """Return whether the question turns on modification or retraining triggers."""
     return bool(_MODIFICATION_Q_RE.search(question))
+
+
+def _is_classification_chain_question(
+    question: str,
+    *,
+    mentioned_regs: set[str],
+    explicit_refs: list[str],
+) -> bool:
+    """Return True when the question asks about classification criteria and
+    their downstream obligation chain.
+
+    Triggers the ``classification_chain`` route, which uses
+    :meth:`GraphRetriever.retrieve_by_chain` to follow
+    ``TRIGGERS_OBLIGATION_CLUSTER`` edges from a classification gate
+    (e.g. Article 6 AI Act) instead of relying on semantic similarity.
+
+    Only fires when:
+    - classification/chain language is present, AND
+    - at least one regulation is in scope, AND
+    - the question does NOT name a specific leaf provision (those go to
+      provision_lookup so we do not over-retrieve).
+    """
+    if not mentioned_regs:
+        return False
+    if explicit_refs:
+        # Specific provision named → provision_lookup is more precise
+        return False
+    return bool(_CHAIN_CLASSIFICATION_Q_RE.search(question))
+
+
+def _is_community_summary_question(
+    question: str,
+    *,
+    mentioned_regs: set[str],
+    role_specs: list[tuple[str, str]],
+) -> bool:
+    """Return True when the question asks for broad/corpus-level coverage.
+
+    Triggers the ``community_summary_search`` route, which searches community
+    summaries first (300 vectors) before descending to member provisions.
+    Only fires when:
+    - corpus-coverage language is present, AND
+    - at least one regulation or role is in scope (concrete enough to route), AND
+    - no specific provision reference was extracted (those go to provision_lookup).
+    """
+    return (
+        bool(_COMMUNITY_SUMMARY_Q_RE.search(question))
+        and bool(mentioned_regs or role_specs)
+    )
 
 
 def _has_inhouse_developer_signal(question: str) -> bool:
@@ -398,6 +471,31 @@ def _select_question_route(
             id="definition_lookup",
             label="Definition lookup",
             rationale="the question asks for the meaning of a concept",
+        )
+
+    if _is_classification_chain_question(
+        question,
+        mentioned_regs=mentioned_regs,
+        explicit_refs=explicit_refs,
+    ):
+        return _QuestionRoute(
+            id="classification_chain",
+            label="Classification chain retrieval",
+            rationale=(
+                "classification/obligation-trigger language detected; "
+                "using legal reasoning edges to traverse the obligation cluster"
+            ),
+        )
+
+    if _is_community_summary_question(
+        question,
+        mentioned_regs=mentioned_regs,
+        role_specs=role_specs,
+    ):
+        return _QuestionRoute(
+            id="community_summary_search",
+            label="Community-summary overview",
+            rationale="corpus-coverage language detected; searching community summaries first",
         )
 
     if role_specs and _has_obligation_focus(question):

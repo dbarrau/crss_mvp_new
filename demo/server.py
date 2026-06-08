@@ -51,11 +51,11 @@ def api_ask():
     if not question:
         return jsonify({"error": "question is required"}), 400
 
-    k = body.get("k", 5)
+    k = body.get("k", 20)
     try:
         k = int(k)
     except (TypeError, ValueError):
-        k = 5
+        k = 20
 
     history = _parse_history(body)
 
@@ -78,11 +78,11 @@ def api_ask_stream():
     if not question:
         return jsonify({"error": "question is required"}), 400
 
-    k = body.get("k", 5)
+    k = body.get("k", 20)
     try:
         k = int(k)
     except (TypeError, ValueError):
-        k = 5
+        k = 20
 
     history = _parse_history(body)
 
@@ -112,11 +112,11 @@ def api_debug():
     if not question:
         return jsonify({"error": "question is required"}), 400
 
-    k = body.get("k", 5)
+    k = body.get("k", 20)
     try:
         k = int(k)
     except (TypeError, ValueError):
-        k = 5
+        k = 20
 
     try:
         provisions = retriever.retrieve(question, k=k)

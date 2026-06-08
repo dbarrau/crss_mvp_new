@@ -254,6 +254,8 @@ class RegulationGraphLoader:
             "FOR (p:Provision) ON (p.celex)",
             "CREATE INDEX provision_kind IF NOT EXISTS "
             "FOR (p:Provision) ON (p.kind)",
+            "CREATE INDEX provision_community_id IF NOT EXISTS "
+            "FOR (p:Provision) ON (p.community_id)",
             # ── Guidance (MDCG guidance nodes) ─────────────────────
             "CREATE CONSTRAINT guidance_id IF NOT EXISTS "
             "FOR (g:Guidance) REQUIRE g.id IS UNIQUE",
@@ -277,6 +279,11 @@ class RegulationGraphLoader:
             "FOR (r:ActorRole) ON (r.term_normalized)",
             "CREATE INDEX actor_role_source_type IF NOT EXISTS "
             "FOR (r:ActorRole) ON (r.source_type)",
+            # ── Community ───────────────────────────────────────────
+            "CREATE CONSTRAINT community_id IF NOT EXISTS "
+            "FOR (c:Community) REQUIRE c.id IS UNIQUE",
+            "CREATE INDEX community_level IF NOT EXISTS "
+            "FOR (c:Community) ON (c.level)",
         ]
         with self._driver.session(database=self._database) as session:
             for stmt in stmts:
