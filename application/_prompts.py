@@ -132,6 +132,7 @@ def _build_route_answer_guidance(
     *,
     question: str,
     sufficiency: dict[str, Any],
+    mentioned_regs: set[str] | None = None,
 ) -> str | None:
     """Return route-specific answer discipline for the final LLM prompt."""
 
@@ -267,35 +268,135 @@ def _build_route_answer_guidance(
     # ── MANDATORY LEGAL RULES ────────────────────────────────────────────────
     # These rules fire before any answer-discipline instructions so the LLM
     # cannot override them by reasoning differently.
-    lines.append("MANDATORY LEGAL RULES — READ BEFORE ANSWERING:")
+    lines.append("LEGAL ANCHORS — READ BEFORE ANSWERING:")
     lines.append(
-        "RULE 1 — AI Act provider status (Article 3(3)): "
-        "'Puts into service' in Article 3(3) AI Act includes deploying a system "
-        "for use within the developer's own organisation. External distribution is "
-        "NOT required to qualify as a provider. "
-        "An entity that develops an AI system AND first deploys it internally is a "
-        "PROVIDER from inception, not a deployer. "
-        "Deployer status (Article 3(4)) applies ONLY when the entity did NOT develop "
-        "the system — it received or licensed it from a third-party provider."
+        "AI Act provider status (Article 3(3)): a developer that first deploys "
+        "its own AI system internally is a provider from inception; external "
+        "distribution is not required. Deployer status (Article 3(4)) applies "
+        "only when the entity did not develop the system itself and received it "
+        "from a third-party provider."
     )
     lines.append(
-        "RULE 2 — Article 25 scope: "
-        "Article 25 AI Act applies ONLY to distributors, importers, deployers, or "
-        "other third parties who received the system from an external provider and "
-        "then substantially modified it or put their name on it. "
-        "Article 25 CANNOT determine the initial provider status of the original "
-        "developer. For self-developers, the governing provision is Article 3(3) alone."
+        "Article 25 scope: Article 25 applies to third parties who received the "
+        "system from an external provider and then substantially modified it or "
+        "put their name on it. It does not determine the original developer's "
+        "initial status."
     )
 
     if is_developer:
         lines.append(
-            "RULE 3 — THIS QUESTION DESCRIBES A DEVELOPER: "
-            "The entity described developed the AI system (in-house or internally). "
-            "Under Article 3(3), development + internal deployment = provider status "
-            "from inception. BEGIN the AI Act analysis from provider status. "
-            "Do NOT frame the entity as initially a deployer. "
-            "Article 25 is NOT applicable to determine this entity's initial status "
-            "— do not use it as the primary conversion mechanism."
+            "Developer signal detected: the entity developed the AI system in-house. "
+            "Begin the AI Act analysis from provider status under Article 3(3), "
+            "not from deployer status. Do not use Article 25 as the primary "
+            "provider-conversion mechanism."
+        )
+
+    # ── AI Act high-risk routes (hard precedence) ───────────────────────────
+    # Mirrors the STEP 4 rule in the classification_chain route, promoted to
+    # MANDATORY status because legal_qualification questions historically
+    # bypass Article 6(1) + Annex I and jump to a fabricated Annex III route.
+    lines.append(
+        "AI Act high-risk classification (Article 6) routes: "
+        "There are exactly two routes into high-risk classification and they "
+        "must be analysed in this order.\n"
+        "  Route I (Article 6(1) + Annex I): the AI system is (a) a safety "
+        "component of, or itself, a product covered by Union harmonisation "
+        "legislation listed in Annex I (Section A includes MDR 2017/745 and "
+        "IVDR 2017/746), AND (b) that product is required to undergo "
+        "third-party conformity assessment under those acts. Both conditions "
+        "must be satisfied. For medical devices in Class IIa, IIb, or III "
+        "(MDR) and Class B, C, or D (IVDR), third-party conformity "
+        "assessment is required — so any AI system acting as a safety "
+        "component of such a device satisfies both Route I conditions. "
+        "NO derogation applies to Route I.\n"
+        "  Route II (Article 6(2) + Annex III): the AI system falls within "
+        "one of the 8 use-case categories enumerated in Annex III, subject to "
+        "the Article 6(3) derogation for narrow procedural / preparatory tasks "
+        "(profiling of natural persons always remains high-risk).\n"
+        "For medical-device AI questions, Route I is the primary route and "
+        "MUST be analysed first. Do NOT skip Route I to assert a Route II "
+        "classification."
+    )
+    lines.append(
+        "Annex III content (anti-hallucination guard): "
+        "Annex III categorises AI systems by USE CASE, not by sector. The 8 "
+        "categories are: (1) biometrics; (2) critical infrastructure; (3) "
+        "education and vocational training; (4) employment, workers "
+        "management and access to self-employment; (5) access to and "
+        "enjoyment of essential private services and essential public "
+        "services and benefits; (6) law enforcement; (7) migration, asylum "
+        "and border control management; (8) administration of justice and "
+        "democratic processes. Annex III does NOT contain a standalone "
+        "'medical diagnosis' category — medical-device AI reaches high-risk "
+        "status via Route I (Article 6(1) + Annex I), not via Annex III "
+        "unless the same system also performs a biometric, essential-service, "
+        "or other Annex III function. NEVER cite Annex III item or point "
+        "numbers from training memory; rely strictly on the verbatim Annex "
+        "III text in the REGULATORY CONTEXT."
+    )
+
+    # ── GDPR BACKBONE (only when GDPR is in scope) ───────────────────────────
+    # When GDPR is in scope alongside AI Act + MDR/IVDR, the analysis must
+    # follow strict statutory architecture. The two recurring failure modes
+    # are (a) misidentifying the DPIA mandatory trigger as Article 35(3)(a)
+    # instead of (3)(b), and (b) conflating the Article 9(2) derogation with
+    # the Article 6(1) lawful basis. Both are blocked by hard rules below.
+    has_gdpr = bool(
+        mentioned_regs
+        and "General Data Protection Regulation (GDPR) 2016/679" in mentioned_regs
+    )
+    if has_gdpr:
+        lines.append(
+            "GDPR dual-basis rule: "
+            "Processing of special categories of personal data (Article 9(1) — "
+            "includes health data per Article 4(15), genetic data per Article "
+            "4(13), and biometric data used for unique identification per "
+            "Article 4(14)) is PROHIBITED unless a derogation under Article "
+            "9(2) applies. CRITICAL: an Article 9(2) derogation does NOT "
+            "replace the Article 6(1) lawful basis — BOTH must be "
+            "established simultaneously. For medical device manufacturers, "
+            "the most relevant derogations are Article 9(2)(h) (healthcare / "
+            "medical diagnosis / treatment) and Article 9(2)(i) (public health). "
+            "Article 9(2)(j) (scientific research) applies to clinical "
+            "investigations and performance studies subject to Article 89 "
+            "safeguards."
+        )
+        lines.append(
+            "DPIA mandatory triggers (Article 35(3)): "
+            "The decisive mandatory DPIA trigger for medical-device AI "
+            "processing patient health data or biometric data is Article "
+            "35(3)(b) — processing on a large scale of special categories of "
+            "data referred to in Article 9(1). Cite (3)(b) as the primary "
+            "trigger. Article 35(3)(a) covers systematic and extensive "
+            "evaluation of personal aspects producing legal effects or "
+            "similarly significantly affecting natural persons — it is a "
+            "DIFFERENT trigger and only applies if the AI system makes "
+            "automated decisions with such effects (engage Article 22 "
+            "analysis if so). Article 35(3)(c) covers systematic monitoring "
+            "of publicly accessible areas. Do NOT conflate (3)(a), (3)(b), "
+            "and (3)(c)."
+        )
+        lines.append(
+            "Cross-regulatory data-protection chain: "
+            "MDR Article 10 (manufacturer obligations) and MDR Article 61 "
+            "(clinical evaluation) — together with Article 83 "
+            "post-market surveillance — entail processing of patient health "
+            "data. Where this is the case, GDPR Article 9 (lawful "
+            "derogation) and Article 35 (DPIA) apply IN ADDITION TO the "
+            "MDR obligations, not in place of them. IVDR Article 10 and "
+            "Article 58 (performance studies) trigger the same chain. "
+            "Explicitly connect the MDR/IVDR obligation to its GDPR "
+            "counterpart rather than listing them in parallel."
+        )
+        lines.append(
+            "AI Act Article 9 risk management ≠ GDPR Article 35 DPIA: "
+            "DPIA: these are PARALLEL but DISTINCT obligations. Per MDCG "
+            "2025-6, the AI Act risk management system does NOT substitute "
+            "for a GDPR DPIA. Both must be performed independently, although "
+            "AI Act risk management documentation can inform and partially "
+            "satisfy the DPIA's risk assessment section. State this "
+            "non-substitution rule explicitly whenever both regulations are "
+            "in scope."
         )
 
     # ── DECOMPOSITION FOR MULTI-STAGE QUESTIONS ──────────────────────────────
@@ -323,6 +424,36 @@ def _build_route_answer_guidance(
 
     # ── ANSWER DISCIPLINE ────────────────────────────────────────────────────
     lines.append("ANSWER DISCIPLINE FOR THIS QUESTION:")
+    lines.append(
+        "MANDATORY ISSUE SEQUENCE — analyse the question in this exact order, "
+        "separately for each regulation in scope. Do NOT jump to conclusions "
+        "before completing each step:\n"
+        "  Step 1 — ACTOR STATUS: state the entity's legal status under each "
+        "regulation in scope (e.g. provider per Article 3(3) AI Act; "
+        "manufacturer per Article 2 MDR / IVDR; controller per Article 4(7) "
+        "GDPR; processor per Article 4(8) GDPR). Cite the defining "
+        "provision.\n"
+        "  Step 2 — CLASSIFICATION ROUTE: identify the primary classification "
+        "route and any secondary routes. State which route applies and why. "
+        "For AI Act high-risk, apply RULE 4 (Route I before Route II). For "
+        "MDR/IVDR class, identify the Annex VIII rule. For GDPR, identify "
+        "whether special categories under Article 9 are involved.\n"
+        "  Step 3 — TRIGGER EVENT: state the factual trigger that activates "
+        "the obligation chain (e.g. placing the device on the market; "
+        "processing of health data; large-scale special-category "
+        "processing).\n"
+        "  Step 4 — LEGAL EFFECTS: enumerate the obligation cluster that "
+        "follows from the classification and trigger, with article-level "
+        "citations.\n"
+        "  Step 5 — CROSS-REGULATORY CHAIN: where two regulations are in "
+        "scope, surface the cross-reg dependencies explicitly (e.g. MDR "
+        "Article 10 PMS → GDPR Article 9; AI Act Article 10(5) bias testing → "
+        "GDPR Article 9(2) derogation). Do NOT present obligations from "
+        "different regulations in disconnected parallel tables; tie them "
+        "together with the dependency statement.\n"
+        "  Step 6 — RESIDUAL UNCERTAINTY: state what factual or legal "
+        "questions remain unresolved and what would change the conclusion."
+    )
     lines.append(
         "You must structure your reasoning chronologically, resolving prerequisites "
         "before obligations. Use the following logical flow:"
@@ -375,7 +506,12 @@ def _build_user_message(
     mentioned_regs: set[str] | None = None,
 ) -> str:
     """Build the final user message sent to the answer-generation model."""
-    route_guidance = _build_route_answer_guidance(route, question=question, sufficiency=sufficiency)
+    route_guidance = _build_route_answer_guidance(
+        route,
+        question=question,
+        sufficiency=sufficiency,
+        mentioned_regs=mentioned_regs,
+    )
     parts: list[str] = []
     if route_guidance:
         parts.append(route_guidance)

@@ -628,11 +628,11 @@ def test_build_route_answer_guidance_requires_uncertainty_for_qualification_rout
     )
 
     assert guidance is not None
-    assert "MANDATORY LEGAL RULES" in guidance
+    assert "LEGAL ANCHORS" in guidance
     assert "case-specific" in guidance
     assert "Explicitly stated in retrieved text" in guidance
     assert "Resolve initial actor status before any transition analysis" in guidance
-    assert "treat Article 6(1) plus Annex I as the default high-risk route" in guidance
+    assert "AI Act high-risk classification" in guidance
     assert "Article 6(1) plus Annex I" in guidance
     assert "Article 3 provider-definition analysis before Article 25" in guidance
     assert "avoid a definitive bottom-line conclusion" in guidance
@@ -671,11 +671,11 @@ def test_build_user_message_injects_route_guidance_only_for_qualification_route(
         sufficiency={"ok": True},
     )
 
-    assert "MANDATORY LEGAL RULES" in qualification_message
+    assert "LEGAL ANCHORS" in qualification_message
     assert "ANSWER DISCIPLINE FOR THIS QUESTION:" in qualification_message
     assert "REGULATORY CONTEXT:\nCTX" in qualification_message
     assert qualification_message.endswith("QUESTION: Q1")
-    assert "MANDATORY LEGAL RULES" not in general_message
+    assert "LEGAL ANCHORS" not in general_message
     assert general_message == "REGULATORY CONTEXT:\nCTX\n\nQUESTION: Q2"
 
 
@@ -855,3 +855,171 @@ def test_validate_legal_backbone_silent_for_general_route():
         route,
     )
     assert warnings == []
+
+
+# ---------------------------------------------------------------------------
+# Demo-question regression: medtech AI + GDPR triple
+# ---------------------------------------------------------------------------
+
+_DEMO_QUESTION = (
+    "We are building an AI-powered diagnostic tool that analyses patient "
+    "retinal scans to detect early signs of diabetic retinopathy. The model "
+    "was trained on a dataset of labelled fundus images linked to patient "
+    "identifiers. We plan to CE-mark it as a Class IIb medical device. What "
+    "are our obligations under the EU AI Act, GDPR, and MDR — and do we need "
+    "a Data Protection Impact Assessment?"
+)
+
+_DEMO_MENTIONED_REGS = {
+    "EU AI Act",
+    "MDR 2017/745",
+    "General Data Protection Regulation (GDPR) 2016/679",
+}
+
+
+def test_demo_medtech_ai_gdpr_question_routes_to_legal_qualification():
+    """Regression guard: the obligation-framed medtech-AI-GDPR triple must hit
+    the legal_qualification route so it gets the curated targets AND the
+    Article 6 / GDPR discipline prompts (not the bare cross_regulation route).
+    """
+    route = _select_question_route(
+        _DEMO_QUESTION,
+        explicit_refs=[],
+        mentioned_regs=_DEMO_MENTIONED_REGS,
+        role_specs=[],
+        is_definition_question=False,
+    )
+    assert route.id == "legal_qualification"
+
+
+def test_demo_question_curated_targets_include_ai_act_backbone_gdpr_and_mdcg():
+    """The curated target list for the demo question MUST include the AI Act
+    Article 6 + Annex I backbone, MDCG 2025-6 (interplay guidance), and the
+    GDPR DPIA/special-category backbone (Articles 4, 6, 9, 35, 36).
+    """
+    targets = _build_legal_qualification_targets(
+        _DEMO_QUESTION,
+        mentioned_regs=_DEMO_MENTIONED_REGS,
+        role_specs=[],
+    )
+    refs_by_celex: dict[str, set[str]] = {}
+    for t in targets:
+        for celex in (t.celexes or frozenset({"_none_"})):
+            refs_by_celex.setdefault(celex, set()).add(t.ref)
+
+    # AI Act backbone (Route I)
+    assert {"Article 6", "Annex I"} <= refs_by_celex.get("32024R1689", set())
+    # Cross-reg conformity assessment bridge
+    assert "Article 43" in refs_by_celex.get("32024R1689", set())
+    # MDCG 2025-6 interplay guidance
+    assert "MDCG 2025-6" in refs_by_celex.get("MDCG_2025_6", set())
+    # GDPR backbone (definitions, lawful basis, special categories, DPIA)
+    gdpr_refs = refs_by_celex.get("32016R0679", set())
+    assert {"Article 4", "Article 6", "Article 9", "Article 35"} <= gdpr_refs
+    # DPIA explicitly mentioned → Article 36 (prior consultation) must also be included
+    assert "Article 36" in gdpr_refs
+
+
+def test_gdpr_targets_only_inject_when_gdpr_is_in_scope():
+    """When GDPR is NOT in mentioned_regs, no GDPR articles should be added —
+    otherwise we contaminate single-regulation questions.
+    """
+    targets = _build_legal_qualification_targets(
+        "What are the obligations of a Class IIb medical device manufacturer under MDR and the AI Act?",
+        mentioned_regs={"EU AI Act", "MDR 2017/745"},
+        role_specs=[],
+    )
+    for t in targets:
+        if t.celexes:
+            assert "32016R0679" not in t.celexes
+
+
+def test_obligation_focus_alone_triggers_legal_qualification_for_medtech_ai():
+    """An obligation-framed question (no 'classify' / 'qualify' / 'high-risk'
+    keywords) with medtech AI overlap must still hit legal_qualification,
+    not fall through to cross_regulation or general_compliance.
+    """
+    route = _select_question_route(
+        "What must a manufacturer of a Class IIb AI medical device do to comply with the AI Act and MDR?",
+        explicit_refs=[],
+        mentioned_regs={"EU AI Act", "MDR 2017/745"},
+        role_specs=[],
+        is_definition_question=False,
+    )
+    assert route.id == "legal_qualification"
+
+
+def test_build_route_answer_guidance_emits_gdpr_block_when_gdpr_in_scope():
+    """When GDPR is in mentioned_regs, the legal_qualification discipline must
+    include the GDPR backbone anchors covering the dual basis, DPIA triggers,
+    cross-reg chain, and AI Act/DPIA non-substitution rule.
+    """
+    route = _select_question_route(
+        _DEMO_QUESTION,
+        explicit_refs=[],
+        mentioned_regs=_DEMO_MENTIONED_REGS,
+        role_specs=[],
+        is_definition_question=False,
+    )
+    guidance = _build_route_answer_guidance(
+        route,
+        question=_DEMO_QUESTION,
+        sufficiency={"ok": True},
+        mentioned_regs=_DEMO_MENTIONED_REGS,
+    )
+    assert guidance is not None
+    # Hard anchors that close the demo failure modes.
+    assert "LEGAL ANCHORS" in guidance
+    assert "GDPR dual-basis rule" in guidance
+    assert "DPIA mandatory triggers" in guidance
+    assert "35(3)(b)" in guidance  # primary DPIA trigger
+    assert "AI Act high-risk classification" in guidance  # Article 6 hard precedence
+    assert "Annex III content (anti-hallucination guard)" in guidance
+
+
+def test_build_route_answer_guidance_skips_gdpr_block_when_gdpr_absent():
+    """Without GDPR in scope, the GDPR-specific rules must not appear."""
+    route = _select_question_route(
+        "When does a hospital using an in-house AI medical device become a provider?",
+        explicit_refs=[],
+        mentioned_regs={"EU AI Act", "MDR 2017/745"},
+        role_specs=[("deployer", "32024R1689"), ("manufacturer", "32017R0745")],
+        is_definition_question=False,
+    )
+    guidance = _build_route_answer_guidance(
+        route,
+        question="When does a hospital using an in-house AI medical device become a provider?",
+        sufficiency={"ok": True},
+        mentioned_regs={"EU AI Act", "MDR 2017/745"},
+    )
+    assert guidance is not None
+    assert "GDPR dual-basis rule" not in guidance
+    assert "DPIA mandatory triggers" not in guidance
+
+
+def test_postprocess_answer_strips_rule_scaffolding():
+    """If a model parrots the prompt scaffolding, postprocessing should strip
+    the explicit RULE-label lines before the answer is returned.
+    """
+    from application._postprocessing import _postprocess_answer
+
+    route = _select_question_route(
+        _DEMO_QUESTION,
+        explicit_refs=[],
+        mentioned_regs=_DEMO_MENTIONED_REGS,
+        role_specs=[],
+        is_definition_question=False,
+    )
+    answer = (
+        "RULE 1 — AI Act provider status (Article 3(3)): internal deployment "
+        "makes the entity a provider.\n\n"
+        "The device is a high-risk AI system under Article 6(1) + Annex I."
+    )
+    processed = _postprocess_answer(
+        answer,
+        route,
+        question=_DEMO_QUESTION,
+        sufficiency={"ok": True},
+    )
+    assert "RULE 1" not in processed
+    assert "The device is a high-risk AI system under Article 6(1) + Annex I." in processed

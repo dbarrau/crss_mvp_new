@@ -38,6 +38,11 @@ _INITIAL_DEPLOYER_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+_RULE_LABEL_PATTERN = re.compile(
+    r"(?m)^\s*(?:RULE\s+[A-Z0-9]+(?:\s*[—:-].*)?|MANDATORY LEGAL RULES — READ BEFORE ANSWERING:|LEGAL ANCHORS — READ BEFORE ANSWERING:).*$(?:\n?|$)",
+    re.IGNORECASE,
+)
+
 # ---------------------------------------------------------------------------
 # Post-processing functions
 # ---------------------------------------------------------------------------
@@ -144,6 +149,7 @@ def _postprocess_answer(
         route,
         sufficiency=sufficiency,
     )
+    processed = _RULE_LABEL_PATTERN.sub("", processed)
     backbone_warnings = _validate_legal_backbone(processed, question, route)
     banner = _build_uncertainty_banner(route, sufficiency=sufficiency)
     parts: list[str] = []

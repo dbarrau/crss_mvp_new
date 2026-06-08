@@ -286,10 +286,24 @@ def _uses_legal_qualification_route(
     mentioned_regs: set[str],
     role_specs: list[tuple[str, str]],
 ) -> bool:
-    """Return whether the question needs qualification-first retrieval."""
+    """Return whether the question needs qualification-first retrieval.
+
+    Fires for medical-device + AI Act questions whenever the user asks about
+    qualification, names an actor role, OR asks an obligation-framed question.
+    The obligation-focus disjunct captures "what are our obligations" framings
+    that semantically equal a classification request but lack explicit
+    classification keywords — these questions still need the forced Article 6
+    + Annex I backbone and the curated cross-regulation targets, otherwise
+    they fall through to ``cross_regulation`` which has no route-specific
+    discipline.
+    """
     if not _is_medical_device_ai_overlap(question, mentioned_regs):
         return False
-    return _has_qualification_focus(question) or bool(role_specs)
+    return (
+        _has_qualification_focus(question)
+        or bool(role_specs)
+        or _has_obligation_focus(question)
+    )
 
 
 def _question_mentions_any(question: str, terms: set[str]) -> bool:
@@ -359,6 +373,11 @@ def _build_legal_qualification_targets(
     ai_celex = {"32024R1689"} if "EU AI Act" in mentioned_regs else None
     mdr_celex = {"32017R0745"} if "MDR 2017/745" in mentioned_regs else None
     ivdr_celex = {"32017R0746"} if "IVDR 2017/746" in mentioned_regs else None
+    gdpr_celex = (
+        {"32016R0679"}
+        if "General Data Protection Regulation (GDPR) 2016/679" in mentioned_regs
+        else None
+    )
     role_terms = {term for term, _celex in role_specs}
     manufacturer_status_terms = {"manufacturer", "user"}
     needs_actor_status = _needs_actor_status_analysis(question, role_specs=role_specs)
@@ -408,6 +427,45 @@ def _build_legal_qualification_targets(
     # in the graph. It must appear in context regardless of what HyDE retrieves.
     if ai_celex and (mdr_celex or ivdr_celex):
         add("MDCG 2025-6", {"MDCG_2025_6"})
+
+    # GDPR backbone: when GDPR is in scope (especially alongside AI Act +
+    # MDR/IVDR for medical AI questions), force-inject the decisive articles.
+    # Without this, the LLM may misidentify the DPIA trigger (35(3)(a) vs (b))
+    # or conflate the Article 9(2) derogation with the Article 6(1) lawful
+    # basis. Article 4 grounds the definitions of personal data, health data,
+    # genetic data, and biometric data — prerequisite for any Article 9
+    # special-category analysis.
+    if gdpr_celex:
+        add("Article 4", gdpr_celex)
+        add("Article 6", gdpr_celex)
+        add("Article 9", gdpr_celex)
+        add("Article 35", gdpr_celex)
+        # DPIA-explicit questions also need Article 36 (prior consultation
+        # with the supervisory authority where residual risk remains high).
+        if _question_mentions_any(
+            question,
+            {
+                "dpia",
+                "data protection impact assessment",
+                "prior consultation",
+            },
+        ):
+            add("Article 36", gdpr_celex)
+        # Controller accountability cluster: triggered when the question
+        # explicitly references controller/processor status or breach handling.
+        if _question_mentions_any(
+            question,
+            {
+                "controller",
+                "processor",
+                "data controller",
+                "data processor",
+                "breach",
+                "data breach",
+            },
+        ):
+            add("Article 24", gdpr_celex)
+            add("Article 28", gdpr_celex)
 
     return targets
 
