@@ -105,6 +105,9 @@ from application._postprocessing import (                # noqa: F401
     _validate_legal_backbone,
     _postprocess_answer,
 )
+from application._confidence import (                    # noqa: F401
+    compute_confidence,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -716,11 +719,46 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
             except Exception as _exc:
                 logger.warning("Faithfulness check skipped: %s", _exc)
 
+        # --- 7e. Compute composite confidence score ---
+        _faith_report_for_conf = None
+        if _faith_mode >= 1 and full_answer:
+            try:
+                _faith_report_for_conf = _check_faithfulness(full_answer, provisions)
+            except Exception:
+                pass
+        _had_pointer_expansion = any(
+            p.get("_pointer_expansion") for p in provisions
+        )
+        confidence = compute_confidence(
+            sufficiency=sufficiency,
+            provisions=provisions,
+            faith_report=_faith_report_for_conf,
+            had_corrective_pass=bool(corrective_actions),
+            had_pointer_expansion=_had_pointer_expansion,
+            had_role_provisions=bool(role_provisions),
+            role_specs=role_specs,
+            question=retrieval_question,
+            mentioned_regs=mentioned_regs,
+        )
+        yield {
+            "type": "confidence",
+            "score": confidence["confidence_score"],
+            "level": confidence["confidence_level"],
+            "breakdown": confidence["breakdown"],
+            "legal_force_distribution": confidence["legal_force_distribution"],
+        }
+        logger.info(
+            "Confidence: %s (%.1f%%)",
+            confidence["confidence_level"],
+            confidence["confidence_score"] * 100,
+        )
+
         final_answer = _postprocess_answer(
             full_answer,
             route,
             question=question,
             sufficiency=sufficiency,
+            confidence=confidence,
         )
         yield {"type": "done", "answer": final_answer, "audit_trace": audit_trace}
 
