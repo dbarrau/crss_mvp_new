@@ -58,7 +58,8 @@ WITH art,
        id: parent.id,
        kind: parent.kind,
        text: parent.text_for_analysis,
-       ref: parent.display_ref
+       ref: parent.display_ref,
+       binding_force: parent.binding_force
      })[..3] AS parents
 
 OPTIONAL MATCH (art)-[:HAS_PART*1..5]->(leaf)
@@ -70,7 +71,8 @@ WITH art, parents,
        kind: leaf.kind,
        text: leaf.text_for_analysis,
        raw_text: leaf.text,
-       ref: leaf.display_ref
+       ref: leaf.display_ref,
+       binding_force: leaf.binding_force
      })[..25] AS children
 
 // Sibling expansion for Guidance nodes: when a guidance_paragraph is
@@ -87,7 +89,8 @@ WITH art, parents, children,
        kind: sibling.kind,
        text: sibling.text_for_analysis,
        raw_text: sibling.text,
-       ref:  sibling.display_ref
+       ref:  sibling.display_ref,
+       binding_force: sibling.binding_force
      })[..10] AS siblings
 
 // Internal citations (same regulation)
@@ -99,7 +102,8 @@ WITH art, parents, children, siblings,
      [x IN collect(DISTINCT {
        id:   cited.id,
        ref:  cited.display_ref,
-       text: cited.text_for_analysis
+       text: cited.text_for_analysis,
+       binding_force: cited.binding_force
      }) WHERE x.id IS NOT NULL][..12] AS internal_cited
 
 // Cross-regulation citations (different regulation)
@@ -111,18 +115,20 @@ WITH art, parents, children, siblings, internal_cited,
      collect(DISTINCT {
        id:   xref.id,
        ref:  xref.display_ref,
-       text: xref.text_for_analysis
+       text: xref.text_for_analysis,
+       binding_force: xref.binding_force
      })[..8] AS cross_reg_cited
 
 RETURN
   art.id              AS article_id,
   art.celex           AS celex,
   art.regulation_id   AS regulation,
-    art.community_id    AS community_id,
+  art.community_id    AS community_id,
   art.display_ref     AS article_ref,
   art.display_path    AS article_path,
   art.text_for_analysis AS article_text,
   art.provision_role  AS provision_role,
+  art.binding_force   AS binding_force,
   parents + children + siblings AS children,
   internal_cited + cross_reg_cited AS cited_provisions,
   cross_reg_cited
@@ -149,6 +155,7 @@ RETURN DISTINCT
   srcArt.display_path  AS article_path,
   srcArt.text_for_analysis AS article_text,
   srcArt.provision_role AS provision_role,
+  srcArt.binding_force AS binding_force,
   citation_freq
 ORDER BY citation_freq DESC
 LIMIT 10
@@ -165,7 +172,8 @@ RETURN cid               AS container_id,
        child.id           AS id,
        child.kind         AS kind,
        child.display_ref  AS ref,
-       child.text_for_analysis AS text
+       child.text_for_analysis AS text,
+       child.binding_force AS binding_force
 ORDER BY cid, child.hierarchy_depth, child.id
 """
 
@@ -200,7 +208,8 @@ RETURN DISTINCT
   linked.display_ref  AS article_ref,
   linked.display_path AS article_path,
   linked.text_for_analysis AS article_text,
-  linked.provision_role AS provision_role
+  linked.provision_role AS provision_role,
+  linked.binding_force AS binding_force
 """
 
 # Direct provision lookup by display_ref.  Used for structural questions
@@ -212,7 +221,7 @@ OPTIONAL MATCH (p1:Provision) WHERE toLower(p1.display_ref) = toLower(ref)
 OPTIONAL MATCH (p2:Guidance)  WHERE toLower(p2.display_ref) = toLower(ref)
 WITH ref, collect(p1) + collect(p2) AS nodes
 UNWIND nodes AS art
-RETURN art.id AS article_id, art.celex AS celex, art.display_ref AS display_ref
+RETURN art.id AS article_id, art.celex AS celex, art.display_ref AS display_ref, art.binding_force AS binding_force
 ORDER BY art.hierarchy_depth ASC
 LIMIT 20
 """
@@ -237,6 +246,7 @@ RETURN DISTINCT
     p.display_ref AS article_ref,
     p.display_path AS article_path,
     p.text_for_analysis AS article_text,
+    p.binding_force AS binding_force,
     role.id AS matched_role_id,
     role.term_normalized AS matched_role
 LIMIT 40
@@ -380,6 +390,7 @@ class GraphRetriever:
                 "kind": row["kind"],
                 "ref": row["ref"],
                 "text": (row["text"] or "")[:500],
+                "binding_force": row.get("binding_force"),
             })
         # Inject children into the cited_provisions entries
         injected = 0

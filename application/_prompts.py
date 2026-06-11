@@ -120,6 +120,13 @@ Format your answer with:
 the exact words from the REGULATORY CONTEXT, not a paraphrase. Label each with \
 the provision reference shown in the context header (e.g. [1] Article 2)
 3. Cross-references that appear explicitly in the context
+
+LEGAL FORCE AWARENESS (mandatory):
+- Every provision in the REGULATORY CONTEXT is tagged either 🔵 [BINDING] or 🟡 [NON-BINDING GUIDANCE].
+- 🔵 [BINDING] sources are EU Regulations with direct legal effect (MDR 2017/745, IVDR 2017/746, EU AI Act 2024/1689, GDPR 2016/679). Obligations, prohibitions and definitions derived from these sources are legally enforceable.
+- 🟡 [NON-BINDING GUIDANCE] sources are MDCG guidance documents. They represent the European Commission's interpretive position but do NOT create legal obligations. When citing them, you MUST include a caveat such as: "This is based on non-binding MDCG guidance and is not itself a legal requirement."
+- When your answer draws on BOTH binding and non-binding sources, distinguish them explicitly. Never present guidance conclusions as if they were regulatory obligations.
+- If the REGULATORY CONTEXT contains only non-binding sources for a question that requires binding law, state this limitation explicitly rather than answering as if the guidance were the regulation.
 """
 
 # ---------------------------------------------------------------------------

@@ -205,9 +205,16 @@ def _format_one_provision(index: int, p: dict, role: str) -> str:
     layer_tag = " [GUIDANCE]" if is_guidance else " [LEGISLATION]"
     celex_badge = f" (CELEX: {celex})" if celex and not is_guidance else ""
     role_badge = f" [role: {role}]" if role in _KNOWN_ROLES else ""
+    _force = p.get("binding_force")
+    if _force == "binding":
+        force_badge = " 🔵 [BINDING]"
+    elif _force == "non_binding":
+        force_badge = " 🟡 [NON-BINDING GUIDANCE]"
+    else:
+        force_badge = ""
     header = (
         f"[{index}] {p.get('article_ref', 'Unknown')} \u2014 {regulation}"
-        f"{celex_badge}{layer_tag}{role_badge}"
+        f"{celex_badge}{layer_tag}{force_badge}{role_badge}"
     )
     path = p.get("article_path", "")
     if path:

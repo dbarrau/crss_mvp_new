@@ -7,6 +7,8 @@ any other application submodule.
 """
 from __future__ import annotations
 
+from collections import Counter
+
 import logging
 import os
 import re
@@ -1118,4 +1120,16 @@ def _build_audit_trace(
             "corrective_actions": corrective_actions,
         },
         "sufficiency": sufficiency,
+        "legal_force_distribution": {
+            "binding": sum(
+                1 for p in provisions if p.get("binding_force") == "binding"
+            ),
+            "non_binding": sum(
+                1 for p in provisions if p.get("binding_force") == "non_binding"
+            ),
+            "unknown": sum(
+                1 for p in provisions
+                if p.get("binding_force") not in ("binding", "non_binding")
+            ),
+        },
     }

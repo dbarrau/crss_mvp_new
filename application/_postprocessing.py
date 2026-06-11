@@ -136,12 +136,58 @@ def _validate_legal_backbone(
     return warnings
 
 
+def _build_confidence_banner(confidence: "dict[str, Any]") -> str:
+    """Return a visible warning block when confidence is below HIGH.
+    Returns an empty string for HIGH confidence so the answer is not
+    cluttered on well-supported responses.
+    """
+    level = confidence.get("confidence_level", "HIGH")
+    if level == "HIGH":
+        return ""
+    score     = confidence.get("confidence_score", 0.0)
+    breakdown = confidence.get("breakdown", {})
+    dist      = confidence.get("legal_force_distribution", {})
+    icon = "⚠️" if level in ("LOW", "CRITICAL") else "ℹ️"
+    lines: list[str] = [
+        f"> {icon} **Confidence: {level}** (Score: {score:.0%})."
+        " This answer is based on automated retrieval and should be"
+        " independently verified before relying on it for compliance decisions.",
+    ]
+    if breakdown.get("retrieval_coverage", 1.0) < 0.5:
+        lines.append(
+            "> **Retrieval coverage is low** — some relevant provisions"
+            " may not have been retrieved for this question."
+        )
+    if breakdown.get("legal_force_alignment", 1.0) < 0.5:
+        non_b = dist.get("non_binding", 0)
+        total = sum(dist.values()) or 1
+        pct   = f"{non_b}/{total}"
+        lines.append(
+            f"> **Legal force warning** — {pct} retrieved provisions are"
+            " non-binding MDCG guidance, not binding regulation."
+            " Verify conclusions against the regulation itself."
+        )
+    if breakdown.get("faithfulness", 1.0) < 0.8:
+        lines.append(
+            "> **Faithfulness warning** — one or more verbatim quotes could"
+            " not be verified against the retrieved source text."
+        )
+    if breakdown.get("context_completeness", 1.0) < 0.7:
+        lines.append(
+            "> **Coverage warning** — a corrective retrieval pass was needed"
+            " or role-specific provisions were not found."
+        )
+
+    return "\n".join(lines)
+
+
 def _postprocess_answer(
     answer: str,
     route: _QuestionRoute,
     *,
     question: str,
     sufficiency: dict[str, Any],
+    confidence: dict[str, Any] | None = None,
 ) -> str:
     """Apply lightweight safety formatting to the generated answer."""
     processed = _soften_categorical_language(
@@ -157,5 +203,10 @@ def _postprocess_answer(
         parts.append(banner)
     parts.extend(backbone_warnings)
     if parts:
-        return "\n\n".join(parts) + "\n\n" + processed.lstrip()
+        processed = "\n\n".join(parts) + "\n\n" + processed.lstrip()
+    # Append confidence banner at the end (after the answer body)
+    if confidence:
+        conf_banner = _build_confidence_banner(confidence)
+        if conf_banner:
+            processed = processed.rstrip() + "\n\n---\n" + conf_banner
     return processed
