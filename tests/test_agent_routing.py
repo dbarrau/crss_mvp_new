@@ -11,9 +11,11 @@ from application.agent import (
     _run_corrective_retrieval_pass,
     _retrieve_route_provisions,
     _select_question_route,
+    _is_definition_question,
     _has_inhouse_developer_signal,
     _has_multistage_question,
     _validate_legal_backbone,
+    _QuestionRoute,
 )
 
 
@@ -91,6 +93,27 @@ def test_select_question_route_uses_role_obligations():
     assert route.id == "role_obligations"
 
 
+def test_is_definition_question_false_for_broad_obligation_question():
+    is_def, concept = _is_definition_question(
+        "What are all obligations of providers according to the EU AI Act?"
+    )
+    assert is_def is False
+    assert concept is None
+
+
+def test_select_question_route_uses_community_summary_for_broad_provider_obligations():
+    question = "What are all obligations of providers according to the EU AI Act?"
+    route = _select_question_route(
+        question,
+        explicit_refs=[],
+        mentioned_regs={"EU AI Act"},
+        role_specs=[("provider", "32024R1689")],
+        is_definition_question=False,
+    )
+
+    assert route.id == "community_summary_search"
+
+
 def test_select_question_route_prefers_cross_regulation():
     route = _select_question_route(
         "How do the MDR and the AI Act interact for provider obligations?",
@@ -131,6 +154,27 @@ def test_detect_question_roles_inflects_provider_and_manufacturer_from_conduct()
     assert ("provider", "32024R1689") in roles
     assert ("manufacturer", "32017R0745") in roles
     assert ("deployer", "32024R1689") in roles
+
+
+def test_detect_question_roles_matches_plural_role_terms():
+    roles = _detect_question_roles(
+        "What obligations do providers and deployers have under the EU AI Act?",
+        target_celexes={"32024R1689"},
+    )
+
+    assert ("provider", "32024R1689") in roles
+    assert ("deployer", "32024R1689") in roles
+
+
+def test_detect_question_roles_matches_plural_entity_terms():
+    roles = _detect_question_roles(
+        "What are hospitals required to do when they deploy AI systems?",
+        target_celexes={"32024R1689", "32017R0745", "32017R0746"},
+    )
+
+    assert ("deployer", "32024R1689") in roles
+    assert ("user", "32017R0745") in roles
+    assert ("user", "32017R0746") in roles
 
 
 def test_retrieve_route_provisions_skips_hyde_for_direct_lookup():
@@ -187,7 +231,9 @@ def test_retrieve_route_provisions_skips_hyde_for_role_lookup():
         hyde_builder=lambda *_args, **_kwargs: pytest.fail("HyDE should not run"),
     )
 
-    assert retriever.calls == ["roles"]
+    # The GPAI safety net fires an additional retrieve_by_refs call because
+    # the mock provision has no article_ref matching Articles 51-55.
+    assert retriever.calls == ["roles", "direct"]
     assert [p["article_id"] for p in result["provisions"]] == ["art-provider"]
 
 
@@ -218,7 +264,9 @@ def test_retrieve_route_provisions_cross_regulation_combines_all_paths():
         hyde_builder=lambda *_args, **_kwargs: "synthetic hyde text",
     )
 
-    assert retriever.calls == ["direct", "roles", "encode", "retrieve"]
+    # The GPAI safety net fires an additional retrieve_by_refs call because
+    # none of the mock provisions carry a GPAI article_ref (51-55).
+    assert retriever.calls == ["direct", "roles", "encode", "retrieve", "direct"]
     assert result["hyde_text"] == "synthetic hyde text"
     assert [p["article_id"] for p in result["provisions"]] == [
         "art-43",
@@ -602,6 +650,204 @@ def test_evaluate_route_sufficiency_flags_missing_qualification_backbone():
         "Article 25",
         "MDCG 2025-6",
     ]
+
+
+def test_evaluate_route_sufficiency_flags_missing_status_anchor():
+    """Legal-qualification bag with an EXEMPTS provision but no DEFINES for the
+    same CELEX must trip the status_anchor check and queue the canonical
+    definitions article (MDR Article 2 in this case) for recovery."""
+    question = "Does MDR Article 5(5) remove the manufacturer status of a hospital?"
+    route = _QuestionRoute(
+        id="legal_qualification",
+        label="legal qualification",
+        rationale="test fixture",
+    )
+
+    sufficiency = _evaluate_route_sufficiency(
+        route=route,
+        question=question,
+        explicit_refs=["Article 5"],
+        target_celexes={"32017R0745"},
+        role_specs=[("manufacturer", "32017R0745")],
+        provisions=[
+            {
+                "article_id": "mdr-art-5",
+                "article_ref": "Article 5",
+                "celex": "32017R0745",
+                "provision_role": "EXEMPTS",
+                "matched_role": "manufacturer",
+            },
+        ],
+        definitions=[],
+        direct_provisions=[],
+        role_provisions=[{"article_id": "mdr-art-5", "celex": "32017R0745"}],
+        legal_qualification_targets=[],
+    )
+
+    assert sufficiency["ok"] is False
+    assert sufficiency["missing_status_anchors"] == [
+        {"ref": "Article 2", "celexes": ["32017R0745"]}
+    ]
+    assert any(
+        check["name"] == "status_anchor" and check["passed"] is False
+        for check in sufficiency["checks"]
+    )
+
+
+def test_evaluate_route_sufficiency_passes_when_defines_anchor_present():
+    """When the bag contains both an EXEMPTS and a DEFINES provision for the
+    same CELEX, the status_anchor check does not fire."""
+    question = "Does MDR Article 5(5) remove the manufacturer status of a hospital?"
+    route = _QuestionRoute(
+        id="legal_qualification",
+        label="legal qualification",
+        rationale="test fixture",
+    )
+
+    sufficiency = _evaluate_route_sufficiency(
+        route=route,
+        question=question,
+        explicit_refs=["Article 5"],
+        target_celexes={"32017R0745"},
+        role_specs=[("manufacturer", "32017R0745")],
+        provisions=[
+            {
+                "article_id": "mdr-art-5",
+                "article_ref": "Article 5",
+                "celex": "32017R0745",
+                "provision_role": "EXEMPTS",
+                "matched_role": "manufacturer",
+            },
+            {
+                "article_id": "mdr-art-2",
+                "article_ref": "Article 2",
+                "celex": "32017R0745",
+                "provision_role": "DEFINES",
+            },
+        ],
+        definitions=[],
+        direct_provisions=[],
+        role_provisions=[{"article_id": "mdr-art-5", "celex": "32017R0745"}],
+        legal_qualification_targets=[],
+    )
+
+    assert sufficiency["missing_status_anchors"] == []
+    assert not any(check["name"] == "status_anchor" for check in sufficiency["checks"])
+
+
+def test_evaluate_route_sufficiency_skips_status_anchor_on_general_route():
+    """EXEMPTS provisions on routes other than legal_qualification /
+    cross_regulation do NOT trigger the status_anchor check — the user did
+    not ask a status question."""
+    question = "Summarise the in-house exemption."
+    route = _QuestionRoute(
+        id="general_compliance",
+        label="general compliance",
+        rationale="test fixture",
+    )
+
+    sufficiency = _evaluate_route_sufficiency(
+        route=route,
+        question=question,
+        explicit_refs=[],
+        target_celexes={"32017R0745"},
+        role_specs=[],
+        provisions=[
+            {
+                "article_id": "mdr-art-5",
+                "article_ref": "Article 5",
+                "celex": "32017R0745",
+                "provision_role": "EXEMPTS",
+            },
+        ],
+        definitions=[],
+        direct_provisions=[],
+        role_provisions=[],
+        legal_qualification_targets=[],
+    )
+
+    assert sufficiency["missing_status_anchors"] == []
+    assert not any(check["name"] == "status_anchor" for check in sufficiency["checks"])
+
+
+def test_corrective_retrieval_pass_recovers_missing_status_anchor():
+    """The corrective pass must fetch the canonical definitions article when
+    the status_anchor check flags it as missing."""
+    question = "Does MDR Article 5(5) remove the manufacturer status of a hospital?"
+    retriever = _FakeRetriever(
+        direct=[
+            [
+                {
+                    "article_id": "mdr-art-2",
+                    "article_ref": "Article 2",
+                    "celex": "32017R0745",
+                    "provision_role": "DEFINES",
+                    "children": [],
+                }
+            ]
+        ],
+    )
+    route = _QuestionRoute(
+        id="legal_qualification",
+        label="legal qualification",
+        rationale="test fixture",
+    )
+    provisions = [
+        {
+            "article_id": "mdr-art-5",
+            "article_ref": "Article 5",
+            "celex": "32017R0745",
+            "provision_role": "EXEMPTS",
+            "matched_role": "manufacturer",
+        },
+    ]
+    direct_provisions: list[dict] = []
+    role_provisions: list[dict] = [
+        {"article_id": "mdr-art-5", "celex": "32017R0745"},
+    ]
+    definitions: list[dict] = []
+
+    sufficiency = _evaluate_route_sufficiency(
+        route=route,
+        question=question,
+        explicit_refs=["Article 5"],
+        target_celexes={"32017R0745"},
+        role_specs=[("manufacturer", "32017R0745")],
+        provisions=provisions,
+        definitions=definitions,
+        direct_provisions=direct_provisions,
+        role_provisions=role_provisions,
+        legal_qualification_targets=[],
+    )
+    assert sufficiency["missing_status_anchors"] == [
+        {"ref": "Article 2", "celexes": ["32017R0745"]}
+    ]
+
+    recovery = _run_corrective_retrieval_pass(
+        question,
+        retriever,
+        client=object(),
+        k=8,
+        route=route,
+        target_celexes={"32017R0745"},
+        explicit_refs=["Article 5"],
+        role_specs=[("manufacturer", "32017R0745")],
+        provisions=provisions,
+        direct_provisions=direct_provisions,
+        role_provisions=role_provisions,
+        definitions=definitions,
+        sufficiency=sufficiency,
+        hyde_text=None,
+        legal_qualification_targets=[],
+        hyde_builder=lambda *_args, **_kwargs: pytest.fail("HyDE should not run"),
+    )
+
+    assert any(
+        action.startswith("recovered status-anchor (DEFINES)")
+        for action in recovery["actions"]
+    )
+    assert recovery["sufficiency"]["missing_status_anchors"] == []
+    assert "Article 2" in [p["article_ref"] for p in provisions]
 
 
 def test_build_route_answer_guidance_requires_uncertainty_for_qualification_route():

@@ -38,6 +38,13 @@ from application._config import (                        # noqa: F401
     _detect_mentioned_regulations,
     _extract_provision_refs,
 )
+from application._faithfulness import (                  # noqa: F401
+    build_warning_block as _build_faithfulness_warning,
+    check_faithfulness as _check_faithfulness,
+    faithfulness_mode as _faithfulness_mode,
+    out_of_scope_citation_refs as _out_of_scope_citation_refs,
+    remove_unverified_quotes as _remove_unverified_quotes,
+)
 from application._routing import (                       # noqa: F401
     _QuestionRoute,
     _ProvisionLookupTarget,
@@ -314,7 +321,6 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
         role_provisions = retrieval_result["role_provisions"]
         hyde_text = retrieval_result["hyde_text"]
         provisions = retrieval_result["provisions"]
-        map_results: list[dict] = retrieval_result.get("map_results") or []
         has_backbone: bool = retrieval_result.get("has_backbone", False)
         backbone_provisions: list[dict] = retrieval_result.get("backbone_provisions") or []
         backbone_label: str | None = retrieval_result.get("backbone_label")
@@ -510,19 +516,6 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
 
         if provisions:
             if route.id == "community_summary_search":
-                # Map-reduce coverage block: inject partial answers from chapter
-                # summaries so the LLM sees the full regulatory landscape even
-                # for chapters not captured by provision-level retrieval.
-                if map_results:
-                    map_block_lines = [
-                        "[Regulatory Coverage Overview — from chapter-level community summaries]\n"
-                    ]
-                    for mr in map_results:
-                        score_tag = f" [relevance {mr['score']}/100]" if mr.get("score") else ""
-                        map_block_lines.append(
-                            f"• {mr.get('label', mr['community_id'])}{score_tag}: {mr['partial_answer']}"
-                        )
-                    context_parts.append("\n".join(map_block_lines))
                 header = _community_summary_header(provisions)
                 if header:
                     context_parts.append(header)
@@ -659,11 +652,9 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
             except Exception as _exc:
                 logger.warning("Backbone self-check skipped: %s", _exc)
 
-        # --- 7c. Citation scope self-check (bounded, 1 call) ---
-        # When the question is scoped to a single regulation, verify the answer
-        # does not cite provisions from other regulations.  This encodes the
-        # evaluation rubric (cross-regulation contamination = major weakness)
-        # as an internal quality gate that fires on every single-regulation answer.
+        # --- 7c. Citation scope self-check (deterministic) ---
+        # When the question is scoped to a single regulation, verify cited
+        # Article/Annex/Recital refs appear in retrieved context refs.
         # Set env CRSS_CITATION_SCOPE_CHECK=0 to disable.
         if (
             target_celexes
@@ -675,38 +666,55 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
         ):
             _scope_reg_name = next(iter(mentioned_regs))
             try:
-                _scope_resp = client.chat.complete(
-                    model=os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
-                    messages=[{
-                        "role": "user",
-                        "content": (
-                            f"The answer below was written for a question scoped to "
-                            f"{_scope_reg_name} only.\n"
-                            "Respond with EXACTLY the word CLEAN if every provision "
-                            "citation in the answer belongs to "
-                            f"{_scope_reg_name}. "
-                            "Otherwise list ONLY the out-of-scope citations, one per "
-                            "line, in the format: [article ref] ([wrong regulation]). "
-                            "No preamble, no explanation — just CLEAN or the list.\n\n"
-                            f"ANSWER:\n{full_answer[:3000]}"
-                        ),
-                    }],
-                    temperature=0.0,
-                    max_tokens=60,
-                )
-                _scope_text = _scope_resp.choices[0].message.content.strip()
-                if "CLEAN" not in _scope_text.upper():
+                _out_of_scope_refs = _out_of_scope_citation_refs(full_answer, provisions)
+                if _out_of_scope_refs:
+                    _scope_text = ", ".join(_out_of_scope_refs[:30])
                     full_answer += (
                         "\n\n---\n> **\u26a0 Citation scope note:** "
-                        "The following citations may reference regulations outside the "
-                        f"scope of this question (scoped to {_scope_reg_name}): "
-                        f"{_scope_text}. Please verify against the retrieved context."
+                        "The following citations are not present in the retrieved "
+                        f"context for this question (scoped to {_scope_reg_name}): "
+                        f"{_scope_text}. Please verify against the source provisions."
                     )
-                    logger.info("Citation scope self-check flagged: %s", _scope_text)
+                    logger.info("Citation scope deterministic check flagged: %s", _scope_text)
                 else:
-                    logger.debug("Citation scope self-check: CLEAN")
+                    logger.debug("Citation scope deterministic check: CLEAN")
             except Exception as _exc:
                 logger.warning("Citation scope self-check skipped: %s", _exc)
+
+        # --- 7d. Faithfulness verification (deterministic, no LLM call) ---
+        # Verify every verbatim quote in the answer appears in the retrieved
+        # corpus.  Flag mode prepends a warning block listing unverified
+        # quotes.  Off by default — opt in with CRSS_FAITHFULNESS_CHECK=1
+        # (flag) or =2 (strict; currently same behaviour, reserved for a
+        # future single re-prompt loop).
+        _faith_mode = _faithfulness_mode(os.environ.get("CRSS_FAITHFULNESS_CHECK"))
+        if _faith_mode >= 1 and full_answer:
+            try:
+                _faith_report = _check_faithfulness(full_answer, provisions)
+                if not _faith_report.ok:
+                    # Enforce deterministic redaction so unverified verbatim
+                    # quotations never survive in user-facing output.
+                    full_answer = _remove_unverified_quotes(full_answer, _faith_report)
+                    _faith_block = _build_faithfulness_warning(_faith_report)
+                    if _faith_block:
+                        full_answer = f"{_faith_block}\n\n{full_answer}"
+                    logger.info(
+                        "Faithfulness check flagged %d/%d quote(s)",
+                        _faith_report.unverified_count,
+                        _faith_report.total_quotes,
+                    )
+                else:
+                    logger.debug(
+                        "Faithfulness check: all %d quote(s) verified",
+                        _faith_report.total_quotes,
+                    )
+                if _faith_mode == 2:
+                    logger.warning(
+                        "CRSS_FAITHFULNESS_CHECK=2 (strict) is not yet "
+                        "implemented; behaving as flag mode."
+                    )
+            except Exception as _exc:
+                logger.warning("Faithfulness check skipped: %s", _exc)
 
         final_answer = _postprocess_answer(
             full_answer,

@@ -32,204 +32,107 @@ style: |
 # CRSS
 ## Compliance Readiness Support System
 
-AI-powered regulatory intelligence for medtech startups navigating EU law
+Auditfähige Regulierungsintelligenz für MedTech und KI in der EU
 
-**Diego Barra** · Gründungstipendium NRW · June 2026
+**Diego Barra** · Gründungstipendium NRW · Juni 2026
 
 ---
 
-## The Problem
+## Problem und Timing
 
-EU medical device companies face **3+ major overlapping regulations**:
+Regulierte Unternehmen müssen **EU-KI-Verordnung + sektorale Regeln** parallel anwenden:
 
-| Regulation | Applies to | In force since |
+| Regelwerk | Relevanz |
+|---|---|
+| MDR / IVDR | Produktzulassung und CE-Prozesse |
+| EU-KI-Verordnung | Zusatzerfordernisse für Hochrisiko-KI ab Aug 2026 |
+| DSGVO | Datenverarbeitung und Governance |
+
+- **Marktdruck:** MDR/IVDR-Transition läuft, EUDAMED-Pflichten steigen, Benannte Stellen bleiben Engpass
+- **Kosten:** Klasse-II-CE-Prozesse oft **100.000-500.000 EUR** nur für Regulatory-Consulting
+- **Kapazität:** Lange Prüfzyklen und Fachkräftemangel verlangsamen Innovation
+
+> **Wenn Forschungs- und Entwicklungsrealität auf Konformitätsbewertung trifft, wird die Validierungslücke zum Geschäftsrisiko.**
+
+---
+
+## Lösung: CRSS
+
+**CRSS ist eine zitierfähige Regulatory-Intelligence-Plattform auf Basis eines Vorschriften-Wissensgraphen.**
+
+Eine typische Frage:
+
+> *Welche kumulativen Pflichten gelten für ein Klasse-IIb-Medizinprodukt mit integriertem KI-Modell?*
+
+CRSS liefert in Minuten:
+
+- verknüpfte Anforderungen aus **MDR, IVDR, EU-KI-Verordnung, DSGVO, MDCG**
+- rückverfolgbare Antworten mit Artikel- und Leitlinienbezug
+- erkennbare Lücken für technische Dossiers und Compliance-Vorbereitung
+
+**Kein generischer Chatbot, sondern regelwerksnahes, quellenverankertes Reasoning.**
+
+---
+
+## Markt und Wettbewerb
+
+- **EU MedTech:** ca. 38.000 Unternehmen, 90 Prozent KMU, >2 Mio. Produkte
+- **NRW:** ca. 2.200 MedTech-Unternehmen, >9 Mrd. EUR Jahresumsatz
+- **Kernzielgruppe:** Startups, KMU, SaMD-Hersteller vor CE ohne voll ausgebautes RA-Team
+
+| Angebotstyp | Stärke | Lücke |
 |---|---|---|
-| MDR 2017/745 | All medical devices | May 2021 / 2024 |
-| IVDR 2017/746 | In vitro diagnostics | May 2022 / 2025 |
-| EU AI Act 2024/1689 | AI-enabled devices | Aug 2026 → |
-| GDPR 2016/679 | Patient data processing | May 2018 |
-
-> A startup building an AI-powered diagnostic tool must simultaneously comply with **all four** — each referencing the others.
+| Generische LLMs | Schnell | Keine belastbare Rechtsnachvollziehbarkeit |
+| Datenbanken (z. B. EUR-Lex) | Primärquellen | Keine sektorübergreifende Pflichtenanalyse |
+| Consultants | Hohe Expertise | 200-500 EUR pro Stunde, begrenzte Skalierung |
+| CRSS | Quellenbasiert + sektorübergreifend + KI-Act-ready | Frühe Produktphase |
 
 ---
 
-## The Problem I Lived
+## Geschäftsmodell und Traktion
 
-I didn't start with regulations. I started with a cancer detection model.
+**SaaS mit stufenbasierten Lizenzen**
 
-At a medtech startup building AI for **early breast cancer detection** using Raman Spectroscopy, I found a critical flaw in our model validation pipeline:
+| Segment | Preislogik |
+|---|---|
+| Einzel / Startup | 150-250 EUR pro Monat |
+| Teams | 800-1.500 EUR pro Monat |
+| Enterprise | 8.000-15.000 EUR pro Jahr |
 
-- Patient samples were present in **both training and test sets**
-- Model accuracy was **artificially inflated** — severe overfitting disguised as performance
-- I raised it internally. It wasn't resolved. I left.
+**Heute vorhanden:**
+- Funktionsfähiger Prototyp für MDR, IVDR, EU-KI-Verordnung, DSGVO und MDCG
+- Strukturierter Wissensgraph mit 7.000+ verknüpften Rechtsnormen
+- Validierte Q&A-Workflows mit quellengebundenen Antworten
 
-Then I investigated the literature — the same error was **widespread across published Raman Spectroscopy cancer detection studies**. Medical AI reporting guidelines existed. They were being ignored.
-
-> **When these research-stage models hit EU AI Act conformity assessment: the gap between how they were validated and what the law requires will be enormous. That is the market.**
-
----
-
-## Why This Is Getting Worse
-
-- **MDR/IVDR transition** is still ongoing — thousands of legacy devices still seeking CE marks under stricter rules
-- **EU AI Act** obligations for high-risk AI (medical devices = automatic high-risk) take effect **August 2026**
-- **Notified Body bottleneck** — only ~22 NBs designated under MDR; wait times of 18–36 months
-- **Regulatory affairs talent** is scarce and expensive
-
-> The average cost of CE marking for a Class II medical device:
-> **€100,000 – €500,000** in regulatory consulting alone
-
-**Getting it wrong means market exclusion.**
+**Go-to-Market ab sofort:** Pilot- und Validierungssessions mit MedTech- und RA-Teams in NRW.
 
 ---
 
-## Who Needs This
+## Umsetzung mit Gründungstipendium NRW
 
-**Primary customer: early-stage medtech & digital health startups**
+**Ziel in 12 Monaten: vom validierten Prototyp zur marktreifen SaaS-Lösung**
 
-- Pre-CE-marking phase, figuring out what applies to their device
-- No dedicated regulatory affairs team yet
-- Founders spending weeks reading legislation to answer basic questions
+1. **Monat 1-3:** 5 Piloten in NRW, Problem-Fit und Pricing finalisieren
+2. **Monat 4-6:** Dokumentanalyse-Modul für Lücken- und Konsistenzprüfung ausbauen
+3. **Monat 7-9:** Mandantenfähige SaaS-Infrastruktur und DSGVO-konforme Betriebsfähigkeit
+4. **Monat 10-12:** Vertriebskanal mit RA-Partnern, erste wiederkehrende Umsätze
 
-**Secondary: regulatory affairs professionals**
-
-- Mid-size medtech companies cross-referencing obligations across regulations
-- Contract regulatory consultants serving multiple clients
-
-**Market context:** 27,000+ medical device companies in the EU.
-NRW alone hosts major clusters in **Düsseldorf, Cologne, and Aachen**.
+**Risikosteuerung:** striktes Quellengrounding, fachliches Sparring, iteratives Pilotfeedback.
 
 ---
 
-## The Solution
+## Gründungsteam und Why NRW
 
-**CRSS is a regulatory intelligence layer built on the actual law.**
+**Diego Barra**
 
-A question like:
+- M.Sc. Bionik & Biomimetik (Hochschule Rhein-Waal)
+- ML-Engineering in MedTech-Kontext (u. a. Raman-Spektroskopie)
+- Entwicklung des CRSS-End-to-End-Stacks (Graph, Retrieval, LLM-Schicht)
 
-> *"What does the EU AI Act require from a manufacturer of a Class IIb medical device that incorporates an AI model?"*
+**Unterstützung:** fachliches Sparring durch Roman Sheshko (PhD, Data Science/ML).
 
-Returns a **precise, cited answer** tracing obligations across MDR Article 10, AI Act Article 16, and the relevant MDCG guidance — in seconds.
+**Warum NRW:** direkter Zugang zu MedTech-Clustern und Partnern in Düsseldorf, Köln/Bonn und Aachen.
 
-**Not a chatbot. Not a search engine.**
-The system reasons over a structured knowledge graph of the regulations themselves.
+**Förderbedarf:** Das Stipendium schafft den Fokus für Marktvalidierung, Produktreife und belastbare Kundengewinne.
 
----
-
-<!-- _class: lead -->
-
-## Demo
-
-*[Screenshot: question → cited answer across MDR + AI Act]*
-
-> "Article 10(1) MDR requires manufacturers to establish a quality management system. Article 16(a) EU AI Act additionally requires providers of high-risk AI systems to establish a risk management system pursuant to Article 9. MDCG 2025-6 clarifies that these obligations are cumulative and complementary…"
-
-Real article numbers. Real legal text. No hallucination.
-
----
-
-## Why It Works
-
-Three things that make this different from ChatGPT + a PDF:
-
-1. **The full regulations are parsed and cross-linked** — every article, paragraph, and annex reference is resolved. The system knows that MDR Annex I delegates to Annex II which is referenced in Article 52.
-
-2. **Cross-regulation reasoning** — a single question can pull obligations simultaneously from MDR, AI Act, and GDPR because the graph tracks which articles in one regulation cite which in another.
-
-3. **Grounded answers only** — the system is architecturally prevented from citing anything not in the retrieved legal text. No training-data contamination.
-
----
-
-## Differentiation
-
-|  | CRSS | Generic LLM | Regulatory Consultant | Static Compliance Tool |
-|---|---|---|---|---|
-| Grounded in actual law | ✅ | ❌ | ✅ | Partial |
-| Cross-regulation reasoning | ✅ | ❌ | ✅ | ❌ |
-| AI Act ready | ✅ | ❌ | Depends | ❌ |
-| Available 24/7 | ✅ | ✅ | ❌ | ✅ |
-| Cost per question | Cents | Cents | €200–500/hr | — |
-
-The gap between a €300/hr regulatory lawyer and a well-grounded AI answer
-is **closing fast** — but only if the AI is actually grounded.
-
----
-
-## Business Model
-
-**SaaS, subscription-based**
-
-| Tier | Target | Price (indicative) |
-|---|---|---|
-| Startup | ≤10 employees, pre-CE | €149/month |
-| Professional | Regulatory affairs teams | €499/month |
-| Enterprise | Consultancies, NBs | Custom |
-
-**Additional angles:**
-- White-label for regulatory consultancies (they deliver it to their clients)
-- Integration into existing QMS tools (Greenlight Guru, Qualio)
-- Regulation update notifications when new MDCG guidance is published
-
-*Gross margin potential: >85% (marginal cost = API calls + compute)*
-
----
-
-## Traction & Validation
-
-**What exists today:**
-- Working prototype covering MDR, IVDR, EU AI Act, GDPR + 9 MDCG guidance documents
-- Structured knowledge graph: 7,000+ legal provisions, cross-referenced
-- Real Q&A capability validated on regulatory test cases
-
-**Next steps with stipend:**
-- 5 pilot conversations with NRW-based medtech founders (already 2 warm introductions)
-- Refine pricing and onboarding flow based on pilot feedback
-- Expand to German-language regulations (MDR/IVDR German text)
-
-*This is a seed-stage project. I am not claiming a validated business — I am claiming a validated problem and a working technical solution.*
-
----
-
-## Why NRW
-
-NRW is the right place to build this:
-
-- **Düsseldorf**: home to major medtech and pharma companies (Henkel, Evonik, many device companies)
-- **Cologne/Bonn**: digital health ecosystem, StartupDock, multiple health-tech accelerators
-- **Aachen**: RWTH spin-off culture, strong regulatory research groups
-
-**Personal connection:** Based in NRW, with access to the local medtech network through [relevant connection/university/accelerator].
-
-The Gründungstipendium NRW gives me 12 months to stop splitting focus between building and consulting — and go full-time on customer development and product.
-
----
-
-<!-- _class: lead -->
-
-## The Ask
-
-**12 months** to validate and launch CRSS commercially
-
-**Milestones:**
-- Month 3: 5 paying pilots, pricing confirmed
-- Month 6: German-language expansion, first enterprise conversation
-- Month 9: 20 active users, first retention data
-- Month 12: Seed round or revenue-sustainable
-
----
-
-<!-- _class: lead -->
-
-## About Me
-
-**Diego Barra** — ML engineer with deep medtech domain experience
-
-- Built AI diagnostics for **early breast cancer detection** (Raman Spectroscopy) at a medtech startup
-- Identified systemic validation gaps in medical AI research; investigated medical AI reporting standards and the EU regulatory framework for AI-enabled devices
-- Designed and built CRSS end-to-end: knowledge graph (Neo4j), embeddings, LLM reasoning layer, cross-regulation chain retrieval
-
-**Why me specifically:**
-The combination of hands-on AI development in a regulated clinical context, regulatory self-study depth, and the software engineering capability to build the full system is rare.
-I am not pitching an idea — the system exists.
-
-*[email]* · *[LinkedIn]*
+*[E-Mail]* · *[LinkedIn]*

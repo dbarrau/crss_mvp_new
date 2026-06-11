@@ -151,13 +151,12 @@ MDCG_DOCUMENTS = {
     "MDCG_2024_3": {
         "name": "MDCG 2024-3",
         "title": (
-            "Benefits and risks of the investigational device, clinical procedures "
-            "and clinical investigation"
+            "Guidance on content of the ClinicalInvestigation Plan for clinicalinvestigations of medical devices"
         ),
         "type": "guidance",
         "jurisdiction": "EU",
         "pdf_filename": "mdcg_2024_3_en.pdf",
-        "download_url": None,  # TODO: Add official download URL
+        "download_url": "https://health.ec.europa.eu/document/download/690de85a-ac17-45ea-bb32-7839540c25c4_en?filename=mdcg_2024-3_en_0.pdf"
     },
     "MDCG_2021_24": {
         "name": "MDCG 2021-24",

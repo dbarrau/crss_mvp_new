@@ -122,6 +122,7 @@ RETURN
   art.display_ref     AS article_ref,
   art.display_path    AS article_path,
   art.text_for_analysis AS article_text,
+  art.provision_role  AS provision_role,
   parents + children + siblings AS children,
   internal_cited + cross_reg_cited AS cited_provisions,
   cross_reg_cited
@@ -147,6 +148,7 @@ RETURN DISTINCT
   srcArt.display_ref   AS article_ref,
   srcArt.display_path  AS article_path,
   srcArt.text_for_analysis AS article_text,
+  srcArt.provision_role AS provision_role,
   citation_freq
 ORDER BY citation_freq DESC
 LIMIT 10
@@ -197,7 +199,8 @@ RETURN DISTINCT
   linked.celex        AS celex,
   linked.display_ref  AS article_ref,
   linked.display_path AS article_path,
-  linked.text_for_analysis AS article_text
+  linked.text_for_analysis AS article_text,
+  linked.provision_role AS provision_role
 """
 
 # Direct provision lookup by display_ref.  Used for structural questions
@@ -226,7 +229,7 @@ WITH collect(DISTINCT seed) + collect(DISTINCT included) + collect(DISTINCT equi
 UNWIND roles AS role
 WITH DISTINCT role
 MATCH (p:Provision)-[:OBLIGATION_OF]->(role)
-WHERE p.kind IN ['article', 'annex_section', 'annex_subsection', 'annex_point', 'annex_part', 'recital', 'section']
+WHERE p.kind IN ['article', 'annex', 'annex_section', 'annex_subsection', 'annex_point', 'annex_part', 'recital', 'section']
 RETURN DISTINCT
     p.id AS article_id,
     p.celex AS celex,

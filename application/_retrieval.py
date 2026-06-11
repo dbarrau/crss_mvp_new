@@ -24,69 +24,41 @@ from application._routing import (
 
 logger = logging.getLogger(__name__)
 
+_AI_ACT_CELEX = "32024R1689"
+_AI_ACT_GPAI_REFS = frozenset({
+    "Article 51",
+    "Article 52",
+    "Article 53",
+    "Article 54",
+    "Article 55",
+})
+_AI_ACT_PROHIBITED_PRACTICES_RE = re.compile(
+    r"\b(prohibit(?:ed|ion|ions)?|ban(?:ned)?|forbidden|not\s+allowed)\b",
+    re.IGNORECASE,
+)
+
+# Canonical definitions article per regulation. When a retrieved bag contains
+# an EXEMPTS provision for one of these CELEX codes but no DEFINES provision
+# for the same CELEX, the sufficiency check (status_anchor) treats the bag as
+# incomplete and the corrective pass force-retrieves the definitions article.
+# This prevents the failure mode where the LLM reads an obligation carve-out
+# (e.g. MDR Article 5(5) in-house exemption) without the actor-status anchor
+# (MDR Article 2 'manufacturer' definition) and concludes the actor has no
+# status at all.
+_DEFINITIONS_REF_BY_CELEX: dict[str, str] = {
+    "32024R1689": "Article 3",  # EU AI Act
+    "32017R0745": "Article 2",  # MDR
+    "32017R0746": "Article 2",  # IVDR
+    "32016R0679": "Article 4",  # GDPR
+}
+_STATUS_ANCHOR_ROUTES: frozenset[str] = frozenset({
+    "legal_qualification",
+    "cross_regulation",
+})
+
 # ---------------------------------------------------------------------------
 # HyDE query generation
 # ---------------------------------------------------------------------------
-
-
-def _map_community_summary(
-    summary_text: str, question: str, client: Any
-) -> tuple[str, int]:
-    """Map phase of GraphRAG map-reduce: ask what a single community summary
-    knows about *question*.
-
-    Returns ``(partial_answer, score)`` where *score* is 0-100 and mirrors
-    the GraphRAG paper's map-step helpfulness rating.  Callers should discard
-    entries with score == 0 and sort remaining entries in descending score
-    order before the reduce step, so the most informative chapters dominate
-    the context window.
-
-    450 tokens provides enough budget to enumerate all distinct obligation
-    tiers in a complex chapter (e.g. GPAI Articles 51-56 with general and
-    systemic-risk sub-obligations, or Article 5 prohibited practices as a
-    classification gate).
-    """
-    resp = client.chat.complete(
-        model=os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
-        messages=[{
-            "role": "user",
-            "content": (
-                "You are a regulatory analyst. A community summary is provided below.\n"
-                "Based ONLY on the summary text, list the most relevant obligations, "
-                "rights, or prohibitions for the following question.\n"
-                "Output one bullet per distinct actor/condition combination. "
-                "Example: '\u2022 Providers (general): must register in EU database. "
-                "\u2022 Providers (systemic-risk GPAI): must additionally perform adversarial testing.'\n"
-                "If the chapter has multiple distinct obligation tiers (e.g. a general "
-                "tier and a systemic-risk tier), list each tier as a separate bullet.\n"
-                "If the summary contains nothing relevant, output only: NOT RELEVANT\n\n"
-                "After your answer (or NOT RELEVANT), write on its own line:\n"
-                "HELPFULNESS: <integer 0-100>\n"
-                "where 100 = directly answers the question, 0 = completely irrelevant.\n\n"
-                f"Question: {question}\n\n"
-                f"Summary:\n{summary_text}"
-            ),
-        }],
-        temperature=0.0,
-        max_tokens=480,
-    )
-    raw = resp.choices[0].message.content.strip()
-
-    # Parse HELPFULNESS score from last line
-    score = 0
-    lines = raw.splitlines()
-    body_lines = []
-    for line in lines:
-        m = re.match(r"HELPFULNESS:\s*(\d+)", line.strip(), re.IGNORECASE)
-        if m:
-            score = min(100, max(0, int(m.group(1))))
-        else:
-            body_lines.append(line)
-    answer = "\n".join(body_lines).strip()
-
-    if answer.upper().startswith("NOT RELEVANT"):
-        return "", 0
-    return (answer, score)
 
 
 def _decompose_question(question: str, client: Any) -> list[str]:
@@ -215,6 +187,20 @@ def _is_obligation_breadth_question(
     )
 
 
+def _is_ai_act_prohibited_practices_question(
+    question: str,
+    target_celexes: set[str] | None,
+) -> bool:
+    """Return whether the question targets AI Act prohibited practices.
+
+    Keeps the trigger deterministic and narrow: only fire when prohibition
+    language is present and scope includes the AI Act.
+    """
+    if target_celexes and _AI_ACT_CELEX not in target_celexes:
+        return False
+    return bool(_AI_ACT_PROHIBITED_PRACTICES_RE.search(question))
+
+
 def _get_obligation_backbone_refs(
     role_specs: list[tuple[str, str]],
     target_celexes: set[str] | None = None,
@@ -270,6 +256,52 @@ def _has_lookup_target_coverage(
             continue
         return True
     return False
+
+
+def _detect_missing_status_anchors(
+    provisions: list[dict],
+    route_id: str,
+) -> list[_ProvisionLookupTarget]:
+    """Return DEFINES anchors required to ground EXEMPTS provisions in the bag.
+
+    Structural sufficiency rule: when the retrieved bag contains a provision
+    with ``provision_role == 'EXEMPTS'`` for some CELEX but no provision with
+    ``provision_role == 'DEFINES'`` for that same CELEX, the bag is missing
+    the actor-status definition that the exemption operates on. Without this
+    anchor, the LLM cannot tell whether the exemption merely waives an
+    obligation (correct) or removes the underlying legal status (incorrect).
+
+    Only fires for routes where status reasoning matters
+    (``legal_qualification``, ``cross_regulation``). For other routes the
+    EXEMPTS provision is treated as a self-contained answer.
+
+    Returns force-retrieval targets for the canonical definitions article of
+    each affected CELEX. CELEXes outside ``_DEFINITIONS_REF_BY_CELEX`` are
+    silently skipped (e.g. guidance documents do not have a definitions
+    article in the same sense).
+    """
+    if route_id not in _STATUS_ANCHOR_ROUTES:
+        return []
+
+    exempts_celexes: set[str] = set()
+    defines_celexes: set[str] = set()
+    for provision in provisions:
+        role = (provision.get("provision_role") or "").strip().upper()
+        celex = provision.get("celex") or ""
+        if not celex:
+            continue
+        if role == "EXEMPTS":
+            exempts_celexes.add(celex)
+        elif role == "DEFINES":
+            defines_celexes.add(celex)
+
+    missing: list[_ProvisionLookupTarget] = []
+    for celex in sorted(exempts_celexes - defines_celexes):
+        ref = _DEFINITIONS_REF_BY_CELEX.get(celex)
+        if not ref:
+            continue
+        missing.append(_ProvisionLookupTarget(ref=ref, celexes=frozenset({celex})))
+    return missing
 
 
 # ---------------------------------------------------------------------------
@@ -465,51 +497,6 @@ def _retrieve_route_provisions(
                     seen_article_ids.add(aid)
                     provisions.append(p)
 
-        # Map-reduce: scan Level-1 chapter summaries to catch any chapter that
-        # community embedding search missed.  Uses cheap, short LLM calls.
-        # Per the GraphRAG paper (Edge et al. 2404.16130 §3.1.6): each partial
-        # answer is scored 0-100 for helpfulness; score-0 entries are dropped,
-        # and remaining entries are sorted descending so the most informative
-        # chapters fill the context window first in the reduce step.
-        #
-        # For AI Act provider obligation-breadth questions, enrich the map
-        # question so the GPAI community summary (Articles 53-55) is not
-        # penalised by vocabulary mismatch against a High-Risk-centric query.
-        _map_question = question
-        if _is_obligation_breadth_question(question, route, role_specs) and any(
-            role_term == "provider" and celex == "32024R1689"
-            for role_term, celex in role_specs
-        ):
-            _map_question = (
-                f"{question}\n"
-                "(Coverage note: this question covers ALL provider obligation tiers — "
-                "both High-Risk AI system providers (Articles 9-17) and "
-                "General-Purpose AI model providers (Articles 53-55), "
-                "including models with systemic risk.)"
-            )
-        map_results: list[dict] = []
-        try:
-            l1_summaries = retriever.get_all_community_summaries(level=1)
-            for l1 in l1_summaries:
-                if target_celexes:
-                    regs = set(l1.get("regulations") or [])
-                    if regs and not regs.intersection(target_celexes):
-                        continue
-                partial, score = _map_community_summary(
-                    l1["summary_text"], _map_question, client
-                )
-                if partial and score > 0:
-                    map_results.append({
-                        "community_id": l1["id"],
-                        "label": l1.get("label", l1["id"]),
-                        "partial_answer": partial,
-                        "score": score,
-                    })
-            # Sort most-helpful chapters first so the reduce step's context
-            # window is filled with the highest-signal partial answers.
-            map_results.sort(key=lambda r: r["score"], reverse=True)
-        except Exception:
-            logger.debug("Map-reduce pass skipped (no Level-1 summaries yet).")
     elif should_run_hyde:
         hyde_text = hyde_builder(question, client)
         hyde_vec = retriever.encode_as_passage(hyde_text)
@@ -526,7 +513,67 @@ def _retrieve_route_provisions(
         if direct_provisions:
             _merge_unique_provisions(provisions, direct_provisions, prepend=True)
 
-    # ── Backbone injection for obligation-breadth questions ─────────────────
+    # ── GPAI coverage safety net ─────────────────────────────────────────────
+    # Regardless of route, whenever the detected roles include an AI Act
+    # provider, verify that at least one GPAI article (51–55) is in the result
+    # set.  If not, force-add Articles 53 and 55 via direct lookup.
+    #
+    # Rationale: the GPAI sub-question injection and backbone mechanism both
+    # gate on specific routes and breadth-language keywords.  A question like
+    # "what are the obligations of providers under the AI Act?" (no "all")
+    # hitting role_obligations would only run retrieve_by_roles(), and GPAI
+    # coverage then depends entirely on OBLIGATION_OF edges — which, even
+    # after Fix 1, may still lose the cosine-similarity contest against the
+    # much denser High-Risk AI cluster in community search paths.
+    #
+    # This check is deterministic, route-agnostic, and fires last so it never
+    # duplicates provisions already present.
+    if any(
+        role_term == "provider" and celex == _AI_ACT_CELEX
+        for role_term, celex in role_specs
+    ) and (not target_celexes or _AI_ACT_CELEX in target_celexes):
+        _has_gpai = any(
+            p.get("celex") == _AI_ACT_CELEX
+            and (p.get("article_ref") or "") in _AI_ACT_GPAI_REFS
+            for p in provisions
+        )
+        if not _has_gpai:
+            _gpai_provisions = retriever.retrieve_by_refs(
+                ["Article 53", "Article 55"],
+                celex_filter={_AI_ACT_CELEX},
+            )
+            added = _merge_unique_provisions(provisions, _gpai_provisions)
+            if added:
+                logger.info(
+                    "GPAI safety net: injected %d GPAI provision(s) "
+                    "(Articles 53/55) — none were present after primary retrieval.",
+                    added,
+                )
+            else:
+                logger.debug("GPAI safety net: provisions already present.")
+
+    # ── AI Act prohibited-practices safety net ─────────────────────────────
+    # For prohibition-focused questions (Article 5 family), force-include
+    # Article 5 so quote/citation checks validate against retrieved text.
+    if _is_ai_act_prohibited_practices_question(question, target_celexes):
+        _has_article_5 = any(
+            p.get("celex") == _AI_ACT_CELEX
+            and (p.get("article_ref") or "") == "Article 5"
+            for p in provisions
+        )
+        if not _has_article_5:
+            _art5 = retriever.retrieve_by_refs(
+                ["Article 5"],
+                celex_filter={_AI_ACT_CELEX},
+            )
+            added = _merge_unique_provisions(provisions, _art5, prepend=True)
+            if added:
+                logger.info(
+                    "AI Act prohibited-practices safety net: injected Article 5 "
+                    "for prohibition-focused question.",
+                )
+
+
     # Force-retrieve the master list article (e.g. Article 16 for providers)
     # and expose it separately so agent.py can render it as a completeness
     # anchor BEFORE the main provisions block.  Not merged into provisions so
@@ -553,7 +600,6 @@ def _retrieve_route_provisions(
         "role_provisions": role_provisions,
         "hyde_text": hyde_text,
         "legal_qualification_targets": legal_qualification_targets,
-        "map_results": map_results,
         "has_backbone": has_backbone,
         "backbone_provisions": backbone_provisions,
         "backbone_label": backbone_label,
@@ -651,6 +697,7 @@ def _evaluate_route_sufficiency(
         for target in legal_qualification_targets
         if not _has_lookup_target_coverage(provisions + direct_provisions, target)
     ]
+    missing_status_anchors = _detect_missing_status_anchors(all_provisions, route.id)
 
     def add_check(name: str, passed: bool, detail: str) -> None:
         checks.append({"name": name, "passed": passed, "detail": detail})
@@ -721,6 +768,16 @@ def _evaluate_route_sufficiency(
                 else "no role-linked provisions were retrieved",
             )
         add_community_diversity_check()
+        if missing_status_anchors:
+            add_check(
+                "status_anchor",
+                False,
+                "EXEMPTS provisions retrieved without matching DEFINES anchor for "
+                + ", ".join(
+                    f"{','.join(sorted(target.celexes or []))}:{target.ref}"
+                    for target in missing_status_anchors
+                ),
+            )
     elif route.id == "legal_qualification":
         add_check(
             "qualification_backbone",
@@ -756,6 +813,16 @@ def _evaluate_route_sufficiency(
                 else "no role-linked provisions were retrieved",
             )
         add_community_diversity_check()
+        if missing_status_anchors:
+            add_check(
+                "status_anchor",
+                False,
+                "EXEMPTS provisions retrieved without matching DEFINES anchor for "
+                + ", ".join(
+                    f"{','.join(sorted(target.celexes or []))}:{target.ref}"
+                    for target in missing_status_anchors
+                ),
+            )
     elif route.id == "community_summary_search":
         has_community_results = any(
             p.get("_community_retrieval") for p in all_provisions
@@ -768,6 +835,19 @@ def _evaluate_route_sufficiency(
             else "no provisions were retrieved from community search",
         )
         add_community_diversity_check()
+        if _is_ai_act_prohibited_practices_question(question, target_celexes):
+            has_article_5 = any(
+                p.get("celex") == _AI_ACT_CELEX
+                and (p.get("article_ref") or "") == "Article 5"
+                for p in all_provisions
+            )
+            add_check(
+                "ai_act_article5_anchor",
+                has_article_5,
+                "Article 5 anchor is present for prohibited-practices question"
+                if has_article_5
+                else "missing Article 5 anchor for prohibited-practices question",
+            )
         if not has_community_results and all_provisions:
             add_check(
                 "community_index_present",
@@ -796,6 +876,13 @@ def _evaluate_route_sufficiency(
                 "celexes": sorted(target.celexes or []),
             }
             for target in missing_qualification_targets
+        ],
+        "missing_status_anchors": [
+            {
+                "ref": target.ref,
+                "celexes": sorted(target.celexes or []),
+            }
+            for target in missing_status_anchors
         ],
         "needs_role_recovery": bool(role_specs) and not has_role_ctx,
         "context_celexes": sorted(context_celexes),
@@ -860,6 +947,30 @@ def _run_corrective_retrieval_pass(
             actions.append("recovered qualification backbone provisions")
             sufficiency = recompute()
 
+    if sufficiency.get("missing_status_anchors"):
+        anchor_targets = [
+            _ProvisionLookupTarget(
+                ref=item["ref"],
+                celexes=frozenset(item["celexes"]) if item["celexes"] else None,
+            )
+            for item in sufficiency["missing_status_anchors"]
+        ]
+        recovered_anchors = _retrieve_lookup_targets(retriever, anchor_targets)
+        added = _merge_unique_provisions(direct_provisions, recovered_anchors)
+        added += _merge_unique_provisions(provisions, recovered_anchors, prepend=True)
+        if added:
+            actions.append(
+                "recovered status-anchor (DEFINES) provisions for "
+                + ", ".join(
+                    sorted(
+                        c
+                        for item in sufficiency["missing_status_anchors"]
+                        for c in item["celexes"]
+                    )
+                )
+            )
+            sufficiency = recompute()
+
     if sufficiency["missing_refs"]:
         recovered_direct = _retrieve_direct_provisions(
             question,
@@ -917,6 +1028,20 @@ def _run_corrective_retrieval_pass(
                 "recovered missing regulation coverage for "
                 + ", ".join(sufficiency["missing_celexes"])
             )
+            sufficiency = recompute()
+
+    needs_article5_anchor = any(
+        check["name"] == "ai_act_article5_anchor" and not check["passed"]
+        for check in sufficiency["checks"]
+    )
+    if route.id == "community_summary_search" and needs_article5_anchor:
+        recovered_article_5 = retriever.retrieve_by_refs(
+            ["Article 5"],
+            celex_filter={_AI_ACT_CELEX},
+        )
+        added = _merge_unique_provisions(provisions, recovered_article_5, prepend=True)
+        if added:
+            actions.append("recovered AI Act Article 5 anchor")
             sufficiency = recompute()
 
     return {

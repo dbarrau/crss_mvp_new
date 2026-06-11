@@ -154,6 +154,13 @@ def _is_definition_question(question: str) -> tuple[bool, str | None]:
     Returns ``(True, concept_text)`` when matched, ``(False, None)`` otherwise.
     The *concept_text* is the raw extracted subject, lowercased and stripped.
     """
+    # Guard against broad obligation/listing prompts (e.g. "What are all
+    # obligations of providers under the AI Act?").  The generic
+    # "what are <concept>" definition pattern would otherwise misclassify these
+    # as definition_lookup, bypassing role/community retrieval routes.
+    if _OBLIGATION_Q_RE.search(question) or _COMMUNITY_SUMMARY_Q_RE.search(question):
+        return False, None
+
     for pat in _DEFINITION_Q_PATTERNS:
         m = pat.search(question)
         if m:

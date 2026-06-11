@@ -43,16 +43,30 @@ EXACT_LEGAL_ROLE_SPECS: dict[tuple[str, str], dict[str, str]] = {
 ENTITY_SYNONYMS: dict[str, list[tuple[str, str]]] = {
     # Operational entities
     "hospital": [("deployer", "32024R1689"), ("user", "32017R0745"), ("user", "32017R0746")],
+    "hospitals": [("deployer", "32024R1689"), ("user", "32017R0745"), ("user", "32017R0746")],
     "clinic": [("deployer", "32024R1689"), ("user", "32017R0745"), ("user", "32017R0746")],
+    "clinics": [("deployer", "32024R1689"), ("user", "32017R0745"), ("user", "32017R0746")],
     "health institution": [("deployer", "32024R1689"), ("user", "32017R0745"), ("user", "32017R0746")],
+    "health institutions": [("deployer", "32024R1689"), ("user", "32017R0745"), ("user", "32017R0746")],
     "healthcare institution": [("deployer", "32024R1689"), ("user", "32017R0745"), ("user", "32017R0746")],
+    "healthcare institutions": [("deployer", "32024R1689"), ("user", "32017R0745"), ("user", "32017R0746")],
     "healthcare provider": [("deployer", "32024R1689"), ("user", "32017R0745"), ("user", "32017R0746")],
+    "healthcare providers": [("deployer", "32024R1689"), ("user", "32017R0745"), ("user", "32017R0746")],
     # Direct role terms
     "deployer": [("deployer", "32024R1689")],
+    "deployers": [("deployer", "32024R1689")],
     "provider": [("provider", "32024R1689")],
+    "providers": [("provider", "32024R1689")],
     "operator": [("operator", "32024R1689")],
+    "operators": [("operator", "32024R1689")],
     "product manufacturer": [("product manufacturer", "32024R1689")],
+    "product manufacturers": [("product manufacturer", "32024R1689")],
     "manufacturer": [
+        ("manufacturer", "32024R1689"),
+        ("manufacturer", "32017R0745"),
+        ("manufacturer", "32017R0746"),
+    ],
+    "manufacturers": [
         ("manufacturer", "32024R1689"),
         ("manufacturer", "32017R0745"),
         ("manufacturer", "32017R0746"),
@@ -62,7 +76,17 @@ ENTITY_SYNONYMS: dict[str, list[tuple[str, str]]] = {
         ("authorised representative", "32017R0745"),
         ("authorised representative", "32017R0746"),
     ],
+    "authorised representatives": [
+        ("authorised representative", "32024R1689"),
+        ("authorised representative", "32017R0745"),
+        ("authorised representative", "32017R0746"),
+    ],
     "authorized representative": [
+        ("authorised representative", "32024R1689"),
+        ("authorised representative", "32017R0745"),
+        ("authorised representative", "32017R0746"),
+    ],
+    "authorized representatives": [
         ("authorised representative", "32024R1689"),
         ("authorised representative", "32017R0745"),
         ("authorised representative", "32017R0746"),
@@ -72,12 +96,23 @@ ENTITY_SYNONYMS: dict[str, list[tuple[str, str]]] = {
         ("importer", "32017R0745"),
         ("importer", "32017R0746"),
     ],
+    "importers": [
+        ("importer", "32024R1689"),
+        ("importer", "32017R0745"),
+        ("importer", "32017R0746"),
+    ],
     "distributor": [
         ("distributor", "32024R1689"),
         ("distributor", "32017R0745"),
         ("distributor", "32017R0746"),
     ],
+    "distributors": [
+        ("distributor", "32024R1689"),
+        ("distributor", "32017R0745"),
+        ("distributor", "32017R0746"),
+    ],
     "user": [("user", "32017R0745"), ("user", "32017R0746")],
+    "users": [("user", "32017R0745"), ("user", "32017R0746")],
 }
 
 

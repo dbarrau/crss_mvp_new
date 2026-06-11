@@ -200,11 +200,15 @@ _AI_ACT_EDGES: list[LegalReasoningEdge] = [
         target_refs=(
             "Article 53",  # Baseline GPAI obligations (documentation, copyright policy)
             "Article 54",  # Codes of practice
+            "Article 50",  # Transparency: synthetic content labelling (para 2 explicitly names GPAI)
         ),
         rationale=(
             "All GPAI model providers (meeting Article 3(63)) must comply with "
             "Article 53 baseline obligations. This is independent of and prior "
-            "to any systemic risk assessment."
+            "to any systemic risk assessment. Article 50(2) is included because "
+            "it explicitly names 'general-purpose AI systems' generating synthetic "
+            "audio, image, video or text as subject to the machine-readable "
+            "labelling obligation — making it a direct output of Article 53."
         ),
     ),
     LegalReasoningEdge(
@@ -807,6 +811,143 @@ _GDPR_CROSS_REG_EDGES: list[LegalReasoningEdge] = [
         ),
     ),
 ]
+
+
+# ---------------------------------------------------------------------------
+# Curated OBLIGATION_OF patches
+#
+# The role_linker canonicalization step creates OBLIGATION_OF edges from
+# a heuristic: actor term appears in the first sentence of a provision AND
+# the provision contains "shall".  This works well for High-Risk AI articles
+# (9–17) and for some GPAI articles (53, 55, Annex XII) but misses provisions
+# where the actor term is structurally implicit or where the provision is an
+# Annex rather than an Article.
+#
+# This section encodes the missing edges as curated facts.  They are loaded
+# by scripts/load_legal_reasoning_chains.py alongside the LegalReasoningEdges.
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class CuratedObligationEdge:
+    """A manually curated OBLIGATION_OF edge between a provision and an actor role.
+
+    Used to patch gaps left by the role_linker heuristic.  The edge asserts
+    that the provision imposes obligations on the named actor role.
+    ``role_term`` must match an ``ActorRole.term_normalized`` value already
+    present in the graph for the given celex.
+    """
+
+    celex: str
+    provision_ref: str  # display_ref of the Provision node
+    role_term: str      # ActorRole.term_normalized (e.g. "provider")
+    rationale: str = ""
+
+
+_GPAI_OBLIGATION_OF_PATCHES: list[CuratedObligationEdge] = [
+
+    # ── Annex XI — Technical documentation for GPAI models ───────────────
+    # The role_linker missed this because annexes do not follow the
+    # "Providers shall…" opening sentence pattern.  Annex XI is the
+    # authoritative technical documentation template that every GPAI
+    # model provider must prepare under Article 53(1)(a).  Without an
+    # OBLIGATION_OF edge, retrieve_by_roles() never surfaces it.
+    CuratedObligationEdge(
+        celex="32024R1689",
+        provision_ref="Annex XI",
+        role_term="provider",
+        rationale=(
+            "Annex XI specifies the technical documentation required from "
+            "providers of general-purpose AI models under Article 53(1)(a). "
+            "It covers: general information and training process, training data "
+            "and evaluation methodology, capabilities and limitations, and "
+            "instructions for downstream providers. Every GPAI model provider "
+            "must prepare and maintain documentation conforming to Annex XI."
+        ),
+    ),
+
+    # ── Article 51 — Systemic risk classification ─────────────────────────
+    # Article 51 determines whether a GPAI model provider faces the elevated
+    # Article 55 obligations (adversarial testing, incident reporting,
+    # cybersecurity measures).  The role_linker missed it because the
+    # operative "shall" in Article 51 appears in a notification obligation
+    # embedded mid-article rather than in the opening sentence.
+    CuratedObligationEdge(
+        celex="32024R1689",
+        provision_ref="Article 51",
+        role_term="provider",
+        rationale=(
+            "Article 51 classifies GPAI models as posing systemic risk, either "
+            "by the 10^25 FLOP training compute presumption in Article 51(1)(a) "
+            "or by Commission decision against Annex XIII criteria under "
+            "Article 51(1)(b). Providers whose models meet this threshold must "
+            "notify the AI Office under Article 52(1). Article 51 is therefore "
+            "an obligation-bearing provision for providers, not merely a "
+            "classification gate."
+        ),
+    ),
+
+    # ── Article 54 — Codes of practice ───────────────────────────────────
+    # Article 54 requires GPAI model providers to participate in or adhere
+    # to codes of practice developed under Article 56 until harmonised
+    # standards are adopted.  The role_linker missed it because the subject
+    # is introduced by a conditional structure ("Providers of general-purpose
+    # AI models may…") rather than an imperative "shall" in the opening.
+    CuratedObligationEdge(
+        celex="32024R1689",
+        provision_ref="Article 54",
+        role_term="provider",
+        rationale=(
+            "Article 54 establishes codes of practice as the interim compliance "
+            "mechanism for GPAI model providers pending harmonised standards. "
+            "Providers are expected to participate in drawing up codes of practice "
+            "and may rely on adherence to an approved code as a means of "
+            "demonstrating conformity with Title VI obligations. This is a direct "
+            "obligation on providers, not a voluntary option."
+        ),
+    ),
+
+    # ── Article 50 — Transparency obligations (provider + deployer) ───────
+    # Article 50 is a horizontal Title IV provision applying independently
+    # of high-risk classification.  Para 1 and 2 bind providers; para 2
+    # explicitly names GPAI providers; paras 3 and 4 bind deployers.
+    # The role_linker missed both because the provision kind is recorded
+    # at the article level and the opening sentence structure varies by
+    # paragraph rather than following the standard "Providers shall…" form.
+    CuratedObligationEdge(
+        celex="32024R1689",
+        provision_ref="Article 50",
+        role_term="provider",
+        rationale=(
+            "Article 50(1) requires providers of AI systems that interact with "
+            "natural persons to inform them they are interacting with an AI system. "
+            "Article 50(2) explicitly names providers of general-purpose AI systems "
+            "generating synthetic audio, image, video or text, requiring outputs to "
+            "be marked in a machine-readable format and detectable as artificially "
+            "generated. Both paragraphs impose direct obligations on providers, "
+            "applying horizontally regardless of whether the system is high-risk. "
+            "Article 50(6) clarifies these obligations are additive to — not a "
+            "substitute for — the Chapter III high-risk transparency requirements."
+        ),
+    ),
+    CuratedObligationEdge(
+        celex="32024R1689",
+        provision_ref="Article 50",
+        role_term="deployer",
+        rationale=(
+            "Article 50(3) requires deployers of emotion recognition or biometric "
+            "categorisation systems to inform exposed persons of the system's "
+            "operation and to process personal data in accordance with GDPR and "
+            "other applicable Union data protection law. Article 50(4) requires "
+            "deployers of AI systems generating or manipulating deep fake content "
+            "to disclose that the content is artificially generated or manipulated. "
+            "These obligations apply to deployers independently of whether the "
+            "system is high-risk and are additive to the Article 26 deployer cluster."
+        ),
+    ),
+]
+
+# All curated obligation patches (extend as coverage gaps are identified)
+_ALL_OBLIGATION_PATCHES: list[CuratedObligationEdge] = _GPAI_OBLIGATION_OF_PATCHES
 
 
 # ---------------------------------------------------------------------------
