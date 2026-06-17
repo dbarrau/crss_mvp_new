@@ -135,6 +135,7 @@ Get one at [console.mistral.ai](https://console.mistral.ai/). The agent uses `mi
 python -m ingestion.run_pipeline --doc 32017R0745 --lang EN
 python -m ingestion.run_pipeline --doc 32017R0746 --lang EN
 python -m ingestion.run_pipeline --doc 32024R1689 --lang EN
+python -m ingestion.run_pipeline --doc 32026R0977 --lang EN
 
 # 1b. Parse MDCG guidance documents (PDF)
 python -m ingestion.run_pipeline --doc MDCG_2019_5 --lang EN
@@ -305,6 +306,7 @@ Runs a retriever test + a full agent test. Requires Neo4j (with embeddings) and 
 python -m ingestion.run_pipeline --doc 32017R0745
 python -m ingestion.run_pipeline --doc 32017R0746
 python -m ingestion.run_pipeline --doc 32024R1689
+python -m ingestion.run_pipeline --doc 32026R0977
 python -m ingestion.run_pipeline --doc MDCG_2019_5
 python -m ingestion.run_pipeline --doc MDCG_2019_11
 python -m ingestion.run_pipeline --doc MDCG_2020_3

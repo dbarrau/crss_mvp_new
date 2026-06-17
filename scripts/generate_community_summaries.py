@@ -170,7 +170,7 @@ def _fetch_l1_member_summaries(session, community_id: str) -> list[str]:
     return [r["summary_text"] for r in rows if r.get("summary_text")]
 
 
-def _generate_l1_summary(member_summaries: list[str], client, on_rate_limit=None) -> str:
+def _generate_l1_summary(member_summaries: list[str], client, on_rate_limit=None, on_success=None) -> str:
     """Generate a Level-1 summary from the Level-0 member summaries."""
     if not member_summaries:
         return ""
@@ -186,6 +186,8 @@ def _generate_l1_summary(member_summaries: list[str], client, on_rate_limit=None
                 temperature=0.0,
                 max_tokens=280,
             )
+            if on_success:
+                on_success()
             return resp.choices[0].message.content.strip()
         except Exception as exc:
             if "429" in str(exc) or "rate" in str(exc).lower():
@@ -200,7 +202,7 @@ def _generate_l1_summary(member_summaries: list[str], client, on_rate_limit=None
     return ""
 
 
-def _generate_summary(texts: list[str], client, on_rate_limit=None) -> str:
+def _generate_summary(texts: list[str], client, on_rate_limit=None, on_success=None) -> str:
     if not texts:
         return ""
 
@@ -219,6 +221,8 @@ def _generate_summary(texts: list[str], client, on_rate_limit=None) -> str:
                 temperature=0.0,
                 max_tokens=350,
             )
+            if on_success:
+                on_success()
             return resp.choices[0].message.content.strip()
         except Exception as exc:
             if "429" in str(exc) or "rate" in str(exc).lower():
@@ -265,18 +269,22 @@ def generate_summaries(
             total = len(communities)
             logger.info("Communities to summarise: %d (level=%s)", total, level)
 
-            # Adaptive inter-request delay.  Starts at 3 s and increases by
-            # 50 % each time the API returns 429 (up to 30 s max).  This lets
-            # the process self-calibrate to the account's rate limit without
-            # paying the expensive retry penalty on every subsequent call.
-            inter_delay = [3.0]
+            # Adaptive inter-request delay.  Starts at 1 s; doubles on each
+            # 429 (up to 30 s max); decays 10 % toward a 1 s floor on each
+            # successful call so a transient burst doesn't slow the whole run.
+            inter_delay = [1.0]
+            _DELAY_FLOOR = 1.0
+            _DELAY_CEIL = 30.0
 
             def _on_rate_limit() -> None:
-                inter_delay[0] = min(inter_delay[0] * 1.5, 30.0)
+                inter_delay[0] = min(inter_delay[0] * 2.0, _DELAY_CEIL)
                 logger.info(
                     "Rate limit hit; raising inter-request delay to %.1fs.",
                     inter_delay[0],
                 )
+
+            def _on_success() -> None:
+                inter_delay[0] = max(inter_delay[0] * 0.9, _DELAY_FLOOR)
 
             for i, community in enumerate(communities, start=1):
                 cid = community["id"]
@@ -293,9 +301,9 @@ def generate_summaries(
                     continue
 
                 summary = (
-                    _generate_l1_summary(texts, client, on_rate_limit=_on_rate_limit)
+                    _generate_l1_summary(texts, client, on_rate_limit=_on_rate_limit, on_success=_on_success)
                     if com_level == 1
-                    else _generate_summary(texts, client, on_rate_limit=_on_rate_limit)
+                    else _generate_summary(texts, client, on_rate_limit=_on_rate_limit, on_success=_on_success)
                 )
                 if not summary:
                     logger.warning("Skipping %s: LLM returned empty summary.", cid)
@@ -311,8 +319,7 @@ def generate_summaries(
                     print(f"[{i}/{total}] {cid}: {summary[:120]}...")
                 else:
                     _write_community_summary(session, cid, summary, embedding)
-                    if i % 20 == 0:
-                        logger.info("  %d / %d done ...", i, total)
+                    logger.info("  %d / %d done  delay=%.1fs  %s", i, total, inter_delay[0], cid)
 
                 generated += 1
                 time.sleep(inter_delay[0])

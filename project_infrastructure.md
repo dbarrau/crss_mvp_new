@@ -361,16 +361,30 @@ python scripts/embed_provisions.py  # ~6745 provisions, ~2min on MPS
 
 **Retrieval pipeline**:
 1. Encode query with `"query: "` prefix
-2. Cosine similarity against in-memory matrix
-3. Per-CELEX top-k allocation (supports multi-regulation queries)
-4. Graph expansion via Cypher:
+2. **Dense channel**: cosine similarity against in-memory matrix
+3. **Lexical channel**: Neo4j BM25 full-text query (`provision_fulltext` index over `text_for_analysis` + `display_ref`), filtered to in-scope CELEX(es), recitals/citations excluded
+4. **Reciprocal Rank Fusion**: fuse dense + lexical ranks as `Σ 1/(K+rank)` (K=60), lexical down-weighted to 0.5 so it breaks ties without overriding a strong dense match. Returns a widened candidate pool (5× k, capped at 48) when the reranker is active
+5. Per-CELEX top-k allocation (supports multi-regulation queries)
+6. Graph expansion via Cypher:
    - Children (up to 25 via `:HAS_PART`)
    - Internal citations (up to 5 via `:CITES`)
    - Cross-regulation citations (up to 8 via `:CITES`)
-5. Reverse cross-reference expansion (find provisions in other regulations that cite retrieved ones)
-6. Direct structural reference lookup (if query mentions "Article 26" explicitly)
+7. **Cross-encoder reranking** (optional) — blends a normalised `(question, article_text)` cross-encoder score with the fused score (0.6/0.4); falls back to fused ordering when the model is unavailable
+8. Reverse cross-reference expansion on the final top-k (find provisions in other regulations that cite retrieved ones)
+9. Direct structural reference lookup (if query mentions "Article 26" explicitly)
 
-**Key features**: Multi-regulation support, deduplication, cross-regulation edge traversal.
+**Key features**: Hybrid dense + BM25 retrieval with RRF fusion, multi-regulation support, deduplication, cross-regulation edge traversal, optional cross-encoder reranker.
+
+**Why hybrid**: dense-only cosine smears legally-distinct but vocabulary-similar provisions into a near-tie (e.g. Annex II *"Technical Documentation"* vs Annex IX *"assessment of technical documentation"*). The BM25 channel lets exact heading/term matches break the tie; RRF fuses ranks so the two incompatible score scales need no calibration.
+
+**One-time reranker setup** — the cross-encoder model must be downloaded once before it activates:
+```python
+from sentence_transformers import CrossEncoder
+CrossEncoder("BAAI/bge-reranker-v2-m3", max_length=512)
+# downloads ~570 MB to ~/.cache/huggingface, then works offline permanently
+```
+After this, every `GraphRetriever()` init will log `Cross-encoder reranker loaded: BAAI/bge-reranker-v2-m3`.
+Disable with `CRSS_RERANKER=0`; swap model with `CRSS_RERANKER_MODEL=<hf-model-id>`.
 
 ---
 
@@ -428,6 +442,10 @@ NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=<password>
 NEO4J_DATABASE=neo4j                  # (default)
 MISTRAL_API_KEY=<key>
+MISTRAL_MODEL=mistral-large-latest    # (default) override LLM model
+CRSS_LEXICAL=1                        # Set to 0 to disable BM25 lexical channel + RRF
+CRSS_RERANKER=1                       # Set to 0 to disable cross-encoder reranker
+CRSS_RERANKER_MODEL=BAAI/bge-reranker-v2-m3  # (default) HuggingFace reranker model ID
 ```
 
 ### Node Caption in Neo4j Browser

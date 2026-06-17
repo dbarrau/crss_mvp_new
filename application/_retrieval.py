@@ -428,6 +428,28 @@ def _retrieve_route_provisions(
                 if p.get("article_id") not in {cp.get("article_id") for cp in chain_provisions}:
                     chain_provisions.append(p)
 
+        # In-scope CELEXes that have no entry in _GATE_ARTICLES (notably MDCG
+        # guidance documents, but also GDPR and implementing regulations) would
+        # otherwise be silently dropped on this route — the gate-article loop
+        # only knows how to traverse MDR/IVDR/AI-Act classification chains.
+        # When the user explicitly scopes the question to such a document (e.g.
+        # "How does MDCG 2019-11 classify standalone software?"), retrieve it via
+        # a scoped vector pass so the named source actually reaches the context.
+        uncovered_celexes = (target_celexes or set()) - set(_GATE_ARTICLES)
+        if uncovered_celexes:
+            if hyde_text is None:
+                hyde_text = hyde_builder(question, client)
+            hyde_vec = retriever.encode_as_passage(hyde_text)
+            uncovered_results = retriever.retrieve(
+                question,
+                k=k,
+                target_celexes=uncovered_celexes,
+                query_vec=hyde_vec,
+            )
+            for p in uncovered_results:
+                if p.get("article_id") not in {cp.get("article_id") for cp in chain_provisions}:
+                    chain_provisions.append(p)
+
         if chain_provisions:
             provisions = chain_provisions
         else:
@@ -435,7 +457,8 @@ def _retrieve_route_provisions(
             logger.debug(
                 "classification_chain: no graph edges found, falling back to HyDE"
             )
-            hyde_text = hyde_builder(question, client)
+            if hyde_text is None:
+                hyde_text = hyde_builder(question, client)
             hyde_vec = retriever.encode_as_passage(hyde_text)
             provisions = retriever.retrieve(
                 question,

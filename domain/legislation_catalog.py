@@ -53,6 +53,12 @@ LEGISLATION = {
         "jurisdiction": "EU",
         "source_celex": "02016R0679-20160504",
     },
+    "32026R0977": {
+        "name": "Commission Implementing Regulation (EU) 2026/977",
+        "number": "2026/977",
+        "type": "digital_services_act",
+        "jurisdiction": "EU",
+    }
 }
 
 # Backward-compatible alias

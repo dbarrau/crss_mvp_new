@@ -43,8 +43,16 @@ EMBED_KINDS = {
 }
 
 
-def run(model_name: str = MODEL_NAME, batch_size: int = 64) -> int:
-    """Embed all qualifying provisions and store vectors in Neo4j.
+def run(
+    model_name: str = MODEL_NAME,
+    batch_size: int = 64,
+    celex_filter: list[str] | None = None,
+) -> int:
+    """Embed qualifying provisions and store vectors in Neo4j.
+
+    Args:
+        celex_filter: If given, only embed nodes whose ``celex`` property is in
+                      this list.  Pass ``None`` (default) to embed everything.
 
     Returns the number of nodes embedded.
     """
@@ -62,19 +70,25 @@ def run(model_name: str = MODEL_NAME, batch_size: int = 64) -> int:
     )
     db = os.environ.get("NEO4J_DATABASE", "neo4j")
 
-    # Fetch all provisions and guidance nodes that have analysable text
+    celex_clause = "AND n.celex IN $celexes " if celex_filter else ""
+    params: dict = {"kinds": list(EMBED_KINDS)}
+    if celex_filter:
+        params["celexes"] = celex_filter
+        logger.info("Filtering to CELEX: %s", ", ".join(celex_filter))
+
+    # Fetch provisions and guidance nodes that have analysable text
     with driver.session(database=db) as s:
         rows = s.run(
-            "MATCH (n:Provision) "
-            "WHERE n.text_for_analysis IS NOT NULL AND n.kind IN $kinds "
-            "RETURN n.id AS id, n.text_for_analysis AS text, "
-            "       n.display_path AS display_path "
-            "UNION ALL "
-            "MATCH (n:Guidance) "
-            "WHERE n.text_for_analysis IS NOT NULL AND n.kind IN $kinds "
-            "RETURN n.id AS id, n.text_for_analysis AS text, "
-            "       n.display_path AS display_path",
-            kinds=list(EMBED_KINDS),
+            f"MATCH (n:Provision) "
+            f"WHERE n.text_for_analysis IS NOT NULL AND n.kind IN $kinds {celex_clause}"
+            f"RETURN n.id AS id, n.text_for_analysis AS text, "
+            f"       n.display_path AS display_path "
+            f"UNION ALL "
+            f"MATCH (n:Guidance) "
+            f"WHERE n.text_for_analysis IS NOT NULL AND n.kind IN $kinds {celex_clause}"
+            f"RETURN n.id AS id, n.text_for_analysis AS text, "
+            f"       n.display_path AS display_path",
+            **params,
         ).data()
 
     if not rows:

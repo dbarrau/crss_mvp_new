@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Embed all provisions and store vectors in Neo4j.
+"""Embed provisions and store vectors in Neo4j.
 
 Quick start::
 
-    python scripts/embed_provisions.py
+    python scripts/embed_provisions.py                  # embed everything
+    python scripts/embed_provisions.py --doc 32026R0977 # single document
+    python scripts/embed_provisions.py --doc 32017R0745 32017R0746  # multiple
 """
+import argparse
 import sys
 from pathlib import Path
 
@@ -20,5 +23,14 @@ logging.basicConfig(
 
 from infrastructure.embeddings.batch_embedder import run
 
-n = run()
+parser = argparse.ArgumentParser(description="Embed provisions into Neo4j.")
+parser.add_argument(
+    "--doc",
+    nargs="+",
+    metavar="CELEX",
+    help="One or more CELEX IDs to embed (default: all documents).",
+)
+args = parser.parse_args()
+
+n = run(celex_filter=args.doc)
 print(f"\nEmbedded {n} provisions.")

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,57 @@ logger = logging.getLogger(__name__)
 
 QUERY_PREFIX = "query: "
 PASSAGE_PREFIX = "passage: "
+
+# Cross-encoder reranking: widen the cosine candidate pool before reranking.
+# When a reranker is active, retrieve _CANDIDATE_MULTIPLIER × k candidates
+# from cosine similarity, then rerank to keep the final k.  The multiplier
+# is capped at _CANDIDATE_CAP to bound cross-encoder latency (each candidate
+# is one forward pass through a ~568M-param model).
+_CANDIDATE_MULTIPLIER = 5
+_CANDIDATE_CAP = 48
+
+# Cross-encoder truncation length.  Legal provisions front-load their key
+# content, so 320 tokens captures the discriminative text at roughly half the
+# inference cost of the model's 512 maximum.
+_RERANK_MAX_LEN = 320
+
+# Blend weight between the (normalised) cross-encoder score and the
+# (normalised) cosine score.  0.0 = cosine only, 1.0 = cross-encoder only.
+# Kept below 1.0 so a dominant cosine match (e.g. an explicitly-named annex)
+# cannot be buried by a vocabulary-similar neighbour the cross-encoder prefers.
+_RERANK_WEIGHT = 0.6
+
+# Reciprocal Rank Fusion constant.  RRF score for a document is
+# sum over channels of 1/(K + rank).  K=60 is the value from the original
+# Cormack et al. RRF paper and is the de-facto standard; larger K flattens
+# the contribution of top ranks, smaller K sharpens it.
+_RRF_K = 60
+
+# Weight of the lexical (BM25) channel in the fusion, relative to dense=1.0.
+# Kept below 1.0 so the lexical channel *breaks ties* and rescues exact
+# heading/term matches the dense model smears, without letting a
+# mediocre-dense-but-lexically-dense node override a near-perfect dense match
+# (e.g. the verbatim "'AI system' means …" definition point).
+_LEXICAL_WEIGHT = 0.5
+
+# Name of the Neo4j full-text (Lucene/BM25) index over provision text.
+_FULLTEXT_INDEX = "provision_fulltext"
+
+# Lucene query-syntax special characters.  These are stripped from the user
+# question before it is passed to the full-text index so that punctuation
+# (e.g. "?", "/", parentheses in "Article 6(3)") cannot raise a query-parse
+# error or be misinterpreted as Lucene operators.
+_LUCENE_SPECIALS = re.compile(r'[+\-&|!(){}\[\]^"~*?:\\/]')
+
+
+def _sanitise_lucene(text: str) -> str:
+    """Strip Lucene operator characters and collapse whitespace.
+
+    The full-text index uses OR semantics across the remaining terms, so a
+    cleaned bag-of-words query is sufficient for BM25 scoring.
+    """
+    cleaned = _LUCENE_SPECIALS.sub(" ", text)
+    return " ".join(cleaned.split())
 
 # Parent-level kinds we want the vector search to return.
 # annex_point is included so that deep annex leaves (subpoints, bullets)
@@ -123,7 +175,7 @@ RETURN
   art.id              AS article_id,
   art.celex           AS celex,
   art.regulation_id   AS regulation,
-  art.community_id    AS community_id,
+    art.community_id    AS community_id,
   art.display_ref     AS article_ref,
   art.display_path    AS article_path,
   art.text_for_analysis AS article_text,
@@ -198,7 +250,7 @@ LIMIT 5
 _CHAIN_TRAVERSE_CYPHER = """\
 UNWIND $seed_ids AS sid
 MATCH (seed) WHERE seed.id = sid
-OPTIONAL MATCH (seed)-[:TRIGGERS_OBLIGATION_CLUSTER|IS_PREREQUISITE_FOR*1..2]->(linked)
+OPTIONAL MATCH (seed)-[:TRIGGERS_OBLIGATION_CLUSTER|IS_PREREQUISITE_FOR|REQUIRES_PRIOR_CHECK*1..2]->(linked)
 WHERE linked IS NOT NULL
   AND linked.kind IN ['article', 'annex_section', 'annex_part', 'annex',
                       'recital', 'section']
@@ -286,6 +338,39 @@ class GraphRetriever:
         self._matrix: np.ndarray | None = None
         self._load_index()
 
+        # Lexical (BM25) channel via a Neo4j full-text index.  Disabled by
+        # setting CRSS_LEXICAL=0.  Created idempotently on startup.
+        self._lexical_enabled = False
+        if os.environ.get("CRSS_LEXICAL", "1") != "0":
+            self._ensure_fulltext_index()
+
+        # Cross-encoder reranker (optional).  Disabled by setting
+        # CRSS_RERANKER=0.  Model overrideable via CRSS_RERANKER_MODEL.
+        self._reranker: Any = None
+        if os.environ.get("CRSS_RERANKER", "1") != "0":
+            _rr_model = os.environ.get(
+                "CRSS_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3"
+            )
+            try:
+                import torch
+                from sentence_transformers import CrossEncoder as _CrossEncoder
+                _device = (
+                    "mps" if torch.backends.mps.is_available()
+                    else "cuda" if torch.cuda.is_available()
+                    else "cpu"
+                )
+                self._reranker = _CrossEncoder(
+                    _rr_model, max_length=512, device=_device
+                )
+                logger.info(
+                    "Cross-encoder reranker loaded: %s (device=%s)",
+                    _rr_model, _device,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Reranker unavailable (%s) — cosine-only retrieval.", exc
+                )
+
     def _load_index(self) -> None:
         """Fetch all embedded provisions and guidance nodes from Neo4j into a numpy matrix."""
         with self._driver.session(database=self._db) as s:
@@ -317,6 +402,74 @@ class GraphRetriever:
             "Loaded %d provision embeddings (%d dims) into memory.",
             len(self._ids), self._matrix.shape[1],
         )
+
+    def _ensure_fulltext_index(self) -> None:
+        """Create the full-text (BM25) index over provision text if absent.
+
+        Idempotent — ``IF NOT EXISTS`` makes re-runs cheap.  The index spans
+        both :Provision and :Guidance on ``text_for_analysis`` (which carries
+        the context-prefixed ancestor headings, so an annex's title term like
+        "TECHNICAL DOCUMENTATION" is searchable) and ``display_ref``.
+        """
+        try:
+            with self._driver.session(database=self._db) as s:
+                s.run(
+                    f"CREATE FULLTEXT INDEX {_FULLTEXT_INDEX} IF NOT EXISTS "
+                    "FOR (n:Provision|Guidance) "
+                    "ON EACH [n.text_for_analysis, n.display_ref]"
+                )
+                # Index population is async; wait so the first query sees it.
+                s.run("CALL db.awaitIndexes(30000)")
+            self._lexical_enabled = True
+            logger.info("Full-text BM25 index ready: %s", _FULLTEXT_INDEX)
+        except Exception as exc:
+            logger.warning(
+                "Full-text index unavailable (%s) — dense-only retrieval.", exc
+            )
+            self._lexical_enabled = False
+
+    def _lexical_search(
+        self,
+        question: str,
+        limit: int,
+        celex_filter: set[str] | None = None,
+    ) -> dict[str, int]:
+        """Return ``{node_id: rank}`` from the BM25 full-text index (0-based).
+
+        Returns an empty mapping when the lexical channel is disabled or the
+        sanitised query is empty, so callers degrade gracefully to dense-only.
+
+        ``celex_filter`` restricts hits to the in-scope regulation(s).  Without
+        it, a cross-regulation query's lexically-verbose guidance docs (MDCG)
+        can flood the result budget and starve the operative provision the
+        query targets.
+        """
+        if not self._lexical_enabled:
+            return {}
+        lucene_q = _sanitise_lucene(question)
+        if not lucene_q:
+            return {}
+        try:
+            with self._driver.session(database=self._db) as s:
+                # Exclude recitals/citations: they are verbose and repeat
+                # operative vocabulary (e.g. "AI system"), so BM25 term-density
+                # over-promotes them and displaces the terse normative
+                # provision that actually answers the query.  The dense channel
+                # still surfaces recitals when they are genuinely on-topic.
+                rows = s.run(
+                    f"CALL db.index.fulltext.queryNodes('{_FULLTEXT_INDEX}', $q) "
+                    "YIELD node, score "
+                    "WHERE NOT node.kind IN ['recital', 'citation', 'preamble'] "
+                    "  AND ($celexes IS NULL OR node.celex IN $celexes) "
+                    "RETURN node.id AS id ORDER BY score DESC LIMIT $lim",
+                    q=lucene_q,
+                    lim=limit,
+                    celexes=list(celex_filter) if celex_filter else None,
+                ).data()
+            return {r["id"]: rank for rank, r in enumerate(rows)}
+        except Exception as exc:
+            logger.warning("Lexical search failed (%s) — dense-only.", exc)
+            return {}
 
     def encode_as_passage(self, text: str) -> np.ndarray:
         """Encode *text* with the passage prefix, matching the provision embedding space.
@@ -412,6 +565,58 @@ class GraphRetriever:
                 injected, len(children_by_container),
             )
 
+    def _rerank(
+        self,
+        question: str,
+        results: list[dict],
+        k: int,
+    ) -> list[dict]:
+        """Refine ranking with the cross-encoder, then return the top-k.
+
+        The cross-encoder score is *blended* with the original cosine score
+        rather than replacing it.  Pure cross-encoder ordering tends to bury
+        container nodes (e.g. "Annex II") and gate articles (e.g. "Article 43")
+        that share vocabulary with their neighbours; blending lets a strong
+        cosine match survive while still benefiting from cross-encoder
+        precision.  Both scores are min-max normalised within the candidate
+        set before blending so they are on a comparable scale.
+        """
+        pairs: list[tuple[str, str]] = []
+        for r in results:
+            text = r.get("article_text") or ""
+            if len(text) < 200:
+                # Container or thin node — enrich with children text so the
+                # cross-encoder has enough signal (e.g. Annex II title alone
+                # is unscoreable; its sub-items carry the actual content).
+                children_text = " ".join(
+                    (c.get("text") or "")[:400]
+                    for c in (r.get("children") or [])[:8]
+                ).strip()
+                text = (text + " " + children_text).strip() or text
+            pairs.append((question, text[:_RERANK_MAX_LEN]))
+
+        rr_scores = [
+            float(s) for s in self._reranker.predict(pairs, show_progress_bar=False)
+        ]
+        cos_scores = [float(r.get("score", 0.0)) for r in results]
+
+        def _normalise(xs: list[float]) -> list[float]:
+            lo, hi = min(xs), max(xs)
+            span = hi - lo
+            if span < 1e-9:
+                return [1.0 for _ in xs]
+            return [(x - lo) / span for x in xs]
+
+        rr_norm = _normalise(rr_scores)
+        cos_norm = _normalise(cos_scores)
+        for r, rr_raw, rr_n, cos_n in zip(results, rr_scores, rr_norm, cos_norm):
+            r["rerank_score"] = rr_raw
+            r["_blended_score"] = (
+                _RERANK_WEIGHT * rr_n + (1.0 - _RERANK_WEIGHT) * cos_n
+            )
+        results.sort(key=lambda r: r.get("_blended_score", 0.0), reverse=True)
+        return results[:k]
+
     def retrieve(
         self,
         question: str,
@@ -435,6 +640,14 @@ class GraphRetriever:
         if self._matrix is None or len(self._ids) == 0:
             return []
 
+        # Widen the cosine candidate pool when a reranker is active so the
+        # cross-encoder gets enough candidates to discriminate.
+        candidate_k = (
+            min(k * _CANDIDATE_MULTIPLIER, _CANDIDATE_CAP)
+            if self._reranker is not None
+            else k
+        )
+
         # Encode query (or use a pre-computed vector, e.g. from HyDE)
         if query_vec is not None:
             q_vec = query_vec
@@ -446,9 +659,41 @@ class GraphRetriever:
         # Cosine similarity (embeddings are already L2-normalized)
         scores = self._matrix @ q_vec
 
-        # Score all embedded nodes, then map each to its nearest parent-kind
-        # ancestor. This lets deep leaf nodes (point, roman_item) surface their
-        # parent article/section with a score driven by the most specific match.
+        # ------------------------------------------------------------------
+        # Reciprocal Rank Fusion of the dense (cosine) and lexical (BM25)
+        # channels.  Dense cosine alone smears legally-distinct but
+        # vocabulary-similar provisions into a near-tie (e.g. Annex II
+        # "Technical Documentation" vs Annex IX "assessment of technical
+        # documentation").  A BM25 ranking lets an exact heading/term match
+        # break the tie.  RRF fuses *ranks*, not scores, so the two channels'
+        # incompatible score scales need no calibration.
+        # ------------------------------------------------------------------
+        dense_order = sorted(
+            range(len(self._ids)), key=lambda i: scores[i], reverse=True,
+        )
+        dense_rank = {idx: rank for rank, idx in enumerate(dense_order)}
+
+        # Pull a generous lexical pool so BM25 hits outside the dense top
+        # still contribute their rank to the fusion.  Filter to the in-scope
+        # regulation(s) so cross-reg guidance can't starve the budget.
+        lexical_rank = self._lexical_search(
+            question, candidate_k * 8, celex_filter=target_celexes,
+        )
+
+        def _fused_score(idx: int) -> float:
+            f = 1.0 / (_RRF_K + dense_rank[idx])
+            nid = self._ids[idx]
+            if nid in lexical_rank:
+                f += _LEXICAL_WEIGHT / (_RRF_K + lexical_rank[nid])
+            return f
+
+        fused_order = sorted(
+            range(len(self._ids)), key=_fused_score, reverse=True,
+        )
+
+        # Walk the fused ranking, mapping each embedded node to its nearest
+        # parent-kind ancestor. This lets deep leaf nodes (point, roman_item)
+        # surface their parent article/section with the most specific match.
         score_map: dict[str, float] = {}
         leaf_map: dict[str, str] = {}
 
@@ -456,12 +701,10 @@ class GraphRetriever:
             # Multi-regulation mode: allocate slots per regulation to
             # guarantee coverage of each mentioned regulation.
             # Use ceiling division so k=6 across 2 regs → 3 each (not 2).
-            per_reg = max(3, -(-k // len(target_celexes)))  # ceiling division
+            per_reg = max(3, -(-candidate_k // len(target_celexes)))  # ceiling division
             per_reg_count: dict[str, int] = {c: 0 for c in target_celexes}
 
-            for idx, sc in sorted(
-                enumerate(scores.tolist()), key=lambda x: x[1], reverse=True,
-            ):
+            for idx in fused_order:
                 anchor_id = self._find_anchor(
                     self._ids[idx], self._kinds[idx], self._path_strings[idx],
                 )
@@ -481,16 +724,14 @@ class GraphRetriever:
                     continue
                 per_reg_count[anchor_celex] += 1
 
-                score_map[anchor_id] = float(sc)
+                score_map[anchor_id] = _fused_score(idx)
                 leaf_map[anchor_id] = self._ids[idx]
 
-                if sum(per_reg_count.values()) >= k:
+                if sum(per_reg_count.values()) >= candidate_k:
                     break
         else:
             # Standard mode (single regulation or no filter)
-            for idx, sc in sorted(
-                enumerate(scores.tolist()), key=lambda x: x[1], reverse=True,
-            ):
+            for idx in fused_order:
                 # If a celex filter is set (single-regulation question),
                 # skip embeddings from other regulations so they don't consume
                 # top-k slots.
@@ -500,9 +741,9 @@ class GraphRetriever:
                     self._ids[idx], self._kinds[idx], self._path_strings[idx],
                 )
                 if anchor_id not in score_map:
-                    score_map[anchor_id] = float(sc)
+                    score_map[anchor_id] = _fused_score(idx)
                     leaf_map[anchor_id] = self._ids[idx]
-                if len(score_map) >= k:
+                if len(score_map) >= candidate_k:
                     break
 
         top_ids = list(score_map.keys())
@@ -511,11 +752,38 @@ class GraphRetriever:
         with self._driver.session(database=self._db) as s:
             results = s.run(_EXPAND_CYPHER, ids=top_ids).data()
 
-        # Attach scores, matched leaf, and sort
+        # Attach cosine scores and matched leaf IDs
         for r in results:
             r["score"] = score_map.get(r["article_id"], 0.0)
             r["matched_leaf_id"] = leaf_map.get(r["article_id"])
-        results.sort(key=lambda r: r["score"], reverse=True)
+
+        # Rerank the widened candidate pool to the final top-k, or fall back
+        # to cosine ordering when no reranker is loaded.
+        if self._reranker is not None and len(results) > k:
+            if target_celexes and len(target_celexes) > 1:
+                # Multi-regulation: rerank within each regulation's slot so the
+                # cross-encoder cannot make one regulation crowd out another.
+                per_reg = max(1, -(-k // len(target_celexes)))  # ceiling div
+                reranked: list[dict] = []
+                for celex in target_celexes:
+                    bucket = [r for r in results if r.get("celex") == celex]
+                    if len(bucket) > per_reg:
+                        bucket = self._rerank(question, bucket, per_reg)
+                    else:
+                        bucket.sort(
+                            key=lambda r: r.get("rerank_score", r.get("score", 0.0)),
+                            reverse=True,
+                        )
+                    reranked.extend(bucket)
+                results = reranked
+            else:
+                results = self._rerank(question, results, k)
+        else:
+            results.sort(key=lambda r: r["score"], reverse=True)
+
+        # Use only the reranked top-k IDs for cross-reg expansion, so the
+        # widened pool doesn't pollute the reverse-xref budget.
+        reranked_ids = [r["article_id"] for r in results]
 
         # Drill into cited container nodes (e.g. "Annex XIV" headings)
         # to surface their children's text for the LLM.
@@ -527,10 +795,9 @@ class GraphRetriever:
         # when a question spans multiple regulations, both sides of the
         # cross-reference chain appear in context.
         if not target_celexes:
-            # Try reverse xref to expand cross-references even if multiple regs are hit
             with self._driver.session(database=self._db) as s:
                 reverse = s.run(
-                    _REVERSE_XREF_CYPHER, ids=top_ids
+                    _REVERSE_XREF_CYPHER, ids=reranked_ids
                 ).data()
             if reverse:
                 rev_ids = [r["article_id"] for r in reverse]

@@ -259,10 +259,12 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 		title_node = soup.find("div", id=ARTICLE_TITLE_ID_TEMPLATE.format(id=id_value))
 		return title_node.get_text(" ", strip=True) if title_node else None
 
+	found_chapters = False
 	for chapter_div in enc_root.find_all("div", id=chapter_pattern, recursive=False):
 		chapter_match = chapter_pattern.match(chapter_div["id"])
 		if not chapter_match:
 			continue
+		found_chapters = True
 		chapter_number = chapter_match.group(1)
 		chapter_title = extract_title(chapter_div["id"])
 		chapter_node = ctx.make_node(
@@ -274,5 +276,10 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 			title=chapter_title,
 		)
 		parse_sections_or_articles(chapter_node, chapter_div)
+
+	if not found_chapters:
+		# Regulations without chapters (e.g. short implementing regulations) have
+		# articles sitting directly under enc_1 with no cpt_* wrapper.
+		parse_sections_or_articles(enc_node, enc_root)
 
 	return enc_node
