@@ -30,7 +30,9 @@ import argparse
 import logging
 import os
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
@@ -59,28 +61,55 @@ logger = logging.getLogger(__name__)
 # Cypher templates
 # ---------------------------------------------------------------------------
 
-_RESOLVE_REF_CYPHER = """\
-MATCH (p:Provision {celex: $celex})
-WHERE toLower(p.display_ref) = toLower($ref)
-  AND p.kind IN ['article', 'annex_section', 'annex_part', 'annex', 'recital',
-                 'section', 'chapter', 'title']
-RETURN p.id AS node_id, p.display_ref AS display_ref, p.kind AS kind
-ORDER BY p.hierarchy_depth ASC
-LIMIT 1
+# Resolve a curated ref against :Provision and :Guidance nodes of the same
+# regulation. A ref matches either by exact node id (an author-time stable pin)
+# or, failing that, by display_ref. ALL candidates are returned (no LIMIT 1) so
+# the caller can detect when a display_ref is non-unique and would otherwise be
+# silently bound to whichever node happened to sort first — the failure mode
+# documented in the display-ref-ambiguity note.
+_RESOLVE_REF_DETAIL_CYPHER = """\
+MATCH (n)
+WHERE (n:Provision OR n:Guidance)
+  AND n.celex = $celex
+  AND (n.id = $ref OR toLower(n.display_ref) = toLower($ref))
+RETURN n.id AS node_id, n.display_ref AS display_ref, n.kind AS kind,
+       coalesce(n.hierarchy_depth, 9999) AS depth
+ORDER BY depth ASC, n.id ASC
 """
 
-# Also try Guidance nodes so edges can be created for guidance documents.
-_RESOLVE_REF_ANY_CYPHER = """\
-OPTIONAL MATCH (p1:Provision {celex: $celex})
-  WHERE toLower(p1.display_ref) = toLower($ref)
-OPTIONAL MATCH (p2:Guidance {celex: $celex})
-  WHERE toLower(p2.display_ref) = toLower($ref)
-WITH coalesce(p1, p2) AS node
-WHERE node IS NOT NULL
-RETURN node.id AS node_id, node.display_ref AS display_ref, node.kind AS kind
-ORDER BY node.hierarchy_depth ASC
-LIMIT 1
-"""
+
+@dataclass
+class _RefResolution:
+    """Outcome of resolving one curated (ref, celex) pair to a graph node."""
+    ref: str
+    celex: str
+    node_id: str | None
+    status: str  # 'unique' | 'ambiguous' | 'unresolved'
+    candidates: list[dict] = field(default_factory=list)
+
+
+def _resolve_ref(session, ref: str, celex: str) -> _RefResolution:
+    """Resolve a curated ref, surfacing ambiguity instead of hiding it.
+
+    - An exact node-id match is authoritative and unambiguous (this is the
+      author-time escape hatch: write a stable id in legal_reasoning_chains.py
+      when a display_ref is non-unique).
+    - Otherwise a single display_ref match is ``unique``; multiple matches are
+      ``ambiguous`` (a node is still chosen deterministically, but it is
+      reported so it can be pinned); zero matches are ``unresolved``.
+    """
+    rows = session.run(_RESOLVE_REF_DETAIL_CYPHER, ref=ref, celex=celex).data()
+    if not rows:
+        return _RefResolution(ref, celex, None, "unresolved")
+    id_match = next((r for r in rows if r["node_id"] == ref), None)
+    if id_match is not None:
+        return _RefResolution(ref, celex, id_match["node_id"], "unique")
+    status = "unique" if len(rows) == 1 else "ambiguous"
+    candidates = (
+        [{"node_id": r["node_id"], "kind": r["kind"]} for r in rows]
+        if status == "ambiguous" else []
+    )
+    return _RefResolution(ref, celex, rows[0]["node_id"], status, candidates)
 
 _CREATE_EDGE_CYPHER = """\
 MATCH (src) WHERE src.id = $src_id
@@ -127,8 +156,15 @@ RETURN count(r) AS deleted
 # Resolution cache
 # ---------------------------------------------------------------------------
 
-def _build_ref_cache(session, edges: list[LegalReasoningEdge]) -> dict[tuple[str, str], str | None]:
-    """Pre-resolve all (ref, celex) pairs to their node IDs."""
+def _build_ref_cache(
+    session, edges: list[LegalReasoningEdge]
+) -> tuple[dict[tuple[str, str], str | None], list[_RefResolution]]:
+    """Pre-resolve all (ref, celex) pairs.
+
+    Returns ``(id_cache, resolutions)`` where ``id_cache`` maps each pair to a
+    chosen node id (or ``None``) and ``resolutions`` carries the full status of
+    each pair for the coverage report.
+    """
     pairs: set[tuple[str, str]] = set()
     for edge in edges:
         pairs.add((edge.source_ref, edge.celex))
@@ -137,13 +173,21 @@ def _build_ref_cache(session, edges: list[LegalReasoningEdge]) -> dict[tuple[str
             pairs.add((ref, target_celex))
 
     cache: dict[tuple[str, str], str | None] = {}
-    for ref, celex in pairs:
-        rows = session.run(_RESOLVE_REF_ANY_CYPHER, ref=ref, celex=celex).data()
-        cache[(ref, celex)] = rows[0]["node_id"] if rows else None
-        if not rows:
-            logger.warning("Could not resolve provision: %r (celex=%s)", ref, celex)
+    resolutions: list[_RefResolution] = []
+    for ref, celex in sorted(pairs):
+        res = _resolve_ref(session, ref, celex)
+        cache[(ref, celex)] = res.node_id
+        resolutions.append(res)
+        if res.status == "unresolved":
+            logger.warning("Could not resolve reasoning ref: %r (celex=%s)", ref, celex)
+        elif res.status == "ambiguous":
+            logger.warning(
+                "Ambiguous reasoning ref %r (celex=%s) matched %d nodes; chose %s. "
+                "Pin a stable node id in legal_reasoning_chains.py to disambiguate.",
+                ref, celex, len(res.candidates), res.node_id,
+            )
 
-    return cache
+    return cache, resolutions
 
 
 # ---------------------------------------------------------------------------
@@ -152,23 +196,29 @@ def _build_ref_cache(session, edges: list[LegalReasoningEdge]) -> dict[tuple[str
 
 def load_obligation_patches(
     driver, db: str, dry_run: bool = False
-) -> dict[str, int]:
+) -> dict[str, Any]:
     """Load curated OBLIGATION_OF patches for graph coverage gaps."""
-    stats = {"resolved": 0, "unresolved": 0, "created": 0}
+    stats: dict[str, Any] = {"resolved": 0, "unresolved": 0, "created": 0}
+    resolutions: list[_RefResolution] = []
     with driver.session(database=db) as session:
         for patch in _ALL_OBLIGATION_PATCHES:
-            # Resolve provision by display_ref + celex
-            rows = session.run(
-                _RESOLVE_REF_ANY_CYPHER, ref=patch.provision_ref, celex=patch.celex
-            ).data()
-            if not rows:
+            # Resolve provision by stable id or display_ref (+ celex).
+            res = _resolve_ref(session, patch.provision_ref, patch.celex)
+            resolutions.append(res)
+            if res.node_id is None:
                 logger.warning(
                     "OBLIGATION_OF patch: could not resolve provision %r (celex=%s)",
                     patch.provision_ref, patch.celex,
                 )
                 stats["unresolved"] += 1
                 continue
-            provision_id = rows[0]["node_id"]
+            if res.status == "ambiguous":
+                logger.warning(
+                    "OBLIGATION_OF patch: ambiguous provision %r (celex=%s) matched "
+                    "%d nodes; chose %s. Pin a stable node id to disambiguate.",
+                    patch.provision_ref, patch.celex, len(res.candidates), res.node_id,
+                )
+            provision_id = res.node_id
             stats["resolved"] += 1
             if dry_run:
                 logger.info(
@@ -195,16 +245,18 @@ def load_obligation_patches(
                     patch.celex, patch.role_term,
                 )
                 stats["unresolved"] += 1
+    stats["ambiguous"] = sum(1 for r in resolutions if r.status == "ambiguous")
+    stats["_resolutions"] = resolutions
     return stats
 
 
-def load_edges(driver, db: str, dry_run: bool = False) -> dict[str, int]:
+def load_edges(driver, db: str, dry_run: bool = False) -> dict[str, Any]:
     """Load all legal reasoning edges and return a count summary."""
     with driver.session(database=db) as session:
         logger.info("Pre-resolving provision references (%d edges)…", len(_ALL_EDGES))
-        cache = _build_ref_cache(session, _ALL_EDGES)
+        cache, resolutions = _build_ref_cache(session, _ALL_EDGES)
 
-        stats = {"resolved": 0, "unresolved": 0, "created": 0, "skipped": 0}
+        stats: dict[str, Any] = {"resolved": 0, "unresolved": 0, "created": 0, "skipped": 0}
 
         for edge in _ALL_EDGES:
             src_id = cache.get((edge.source_ref, edge.celex))
@@ -243,7 +295,46 @@ def load_edges(driver, db: str, dry_run: bool = False) -> dict[str, int]:
                     "  %s -[%s]-> %s", edge.source_ref, edge.type, target_ref
                 )
 
+    stats["ambiguous"] = sum(1 for r in resolutions if r.status == "ambiguous")
+    stats["ref_total"] = len(resolutions)
+    stats["_resolutions"] = resolutions
     return stats
+
+
+def _print_coverage_report(resolutions: list[_RefResolution]) -> dict[str, int]:
+    """Print a visible coverage report and return its summary counts.
+
+    Replaces the prior behaviour where an unresolved or ambiguous ref produced
+    only a buried ``logger.warning`` — making the health of the ~curated edge
+    set inspectable at a glance after every load.
+    """
+    unique = [r for r in resolutions if r.status == "unique"]
+    ambiguous = [r for r in resolutions if r.status == "ambiguous"]
+    unresolved = [r for r in resolutions if r.status == "unresolved"]
+
+    print("\n=== Legal-reasoning reference coverage ===")
+    print(f"  distinct refs : {len(resolutions):>4}")
+    print(f"  unique        : {len(unique):>4}")
+    print(f"  ambiguous     : {len(ambiguous):>4}")
+    print(f"  unresolved    : {len(unresolved):>4}")
+
+    if ambiguous:
+        print("\n  AMBIGUOUS (display_ref matched >1 node; chose first by hierarchy_depth —")
+        print("  pin a stable node id in legal_reasoning_chains.py to disambiguate):")
+        for r in ambiguous:
+            cands = ", ".join(f"{c['node_id']}({c['kind']})" for c in r.candidates)
+            print(f"    [{r.celex}] {r.ref!r} -> {r.node_id}   candidates: {cands}")
+    if unresolved:
+        print("\n  UNRESOLVED (no node matched; edge/patch skipped):")
+        for r in unresolved:
+            print(f"    [{r.celex}] {r.ref!r}")
+    print()
+    return {
+        "distinct": len(resolutions),
+        "unique": len(unique),
+        "ambiguous": len(ambiguous),
+        "unresolved": len(unresolved),
+    }
 
 
 def clear_edges(driver, db: str) -> int:
@@ -318,6 +409,9 @@ def main() -> None:
             patch_stats["unresolved"],
             patch_stats["created"],
         )
+
+        all_resolutions = stats.get("_resolutions", []) + patch_stats.get("_resolutions", [])
+        _print_coverage_report(all_resolutions)
     finally:
         driver.close()
 

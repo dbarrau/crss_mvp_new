@@ -35,6 +35,7 @@ from typing import Any
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
 
+from canonicalization.text_enrichment import strip_context_prefix
 from domain.ontology.provision_roles import (
     PROVISION_ROLE_SOURCE_RULE,
     PROVISION_ROLE_TAXONOMY,
@@ -52,12 +53,20 @@ _BATCH = 500
 # ---------------------------------------------------------------------------
 
 def _load_provisions(session) -> list[dict[str, Any]]:
-    """Return every :Provision node with the fields needed for classification."""
+    """Return every :Provision node with the fields needed for classification.
+
+    Prefers ``text_for_analysis`` (the bottom-up flattened body) over the raw
+    ``text``: for article-container nodes ``p.text`` is heading-only — the
+    normative body lives in child paragraph nodes — so classifying on ``p.text``
+    leaves such nodes ``UNCLASSIFIED``. The ancestry prefix carried by
+    ``text_for_analysis`` is removed downstream via ``strip_context_prefix``.
+    Falls back to ``p.text`` for nodes without enrichment.
+    """
     return session.run(
         "MATCH (p:Provision) "
         "RETURN p.id AS id, p.celex AS celex, p.kind AS kind, "
         "       coalesce(p.title, '') AS title, "
-        "       coalesce(p.text, '') AS text"
+        "       coalesce(p.text_for_analysis, p.text, '') AS text"
     ).data()
 
 
@@ -131,7 +140,7 @@ def classify_provision_roles(dry_run: bool = False) -> dict[str, Any]:
 
             for row in provisions:
                 assignment = classify_provision(
-                    text=row["text"],
+                    text=strip_context_prefix(row["text"]),
                     kind=row["kind"],
                     title=row["title"] or None,
                     provision_id=row["id"],

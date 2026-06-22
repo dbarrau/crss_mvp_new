@@ -22,6 +22,46 @@ ROLE_SOURCE_TYPE_DEFINED_TERM = "defined_term"
 ROLE_SOURCE_TYPE_DERIVED = "derived_role"
 
 
+# ---------------------------------------------------------------------------
+# Canonical actor-role registry — the single source of truth
+# ---------------------------------------------------------------------------
+# Maps each canonical actor-role term to the regulations (CELEX) in which it is
+# a recognized role. This is the authority the other actor lexicons are checked
+# against (see ``tests/test_actor_lexicon_consistency.py``) so they cannot
+# silently drift apart — the failure mode that left GDPR ``supervisory
+# authority`` routable but undetectable by the obligation rule:
+#
+#   * ``ENTITY_SYNONYMS`` (below) routes real-world phrases to roles; every
+#     target (role, celex) MUST appear here.
+#   * ``provision_roles._ACTOR_SUBJECTS`` is the obligation-rule subject list;
+#     every canonical role here MUST be matched by it (it may carry extra
+#     non-role subjects such as "Member State" / "person").
+#
+# NOTE: ``defined_terms.ACTOR_SIGNALS`` is a *different axis* — definition-body
+# signal phrases ("natural or legal person") used to classify a freshly parsed
+# DefinedTerm as an actor. It is intentionally not reconciled with this set.
+CANONICAL_ACTOR_ROLES: dict[str, frozenset[str]] = {
+    "provider": frozenset({"32024R1689"}),
+    "deployer": frozenset({"32024R1689"}),
+    "operator": frozenset({"32024R1689"}),
+    "product manufacturer": frozenset({"32024R1689"}),
+    "manufacturer": frozenset({"32024R1689", "32017R0745", "32017R0746"}),
+    "authorised representative": frozenset({"32024R1689", "32017R0745", "32017R0746"}),
+    "importer": frozenset({"32024R1689", "32017R0745", "32017R0746"}),
+    "distributor": frozenset({"32024R1689", "32017R0745", "32017R0746"}),
+    "user": frozenset({"32017R0745", "32017R0746"}),
+    "notified body": frozenset({"32017R0745", "32017R0746"}),
+    "controller": frozenset({"32016R0679"}),
+    "processor": frozenset({"32016R0679"}),
+    "supervisory authority": frozenset({"32016R0679"}),
+}
+
+
+def is_known_actor_role(term: str, celex: str) -> bool:
+    """Return whether *term* is a registered actor role in *celex*."""
+    return celex in CANONICAL_ACTOR_ROLES.get(term.strip().lower(), frozenset())
+
+
 # Exact legal roles that should be promoted into ActorRole even when the
 # parser-side category heuristic does not classify them as `actor`.
 EXACT_LEGAL_ROLE_SPECS: dict[tuple[str, str], dict[str, str]] = {
@@ -115,6 +155,24 @@ ENTITY_SYNONYMS: dict[str, list[tuple[str, str]]] = {
     "users": [("user", "32017R0745"), ("user", "32017R0746")],
     "notified body": [("notified body", "32017R0745"), ("notified body", "32017R0746")],
     "notified bodies": [("notified body", "32017R0745"), ("notified body", "32017R0746")],
+    # GDPR actors. These ActorRole nodes are materialized automatically (their
+    # Article 4 definitions contain "natural or legal person" -> category=actor),
+    # so the only gap was query-time routing to them. "data controller" /
+    # "data processor" are listed (longest-first match wins) for the common
+    # real-world phrasings. NB: "data subject" is intentionally absent — it has
+    # no ActorRole node (defined parenthetically in Art 4(1), not as a
+    # standalone "'data subject' means" point), so a synonym would be a dead
+    # mapping until extraction is extended.
+    "controller": [("controller", "32016R0679")],
+    "controllers": [("controller", "32016R0679")],
+    "data controller": [("controller", "32016R0679")],
+    "data controllers": [("controller", "32016R0679")],
+    "processor": [("processor", "32016R0679")],
+    "processors": [("processor", "32016R0679")],
+    "data processor": [("processor", "32016R0679")],
+    "data processors": [("processor", "32016R0679")],
+    "supervisory authority": [("supervisory authority", "32016R0679")],
+    "supervisory authorities": [("supervisory authority", "32016R0679")],
 }
 
 

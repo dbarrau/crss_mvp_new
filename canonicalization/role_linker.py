@@ -20,6 +20,7 @@ from typing import Any
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
 
+from canonicalization.text_enrichment import strip_context_prefix
 from domain.ontology.actor_roles import (
     COMPOSITE_ROLE_BASIS,
     COMPOSITE_ROLE_COMPONENTS,
@@ -52,11 +53,17 @@ def _load_defined_terms(session) -> list[dict[str, Any]]:
 
 
 def _load_provisions(session) -> list[dict[str, Any]]:
+    # Prefer the flattened body (text_for_analysis) so obligation detection
+    # sees article-level duties that live in child paragraph nodes rather than
+    # in the heading-only container text. The ancestry prefix is stripped via
+    # strip_context_prefix at the point of analysis. The WHERE clause stays on
+    # p.text: container nodes have non-empty heading text and so still qualify.
     return session.run(
         "MATCH (p:Provision) "
         "WHERE p.text IS NOT NULL AND p.text <> '' "
         "RETURN p.id AS id, p.celex AS celex, p.kind AS kind, "
-        "       p.title AS title, p.text AS text, p.display_ref AS display_ref"
+        "       p.title AS title, coalesce(p.text_for_analysis, p.text) AS text, "
+        "       p.display_ref AS display_ref"
     ).data()
 
 
@@ -356,7 +363,7 @@ def _build_obligation_edges(
         if not candidates:
             continue
         title = prov.get("title") or ""
-        sentence = _first_sentence(prov.get("text") or "")
+        sentence = _first_sentence(strip_context_prefix(prov.get("text")))
         modality = _detect_modality(sentence, title)
         if not modality:
             continue

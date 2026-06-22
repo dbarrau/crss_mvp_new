@@ -29,6 +29,26 @@ def test_detect_role_specs_honors_celex_filter():
     assert specs == [("deployer", "32024R1689")]
 
 
+def test_detect_role_specs_routes_gdpr_controller_and_processor():
+    # GDPR controller/processor ActorRole nodes materialize automatically (their
+    # Article 4 definitions contain "natural or legal person" -> category=actor);
+    # the gap addressed here is purely query-time routing to them.
+    assert detect_role_specs(
+        "What obligations does a data controller have under GDPR?"
+    ) == [("controller", "32016R0679")]
+    assert detect_role_specs("processor responsibilities") == [
+        ("processor", "32016R0679")
+    ]
+    assert detect_role_specs("duties of the supervisory authority") == [
+        ("supervisory_authority", "32016R0679")
+    ]
+
+
+def test_detect_role_specs_gdpr_honors_celex_filter():
+    # GDPR roles must not leak when the question is scoped to another regulation.
+    assert detect_role_specs("controller duties", target_celexes={"32017R0745"}) == []
+
+
 def test_select_actor_terms_promotes_composite_operator_definition():
     defined_terms = [
         {

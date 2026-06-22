@@ -31,6 +31,7 @@ from dotenv import load_dotenv
 from neo4j import GraphDatabase
 
 from domain.legislation_catalog import LEGISLATION
+from domain.ontology.legal_authority import authority_for_source
 from infrastructure.graphdb.neo4j.loader import _normalize_neo4j_uri
 
 logger = logging.getLogger(__name__)
@@ -254,15 +255,24 @@ def write_edges(tx, edges: list[dict[str, Any]]) -> dict[str, int]:
         written["cites"] = result.single()["c"]
 
     if interprets:
+        # Derive interpretive authority from the source type instead of
+        # hardcoding "persuasive": MDCG guidance is persuasive soft law, but a
+        # harmonised standard or implementing act (when ingested) carries
+        # greater weight. See domain/ontology/legal_authority.py.
+        for e in interprets:
+            doc_type = e.get("source_family") or "guidance"
+            e["document_type"] = doc_type
+            e["authority"] = authority_for_source(doc_type)
         result = tx.run(
             "UNWIND $batch AS e "
             "MATCH (s:Guidance {id: e.source}) "
             "MATCH (t:Provision {id: e.target}) "
             "MERGE (s)-[r:INTERPRETS]->(t) "
             "  ON CREATE SET r.resolved_from = 'crosslinker', "
-            "                r.ref_text = e.ref_text, "
-            "                r.authority = 'persuasive', "
-            "                r.document_type = 'guidance' "
+            "                r.ref_text = e.ref_text "
+            # Always (re)apply authority/document_type so the grading reaches
+            # edges created before this taxonomy existed.
+            "SET r.authority = e.authority, r.document_type = e.document_type "
             "RETURN count(r) AS c",
             batch=interprets,
         )
@@ -362,6 +372,7 @@ def crosslink(dry_run: bool = False, cleanup: bool = False) -> dict[str, int]:
                 "fallback": doc_fallback,
                 "ref_text": ref_text,
                 "rel_type": rel_type,
+                "source_family": rel.get("_source_family"),
             })
         else:
             doc_target = f"{target_celex}_document"
@@ -372,6 +383,7 @@ def crosslink(dry_run: bool = False, cleanup: bool = False) -> dict[str, int]:
                 "fallback": None,
                 "ref_text": ref_text,
                 "rel_type": rel_type,
+                "source_family": rel.get("_source_family"),
             })
 
     # Connect to Neo4j, verify targets, write edges

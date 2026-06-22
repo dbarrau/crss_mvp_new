@@ -14,6 +14,8 @@ embedding models (e.g. multilingual-e5-large).
 Public API
 ----------
 - :func:`enrich_text_for_analysis` — in-place enrichment of a provisions list.
+- :func:`strip_context_prefix` — recover the prefix-free body from a
+  ``text_for_analysis`` value (for text-analysis consumers).
 """
 from __future__ import annotations
 
@@ -130,6 +132,36 @@ def enrich_text_for_analysis(provisions: List[Dict[str, Any]]) -> int:
         "text_for_analysis: enriched %d / %d provisions.", enriched, len(provisions),
     )
     return enriched
+
+
+def strip_context_prefix(text: Optional[str]) -> str:
+    """Return the prefix-free body of a ``text_for_analysis`` value.
+
+    ``text_for_analysis`` is ``<heading-path>" | "<body>`` (see
+    :func:`enrich_text_for_analysis`). The ancestry prefix exists to give
+    *embeddings* positional context, but it is actively harmful to the
+    text-analysis consumers (provision-role classification, obligation
+    detection):
+
+    - ``^``-anchored rules (e.g. ``^'term' means`` for DEFINES,
+      ``^this regulation applies to`` for SCOPE) break when a prefix is
+      prepended.
+    - Actor/role detection would otherwise leak ancestor heading words
+      (e.g. an "Obligations of manufacturers" chapter title) into every
+      descendant, over-generating edges.
+
+    Splits on the **first** context separator only (``maxsplit=1``), so a body
+    that itself contains the separator is preserved intact. Returns the input
+    unchanged (sans surrounding whitespace) when no prefix is present.
+
+    Every non-structural, non-interpretive node that reaches the analysis
+    rules sits inside at least one heading-kind ancestor, so it always has a
+    prefix; the no-prefix branch is a defensive fallback.
+    """
+    if not text:
+        return ""
+    parts = text.split(_CTX_SEP, 1)
+    return parts[1] if len(parts) == 2 else parts[0]
 
 
 # ------------------------------------------------------------------

@@ -85,9 +85,13 @@ _INTERPRETIVE_KINDS: frozenset[str] = frozenset({
 # Canonical actor subjects (used by OBLIGATION rule to require an actor + "shall")
 # ---------------------------------------------------------------------------
 
+# Keep in sync with ``actor_roles.CANONICAL_ACTOR_ROLES``: every canonical
+# actor role must be matched by ``_ACTOR_SUBJECT_RE`` below. This list may also
+# carry non-role obligation subjects (Member State, person, sponsor, …).
 _ACTOR_SUBJECTS: tuple[str, ...] = (
     "provider", "providers",
     "manufacturer", "manufacturers",
+    "product manufacturer", "product manufacturers",
     "importer", "importers",
     "distributor", "distributors",
     "deployer", "deployers",
@@ -98,6 +102,7 @@ _ACTOR_SUBJECTS: tuple[str, ...] = (
     "notified body", "notified bodies",
     "competent authority", "competent authorities",
     "national authority", "national authorities",
+    "supervisory authority", "supervisory authorities",
     "market surveillance authority", "market surveillance authorities",
     "authorised representative", "authorised representatives",
     "authorized representative", "authorized representatives",

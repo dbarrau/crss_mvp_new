@@ -21,6 +21,12 @@ TERM_PATTERN = re.compile(
 
 # Phrases in the first clause of a definition body that signal an "actor" —
 # an economic operator (natural or legal person) bearing obligations/rights.
+#
+# This is a DIFFERENT axis from ``actor_roles.CANONICAL_ACTOR_ROLES`` (the named
+# role registry) and ``provision_roles._ACTOR_SUBJECTS`` (the obligation-rule
+# subject list): these are definition-body *signal phrases* used to classify a
+# freshly parsed DefinedTerm as an actor, not a list of role names. It is
+# intentionally not reconciled with the role registry.
 ACTOR_SIGNALS = (
     "natural or legal person",
     "public authority",
@@ -35,10 +41,17 @@ BODY_TERM_KEYWORDS = ("authority", "body", "office", "board")
 # Maps CELEX IDs to their official definitions article.
 # Used to distinguish formal (regulation-wide) definitions from contextual
 # (scoped) ones that appear elsewhere in the text.
+#
+# Must stay in sync with ``DEFINITIONS_ARTICLE_IDS`` in
+# ``domain/ontology/provision_roles.py`` (same four regulations). Omitting a
+# regulation here silently marks all its definitions ``contextual`` even when
+# they are the regulation's formal Article-N definitions — which excludes them
+# from the formal-definition retrieval path (see ``application/_definitions.py``).
 DEFINITIONS_ARTICLES: dict[str, dict[str, str]] = {
     "32017R0745": {"article_id": "32017R0745_art_2",  "display_ref": "Article 2"},
     "32017R0746": {"article_id": "32017R0746_art_2",  "display_ref": "Article 2"},
     "32024R1689": {"article_id": "32024R1689_art_3",  "display_ref": "Article 3"},
+    "32016R0679": {"article_id": "32016R0679_art_4",  "display_ref": "Article 4"},  # GDPR
 }
 
 

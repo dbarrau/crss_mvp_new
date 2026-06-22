@@ -159,12 +159,16 @@ Key edge types: `HAS_PART` (containment, ordered), `CITES` (internal cross-refs)
 
 ### Canonicalization pipeline (`canonicalization/`)
 
-Five stages run in order via `python -m canonicalization`:
+Seven stages run in order via `python -m canonicalization`:
 1. **crosslinker** — resolves `CITES_EXTERNAL` into `CITES`/`INTERPRETS` edges
 2. **delegation_linker** — materializes `DELEGATES_TO` from enacting provisions to annexes
 3. **term_linker** — materializes `USES_TERM` edges to `DefinedTerm` nodes
 4. **role_linker** — creates `ActorRole` nodes and their obligation/role edges
-5. **community_linker** — Louvain community detection; creates `Community` nodes + `MEMBER_OF` edges
+5. **provision_role_classifier** — assigns a `provision_role` (closed taxonomy) to every `:Provision` via deterministic rules
+6. **reasoning_linker** — loads the curated legal-reasoning edges (`TRIGGERS_OBLIGATION_CLUSTER`, `IS_PREREQUISITE_FOR`, `REQUIRES_PRIOR_CHECK`, `DEROGATES_FROM`) and `OBLIGATION_OF` patches from `domain/ontology/legal_reasoning_chains.py`. Wraps `scripts/load_legal_reasoning_chains.py` (still runnable standalone). **Without this stage the retriever's reasoning-chain traversals return nothing**, so it is part of the default pipeline.
+7. **community_linker** — Louvain community detection; creates `Community` nodes + `MEMBER_OF` edges
+
+Stages 5 and 6 read the flattened `text_for_analysis` body (prefix stripped via `strip_context_prefix`), not the heading-only `p.text`, so article-level obligations classify and link correctly.
 
 ### Adding a new regulation
 

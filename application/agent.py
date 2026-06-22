@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import date
 from typing import Any
 
+from domain.ontology.applicability import applicability_note as _applicability_note
 from domain.ontology.defined_terms import DEFINITIONS_ARTICLES as _DEF_ARTICLES
 
 # ── Sub-module re-exports (keep all private symbols importable from here) ──
@@ -504,6 +506,17 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
         )
 
         context_parts: list[str] = []
+
+        # Temporal applicability: flag obligations that may not yet be in force
+        # as of today (e.g. AI Act general/high-risk application starts
+        # 2026-08-02). Annotation only — never filters the retrieved provisions.
+        _appl_celexes = _collect_context_celexes(provisions, definitions) or set(
+            target_celexes or set()
+        )
+        _appl_note = _applicability_note(_appl_celexes, date.today())
+        if _appl_note:
+            context_parts.append(_appl_note)
+
         if definitions:
             context_parts.append(
                 "LEGAL DEFINITIONS (from the definitions article):\n"
