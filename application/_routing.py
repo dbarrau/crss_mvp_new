@@ -97,7 +97,8 @@ _CHAIN_CLASSIFICATION_Q_RE = re.compile(
     r"obligations?\s+for\s+(?:an?\s+)?high.risk|"
     r"high.risk\s+(?:ai\s+)?(?:system\s+)?(?:obligations?|requirements?|duties?)|"
     r"what\s+(?:must|shall)\s+(?:an?\s+)?(?:provider|deployer|manufacturer)\s+"
-    r"(?:do|comply))\b",
+    r"(?:do|comply)|"
+    r"conformity\s+assessment)\b",  # conformity assessment is a classification gate in AI Act / MDR / IVDR
     re.I,
 )
 
@@ -106,7 +107,8 @@ _CHAIN_CLASSIFICATION_Q_RE = re.compile(
 _COMMUNITY_SUMMARY_Q_RE = re.compile(
     r"\b(all|every|comprehensive|complete|overview|survey|full\s+list|"
     r"across\s+(?:all|both|the)|summarise|summarize|enumerate|list\s+all|"
-    r"what\s+are\s+all|which\s+are\s+all)\b",
+    r"what\s+are\s+all|which\s+are\s+all|"
+    r"main\s+categor(?:y|ies)|categor(?:y|ies)\s+of\s+obligations?)\b",
     re.I,
 )
 
@@ -500,10 +502,24 @@ def _select_question_route(
     *,
     explicit_refs: list[str],
     mentioned_regs: set[str],
+    keyword_mentioned_regs: set[str] | None = None,
     role_specs: list[tuple[str, str]],
     is_definition_question: bool,
 ) -> _QuestionRoute:
-    """Classify the question into a bounded retrieval route."""
+    """Classify the question into a bounded retrieval route.
+
+    *keyword_mentioned_regs* is the regulation set detected by keyword patterns
+    alone, before definition-expansion adds implicitly-linked regulations.  It
+    is used for cross-regulation routing decisions so that a term like
+    "conformity assessment" (defined in both AI Act and MDR) in an AI-Act-only
+    question does not falsely trigger cross-regulation routing.  When omitted,
+    *mentioned_regs* is used for all checks (backward-compatible default).
+    """
+    # Use keyword-only reg count for cross-reg checks; fall back to the full set
+    # when the caller has not separated the two (e.g. in tests).
+    _kw_regs = keyword_mentioned_regs if keyword_mentioned_regs is not None else mentioned_regs
+    _cross_reg_count = len(_kw_regs)
+
     if _uses_legal_qualification_route(
         question,
         mentioned_regs=mentioned_regs,
@@ -515,7 +531,7 @@ def _select_question_route(
             rationale="medical-device AI qualification requires a forced Article 6 / Annex I backbone",
         )
 
-    if len(mentioned_regs) >= 2 and (
+    if _cross_reg_count >= 2 and (
         explicit_refs or role_specs or _has_cross_reg_focus(question)
     ):
         return _QuestionRoute(
@@ -570,7 +586,7 @@ def _select_question_route(
             rationale="an actor role is present with obligation-oriented language",
         )
 
-    if len(mentioned_regs) >= 2:
+    if _cross_reg_count >= 2:
         return _QuestionRoute(
             id="cross_regulation",
             label="Cross-regulation relational",

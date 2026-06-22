@@ -78,7 +78,10 @@ _REG_PATTERNS: dict[str, list[str]] = dict(_LEGISLATION_PATTERNS)
 # Validate keys against the MDCG catalog.
 _MDCG_EXTRA_PATTERNS: dict[str, list[str]] = {
     "MDCG_2020_3": [
-        "significant changes", "significant change", "article 120",
+        "significant changes", "significant change",
+        # "article 120" intentionally omitted: it caused false multi-reg detection
+        # when a question explicitly said "MDR Article 120", inflating mentioned_regs
+        # to {MDR, MDCG_2020_3} and routing to cross_regulation instead of provision_lookup.
     ],
     "MDCG_2019_11": [
         "software qualification", "software classification", "mdsw",
@@ -186,7 +189,57 @@ _OBLIGATION_MASTER_ARTICLES: dict[tuple[str, str], list[str]] = {
     ("importer", "32017R0746"):                     ["Article 13"],
     ("distributor", "32017R0745"):                  ["Article 14"],
     ("distributor", "32017R0746"):                  ["Article 14"],
+    # GDPR obligation master articles.  Article 24 enumerates the controller's
+    # general accountability obligations; Article 32 covers security measures
+    # (shared between controller and processor).  Article 28 governs processor
+    # obligations and the mandatory data processing agreement.
+    ("controller", "32016R0679"):                   ["Article 24", "Article 32"],
+    ("processor", "32016R0679"):                    ["Article 28", "Article 32"],
 }
+
+
+# ---------------------------------------------------------------------------
+# Implicit provision reference inference
+#
+# Maps well-known regulatory topic keywords to their canonical provision when
+# the user does not name the article explicitly.  Each entry is a 3-tuple:
+#   (compiled_pattern, celex_required, article_ref)
+# The pattern is matched against the question; the ref is only added when the
+# required CELEX is already in scope (target_celexes) to avoid false positives
+# on generic vocabulary shared across regulations.
+# ---------------------------------------------------------------------------
+
+_IMPLICIT_PROVISION_REFS: list[tuple[re.Pattern, str, str]] = [
+    # "lawful basis / lawful bases" → GDPR Article 6 (the six-ground enumeration)
+    (re.compile(r"\blawful\s+bas(?:is|es)\b", re.I), "32016R0679", "Article 6"),
+    # "prohibited / prohibition" in AI Act context → Article 5 (sole prohibition article)
+    (re.compile(r"\bprohibit(?:ed|ion|ions|s)?\b", re.I), "32024R1689", "Article 5"),
+    # "technical documentation" in MDR context → Annex II (primary tech-doc annex)
+    (re.compile(r"\btechnical\s+documentation\b", re.I), "32017R0745", "Annex II"),
+]
+
+
+def _extract_implicit_provision_refs(
+    question: str,
+    *,
+    target_celexes: set[str] | None,
+) -> list[str]:
+    """Return implicit provision refs inferred from well-known topic keywords.
+
+    Only fires when the required regulation is already in scope
+    (i.e. *target_celexes* is not None and contains the entry's CELEX).
+    Returns an empty list when no regulation is in scope so callers never need
+    to guard against None.
+    """
+    if target_celexes is None:
+        return []
+    refs: list[str] = []
+    seen: set[str] = set()
+    for pattern, celex, ref in _IMPLICIT_PROVISION_REFS:
+        if celex in target_celexes and pattern.search(question) and ref not in seen:
+            seen.add(ref)
+            refs.append(ref)
+    return refs
 
 
 def _extract_provision_refs(question: str) -> list[str]:

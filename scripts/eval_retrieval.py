@@ -43,6 +43,7 @@ logging.basicConfig(
 from application.agent import (
     _detect_mentioned_regulations,
     _extract_provision_refs,
+    _extract_implicit_provision_refs,
     _is_definition_question,
     _select_question_route,
     _detect_question_roles,
@@ -90,7 +91,8 @@ def _run_case(
     t0 = time.perf_counter()
 
     # Mirror the pipeline in ask_stream (no LLM involvement)
-    mentioned_regs = _detect_mentioned_regulations(question)
+    keyword_mentioned_regs = _detect_mentioned_regulations(question)
+    mentioned_regs = set(keyword_mentioned_regs)
 
     # Run defined-term detection (no LLM) so that implicit regulation links
     # are captured — e.g. "medical device" in a question implicitly references
@@ -119,11 +121,15 @@ def _run_case(
 
     role_specs = _detect_question_roles(question, target_celexes=target_celexes)
     explicit_refs = _extract_provision_refs(question)
+    for _ref in _extract_implicit_provision_refs(question, target_celexes=target_celexes):
+        if _ref not in explicit_refs:
+            explicit_refs.append(_ref)
     is_def_q, _ = _is_definition_question(question)
     route = _select_question_route(
         question,
         explicit_refs=explicit_refs,
         mentioned_regs=mentioned_regs,
+        keyword_mentioned_regs=keyword_mentioned_regs,
         role_specs=role_specs,
         is_definition_question=is_def_q,
     )
@@ -137,7 +143,6 @@ def _run_case(
         target_celexes=target_celexes,
         explicit_refs=explicit_refs,
         role_specs=role_specs,
-        has_definitions=False,
         hyde_builder=_stub_hyde,
     )
 

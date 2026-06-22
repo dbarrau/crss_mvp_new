@@ -113,6 +113,8 @@ ENTITY_SYNONYMS: dict[str, list[tuple[str, str]]] = {
     ],
     "user": [("user", "32017R0745"), ("user", "32017R0746")],
     "users": [("user", "32017R0745"), ("user", "32017R0746")],
+    "notified body": [("notified body", "32017R0745"), ("notified body", "32017R0746")],
+    "notified bodies": [("notified body", "32017R0745"), ("notified body", "32017R0746")],
 }
 
 

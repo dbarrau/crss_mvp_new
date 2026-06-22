@@ -165,7 +165,7 @@
     "id": "TC_019",
     "label": "MDR vigilance and serious incident reporting",
     "question": "When must a manufacturer report a serious incident under the MDR vigilance system?",
-    "expected_route": "provision_lookup",
+    "expected_route": "role_obligations",
     "expected_celexes": ["32017R0745"],
     "must_contain_refs": [],
     "notes": "Article 87 covers serious incident reporting. KNOWN GAP: Article 87 is not yet linked via OBLIGATION_OF role edges for 'manufacturer'. CELEX coverage is the minimum bar until role-graph is complete."

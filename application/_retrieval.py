@@ -73,8 +73,11 @@ def _decompose_question(question: str, client: Any) -> list[str]:
     independent retrieval slot instead of competing under a single query vector.
 
     Falls back to ``[question]`` if decomposition produces fewer than 2
-    sub-questions (i.e. the question is already specific enough).
+    sub-questions (i.e. the question is already specific enough) or when
+    *client* is None (e.g. in the eval harness where LLM calls are stubbed).
     """
+    if client is None:
+        return [question]
     resp = client.chat.complete(
         model=os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
         messages=[{
@@ -352,7 +355,6 @@ def _retrieve_route_provisions(
     target_celexes: set[str] | None,
     explicit_refs: list[str],
     role_specs: list[tuple[str, str]],
-    has_definitions: bool,
     hyde_builder=_hyde_query,
 ) -> dict[str, Any]:
     """Execute the retrieval plan selected by the deterministic router."""
@@ -395,6 +397,40 @@ def _retrieve_route_provisions(
         )
         _merge_unique_provisions(direct_provisions, curated_provisions)
 
+    # GDPR backbone injection for cross-regulation questions.
+    # The legal_qualification route already force-retrieves GDPR Articles 4, 6,
+    # 9, 35 via _build_legal_qualification_targets, but that route only fires
+    # when medical-device + AI Act overlap is detected.  A GDPR + AI Act or
+    # GDPR + MDR cross-reg question (no medical-device signal) routes here
+    # instead, and without this block the GDPR backbone arrives only by
+    # accident via vector retrieval — missing it caps the answer quality.
+    # Reuses _build_legal_qualification_targets since it already handles GDPR
+    # correctly and is regulation-combination-aware.
+    _GDPR_CELEX = "32016R0679"
+    if route.id == "cross_regulation" and target_celexes and _GDPR_CELEX in target_celexes:
+        _cross_reg_mentioned = {
+            reg_name
+            for reg_name, celex in _REG_NAME_TO_CELEX.items()
+            if celex in target_celexes
+        }
+        _cross_reg_targets = _build_legal_qualification_targets(
+            question,
+            mentioned_regs=_cross_reg_mentioned,
+            role_specs=role_specs,
+        )
+        if _cross_reg_targets:
+            _cross_reg_backbone = _retrieve_lookup_targets(
+                retriever,
+                [t for t in _cross_reg_targets if t.ref not in explicit_refs],
+            )
+            added = _merge_unique_provisions(direct_provisions, _cross_reg_backbone)
+            if added:
+                logger.info(
+                    "Cross-regulation backbone injection (GDPR in scope): "
+                    "%d provision(s) force-retrieved.",
+                    added,
+                )
+
     if route.id in {"role_obligations", "cross_regulation", "legal_qualification"} and role_specs:
         role_provisions = retriever.retrieve_by_roles(role_specs, k=max(6, k // 2))
         if route.id == "role_obligations":
@@ -404,7 +440,13 @@ def _retrieve_route_provisions(
         route.id in {"general_compliance", "cross_regulation", "legal_qualification"}
         or (route.id == "provision_lookup" and not provisions)
         or (route.id == "role_obligations" and not provisions)
-        or (route.id == "definition_lookup" and not has_definitions)
+        # Always run HyDE for definition_lookup so definition context and
+        # retrieved provisions are both present.  Without this, detecting a
+        # defined term (e.g. "personal data") in the question sets has_definitions=True
+        # and suppresses vector retrieval entirely — leaving the LLM with only the
+        # definition text and no authoritative provision (e.g. Art 6(1) for "lawful
+        # bases") to ground its answer.
+        or route.id == "definition_lookup"
     )
 
     if route.id == "classification_chain":
