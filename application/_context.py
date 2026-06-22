@@ -207,9 +207,9 @@ def _format_one_provision(index: int, p: dict, role: str) -> str:
     role_badge = f" [role: {role}]" if role in _KNOWN_ROLES else ""
     _force = p.get("binding_force")
     if _force == "binding":
-        force_badge = " 🔵 [BINDING]"
+        force_badge = " [BINDING]"
     elif _force == "non_binding":
-        force_badge = " 🟡 [NON-BINDING GUIDANCE]"
+        force_badge = " [NON-BINDING GUIDANCE]"
     else:
         force_badge = ""
     header = (

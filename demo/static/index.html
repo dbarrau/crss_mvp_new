@@ -643,6 +643,16 @@ async function sendQuestion() {
             reasonPanel.querySelector('summary').textContent =
               `Reasoning ✓ (${stepCount} step${stepCount !== 1 ? 's' : ''}) — generating answer…`;
 
+          } else if (event.type === 'revising') {
+            // The audit loop is regenerating the answer. Clear the prior draft
+            // and stream the revision fresh so the cursor never looks frozen.
+            fullAnswer = '';
+            agentBubble.innerHTML = '';
+            agentBubble.classList.add('stream-cursor');
+            reasonPanel.querySelector('summary').textContent =
+              event.label || 'Revising answer…';
+            smartScroll();
+
           } else if (event.type === 'token') {
             fullAnswer += event.content;
             // Render markdown progressively — batched via rAF for smoothness

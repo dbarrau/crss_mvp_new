@@ -121,10 +121,25 @@ the exact words from the REGULATORY CONTEXT, not a paraphrase. Label each with \
 the provision reference shown in the context header (e.g. [1] Article 2)
 3. Cross-references that appear explicitly in the context
 
+ECONOMY OF ANALYSIS (mandatory):
+- Be concise and decision-oriented. A senior compliance officer wants the \
+decisive analysis, not exhaustive coverage. Spend words on the provisions that \
+determine the outcome; do not walk through every retrieved provision.
+- Lead each issue with its conclusion, then support it briefly.
+- Quote only the OPERATIVE words of a provision — the clause that does the legal \
+work — not whole paragraphs. One short verbatim fragment per key provision is \
+enough to satisfy grounding.
+- Apply the analytical order ONCE per distinct issue. Do NOT mechanically repeat \
+the same sub-headers (e.g. "Explicitly stated / Inference / Conclusion") for \
+every actor, stage, or minor point; collapse secondary points to a sentence.
+- Omit boilerplate, restatements of the question, and provisions that do not \
+affect the answer. Cite peripheral provisions inline in a clause, not as a block \
+quote.
+
 LEGAL FORCE AWARENESS (mandatory):
-- Every provision in the REGULATORY CONTEXT is tagged either 🔵 [BINDING] or 🟡 [NON-BINDING GUIDANCE].
-- 🔵 [BINDING] sources are EU Regulations with direct legal effect (MDR 2017/745, IVDR 2017/746, EU AI Act 2024/1689, GDPR 2016/679). Obligations, prohibitions and definitions derived from these sources are legally enforceable.
-- 🟡 [NON-BINDING GUIDANCE] sources are MDCG guidance documents. They represent the European Commission's interpretive position but do NOT create legal obligations. When citing them, you MUST include a caveat such as: "This is based on non-binding MDCG guidance and is not itself a legal requirement."
+- Every provision in the REGULATORY CONTEXT is tagged either [BINDING] or [NON-BINDING GUIDANCE].
+- [BINDING] sources are EU Regulations with direct legal effect (MDR 2017/745, IVDR 2017/746, EU AI Act 2024/1689, GDPR 2016/679). Obligations, prohibitions and definitions derived from these sources are legally enforceable.
+- [NON-BINDING GUIDANCE] sources are MDCG guidance documents. They represent the European Commission's interpretive position but do NOT create legal obligations. When citing them, you MUST include a caveat such as: "This is based on non-binding MDCG guidance and is not itself a legal requirement."
 - When your answer draws on BOTH binding and non-binding sources, distinguish them explicitly. Never present guidance conclusions as if they were regulatory obligations.
 - If the REGULATORY CONTEXT contains only non-binding sources for a question that requires binding law, state this limitation explicitly rather than answering as if the guidance were the regulation.
 """
@@ -261,6 +276,95 @@ def _build_route_answer_guidance(
                 "Retrieval sufficiency is partial. Explicitly flag any provision "
                 "missing from context and do not draw definitive conclusions from "
                 "incomplete grounding."
+            )
+        return "\n".join(lines)
+
+    if route.id == "cross_regulation":
+        lines: list[str] = []
+        lines.append("ANSWER DISCIPLINE — CROSS-REGULATORY ANALYSIS:")
+        lines.append(
+            "MANDATORY ISSUE SEQUENCE — analyse in this exact order. "
+            "Do NOT skip or reorder steps, and do NOT jump to obligations "
+            "before resolving actor status and classification:"
+        )
+        lines.append(
+            "  Step 1 — ACTOR STATUS (per regulation): State the entity's legal "
+            "status under EACH regulation in scope separately. Cite the defining "
+            "provision (e.g. Article 3(3) AI Act 'provider'; Article 2(30) MDR "
+            "'manufacturer'; Article 4(7) GDPR 'controller'). The same entity may "
+            "hold different legal statuses across frameworks — resolve each "
+            "independently before proceeding."
+        )
+        lines.append(
+            "  Step 2 — CLASSIFICATION ROUTE (per regulation): For each regulation "
+            "in scope, identify the primary classification gate. "
+            "For the AI Act: Route I (Article 6(1) + Annex I) before Route II "
+            "(Article 6(2) + Annex III). "
+            "For MDR/IVDR: identify the applicable Annex VIII classification rule. "
+            "For GDPR: determine whether special categories under Article 9(1) are "
+            "involved (health data per Article 4(15), genetic data per Article 4(13), "
+            "biometric data per Article 4(14))."
+        )
+        lines.append(
+            "  Step 3 — TRIGGER EVENT: State the factual trigger that activates "
+            "the obligation chain under each regulation (e.g. placing the device on "
+            "the market under MDR Article 10; processing of health data under GDPR "
+            "Article 9; high-risk AI classification under AI Act Article 16)."
+        )
+        lines.append(
+            "  Step 4 — OBLIGATION CLUSTERS: Enumerate each regulation's obligations "
+            "with article-level citations. Distinguish binding EU Regulations "
+            "([BINDING]) from non-binding MDCG guidance ([NON-BINDING GUIDANCE])."
+        )
+        lines.append(
+            "  Step 5 — CROSS-REGULATORY DEPENDENCIES (critical): Do NOT present "
+            "obligations from different regulations as disconnected parallel tables. "
+            "Explicitly identify:\n"
+            "    (a) Where one regulation defers to another by operation of law "
+            "(e.g. AI Act Article 43(3) → MDR conformity assessment procedures apply "
+            "and are not replaced by AI Act conformity procedures).\n"
+            "    (b) Where obligations from different frameworks are PARALLEL and "
+            "DISTINCT — both must be performed independently "
+            "(e.g. AI Act Article 9 risk management system and GDPR Article 35 DPIA "
+            "are separate obligations; per MDCG 2025-6, satisfying AI Act risk "
+            "management does NOT substitute for a GDPR DPIA).\n"
+            "    (c) Where compliance with one framework's output supports — but does "
+            "not fulfil — compliance with the other."
+        )
+        lines.append(
+            "  Step 6 — RESIDUAL UNCERTAINTY: State what factual or legal questions "
+            "remain unresolved and what would change the conclusion. Explicitly "
+            "distinguish what the retrieved text states from what you are inferring."
+        )
+
+        has_gdpr = bool(
+            mentioned_regs
+            and "General Data Protection Regulation (GDPR) 2016/679" in mentioned_regs
+        )
+        if has_gdpr:
+            lines.append(
+                "GDPR dual-basis rule: "
+                "Processing of special categories of personal data (Article 9(1)) "
+                "requires BOTH an Article 6(1) lawful basis AND an Article 9(2) "
+                "derogation simultaneously — the derogation does NOT replace the "
+                "lawful basis. For medical contexts: Article 9(2)(h) (healthcare / "
+                "medical diagnosis) and Article 9(2)(i) (public health) are the "
+                "most relevant derogations."
+            )
+            lines.append(
+                "DPIA mandatory triggers (Article 35(3)): "
+                "The primary trigger for large-scale processing of health, genetic, "
+                "or biometric data is Article 35(3)(b). "
+                "Article 35(3)(a) covers automated decisions producing legal or "
+                "similarly significant effects — engage Article 22 analysis if that "
+                "applies. Do NOT conflate (3)(a) and (3)(b); they are distinct "
+                "triggers for distinct processing activities."
+            )
+
+        if not sufficiency.get("ok", True):
+            lines.append(
+                "Retrieval sufficiency is partial. Explicitly flag the remaining "
+                "uncertainty and avoid a definitive bottom-line conclusion."
             )
         return "\n".join(lines)
 

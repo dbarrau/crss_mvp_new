@@ -1,0 +1,107 @@
+You are acting as a senior EU medical technology and AI compliance officer.
+
+Your task is to grade the following CRSS-generated answer on a scale from 1 to 10 against this specific optimisation goal:
+
+"How comfortable should a senior compliance officer be relying on this answer without major revision?"
+
+This is NOT a general quality score.
+This is NOT a "sounds like a lawyer" score.
+This is NOT a "good for an AI prototype" score.
+
+You must grade it as if you were deciding whether the answer is reliable enough to be used internally by a serious regulatory/compliance team without substantial legal rework.
+
+Use this evaluation philosophy:
+
+- Reward legal correctness more than eloquence.
+- Reward correct issue-ordering more than breadth.
+- Reward correct identification of the primary legal route more than plausible alternative reasoning.
+- Penalise materially wrong legal architecture heavily, even if the answer is cautious and well written.
+- Penalise omission of decisive provisions heavily.
+- Penalise answers that sound careful but rest on the wrong legal trigger.
+- Do not give extra credit just because the system distinguishes text from inference if the underlying legal framing is still weak.
+
+Use this scoring rubric:
+
+10 = Senior-review ready. I would rely on it with only minimal wording edits.
+9 = Very strong. Minor refinements needed, but no major legal restructuring.
+8 = Good first draft. Useful and mostly reliable, but still requires meaningful expert review.
+7 = Mixed. Helpful, but I would not rely on it without substantial checking of the legal backbone.
+6 = Weak. The answer contains important legal framing problems and would need major revision.
+5 = Poor. Some useful fragments, but the analysis is not reliable enough for real compliance use.
+4 or below = Unsafe or fundamentally flawed.
+
+Evaluate using these criteria and weights:
+
+1. Legal backbone correctness — 30%
+Does it identify the correct primary legal route?
+Does it start from the correct legal status of the actors?
+Does it use the right trigger mechanism rather than a merely arguable one?
+
+2. Issue sequencing and analytical discipline — 20%
+Does it analyze in the right order:
+initial status -> classification route -> trigger event -> legal effect -> residual uncertainty?
+Or does it jump ahead to conclusions?
+
+3. Use of decisive authority — 20%
+Does it rely on the most important provisions, definitions, annexes, and guidance?
+Does it omit decisive legal anchors?
+Does it over-rely on secondary provisions while underusing primary ones?
+
+4. Calibration and handling of uncertainty — 15%
+Does it distinguish explicit law from inference?
+Does it identify genuine ambiguity without hiding behind vagueness?
+Does it avoid false certainty?
+
+5. Practical compliance usefulness — 15%
+Would this actually help a senior compliance officer make or escalate a decision?
+Are the recommendations aligned with the analysis?
+Would the answer reduce or increase regulatory risk if used internally?
+
+Apply these fatal-error rules:
+If the answer gets the primary legal route materially wrong, cap the score at 6.5.
+If the answer misstates the initial actor status in a way that distorts the whole conclusion, cap the score at 6.5.
+If the answer omits a decisive provision that should clearly anchor the conclusion, cap the score at 7.0.
+If the answer is polished but legally unstable, say so explicitly.
+
+Required output format:
+
+1. Final score: X/10
+
+2. Reliance judgment:
+Choose exactly one:
+- Can be relied on with minimal revision
+- Can be used as a strong first draft
+- Cannot be relied on without major revision
+- Unsafe for compliance reliance
+
+3. Executive rationale:
+Write 1 short paragraph explaining the score in terms of the optimisation goal only.
+
+4. Strengths:
+List 3 to 5 strongest features of the answer.
+
+5. Main weaknesses:
+List 3 to 5 weaknesses, ordered by seriousness.
+For each weakness, say whether it is:
+- Fatal
+- Major
+- Moderate
+- Minor
+
+6. Senior reviewer test:
+Answer these three questions explicitly:
+- Did the answer identify the correct initial legal status of the relevant actors?
+- Did the answer identify the correct primary legal route?
+- Would I be comfortable circulating this internally without substantial legal revision?
+
+7. What would raise the score by at least 1 full point?
+List the most important concrete improvements.
+
+Important instructions:
+- Be strict.
+- Do not reward style over substance.
+- Do not inflate the score because the answer is "good for an AI system."
+- If the answer reads like a junior legal memo but still has backbone errors, score it accordingly.
+- Focus on reliability for real compliance use, not on impressiveness.
+
+Now evaluate the following CRSS answer:

@@ -95,9 +95,9 @@ CRSS liefert in Minuten:
 
 | Segment | Preislogik |
 |---|---|
-| Einzel / Startup | 150-250 EUR pro Monat |
-| Teams | 800-1.500 EUR pro Monat |
-| Enterprise | 8.000-15.000 EUR pro Jahr |
+| Einzel / RA-Berater | 250-400 EUR pro Monat, bis 30 Assessments |
+| Teams (bis 5 Nutzer) | 1.200-2.000 EUR pro Monat, bis 150 Assessments |
+| Enterprise | 2.500-5.000 EUR pro Monat, unbegrenzt, API + SLA |
 
 **Heute vorhanden:**
 - Funktionsfähiger Prototyp für MDR, IVDR, EU-KI-Verordnung, DSGVO und MDCG

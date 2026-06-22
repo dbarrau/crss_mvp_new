@@ -1,0 +1,12 @@
+[
+  {
+    "id": "HQ_001",
+    "label": "German hospital — multi-stage actor status transition (MDR 5(5) + AI Act provider/deployer)",
+    "question": "A university hospital in Germany develops an in-house AI-assisted pathology system that analyzes Raman spectroscopy data to classify tumor margins during surgery. The system is initially trained internally using retrospective patient datasets and is used only within the hospital under the MDR Article 5(5) health institution exemption. After deployment, the hospital introduces a continuous learning pipeline that automatically retrains the model weekly using newly generated patient spectra from its oncology department. The retraining logic, validation thresholds, and permitted spectral domains were pre-defined in the initial technical documentation and quality management procedures. Two years later, the hospital enters a collaboration agreement with a second university hospital in France. The updated model weights are periodically shared with the French hospital, but the source code and intended purpose remain unchanged. Under the EU AI Act, MDR 2017/745, and the MDR Article 5(5) exemption framework: 1. At which stage(s), if any, could the German hospital transition from: user -> manufacturer under MDR, deployer -> provider under the AI Act?"
+  },
+  {
+    "id": "HQ_002",
+    "label": "Cross-regulation — data protection obligations for connected medical device manufacturers (MDR + GDPR)",
+    "question": "What data protection obligations apply to manufacturers of connected medical devices under MDR and GDPR?"
+  }
+]

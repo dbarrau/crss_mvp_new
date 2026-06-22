@@ -37,6 +37,7 @@ from application._config import (                        # noqa: F401
     _RELATED_DEFINITION_SCAN_LIMIT,
     _detect_mentioned_regulations,
     _extract_provision_refs,
+    _extract_implicit_provision_refs,
 )
 from application._faithfulness import (                  # noqa: F401
     build_warning_block as _build_faithfulness_warning,
@@ -107,6 +108,18 @@ from application._postprocessing import (                # noqa: F401
 )
 from application._confidence import (                    # noqa: F401
     compute_confidence,
+)
+from application._audit import (                          # noqa: F401
+    _should_audit,
+    _audit_answer,
+    _audit_model,
+    _needs_revision,
+    _gap_retrieve,
+    _format_findings,
+    _build_revision_messages,
+    _strip_meta_leak,
+    _max_iters,
+    _max_gap_refs,
 )
 
 logger = logging.getLogger(__name__)
@@ -245,7 +258,8 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
         }
 
         # --- 2. Regulation detection + CELEX filter ---
-        mentioned_regs = _detect_mentioned_regulations(retrieval_question)
+        keyword_mentioned_regs = _detect_mentioned_regulations(retrieval_question)
+        mentioned_regs = set(keyword_mentioned_regs)
         for d in definitions:
             reg = d.get("regulation", "")
             if reg and reg not in mentioned_regs and reg in _REG_NAME_TO_CELEX:
@@ -292,11 +306,15 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
             }
 
         explicit_refs = _extract_provision_refs(retrieval_question)
+        for _ref in _extract_implicit_provision_refs(retrieval_question, target_celexes=target_celexes):
+            if _ref not in explicit_refs:
+                explicit_refs.append(_ref)
         is_def_q, concept_text = _is_definition_question(retrieval_question)
         route = _select_question_route(
             retrieval_question,
             explicit_refs=explicit_refs,
             mentioned_regs=mentioned_regs,
+            keyword_mentioned_regs=keyword_mentioned_regs,
             role_specs=role_specs,
             is_definition_question=is_def_q,
         )
@@ -317,7 +335,6 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
             target_celexes=target_celexes,
             explicit_refs=explicit_refs,
             role_specs=role_specs,
-            has_definitions=bool(definitions),
         )
         direct_provisions = retrieval_result["direct_provisions"]
         legal_qualification_targets = retrieval_result["legal_qualification_targets"]
@@ -610,6 +627,106 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                 else:
                     raise
 
+        # --- 7a. Bounded-agentic audit + revise loop ---
+        # The Auditor verifies the draft's legal backbone and names provisions
+        # to retrieve; gaps drive targeted re-retrieval; the Adjudicator
+        # regenerates. Bounded by CRSS_AUDIT_MAX_ITERS. See application/_audit.py.
+        audited = False
+        if _should_audit(route.id) and full_answer:
+            _audit_llm = _audit_model()  # cheap structured check (may be smaller)
+            _gen_llm = os.environ.get("MISTRAL_MODEL", "mistral-large-latest")
+            audit_context = context
+            existing_ids = {p["article_id"] for p in provisions if p.get("article_id")}
+            for _audit_i in range(_max_iters()):
+                _audit_step_id = f"audit_{_audit_i + 1}"
+                # Emit a 'running' step BEFORE the blocking audit call so the UI
+                # shows activity instead of a frozen cursor during the ~15s call.
+                yield {
+                    "type": "step",
+                    "id": _audit_step_id,
+                    "label": f"Auditing answer against the legal backbone (pass {_audit_i + 1})…",
+                }
+                try:
+                    findings = _audit_answer(
+                        question, audit_context, full_answer, client, model=_audit_llm,
+                    )
+                except Exception as _exc:
+                    logger.warning("Audit pass skipped: %s", _exc)
+                    break
+                # Update the same step in place with the verdict.
+                yield {
+                    "type": "step",
+                    "id": _audit_step_id,
+                    "label": (
+                        f"Audit pass {_audit_i + 1}: {findings['verdict']} — "
+                        f"{_format_findings(findings)}"
+                    ),
+                }
+                # CRAG-style gate: only the expensive regeneration when the legal
+                # backbone is actually broken. Minor issues leave the draft as-is.
+                if not _needs_revision(findings):
+                    break
+                new_provs = _gap_retrieve(
+                    findings, retriever,
+                    target_celexes=target_celexes,
+                    existing_ids=existing_ids,
+                    max_add=_max_gap_refs(),
+                )
+                if not new_provs and not findings["issues"]:
+                    break
+                if new_provs:
+                    for _p in new_provs:
+                        existing_ids.add(_p["article_id"])
+                    provisions.extend(new_provs)
+                    audit_context = (
+                        context
+                        + "\n\n--- ADDITIONAL PROVISIONS (audit pass) ---\n\n"
+                        + _format_context(new_provs)
+                    )
+                    yield {
+                        "type": "step",
+                        "id": "audit_retrieval",
+                        "label": (
+                            f"Audit gap-fill: pulled {len(new_provs)} additional "
+                            "provision(s)"
+                        ),
+                    }
+                _revision_user = _build_user_message(
+                    question=question,
+                    context=audit_context,
+                    route=route,
+                    sufficiency=sufficiency,
+                    mentioned_regs=mentioned_regs,
+                )
+                _revision_messages = _build_revision_messages(
+                    question, audit_context, findings, full_answer,
+                    system_prompt=SYSTEM_PROMPT, user_message=_revision_user,
+                )
+                # Signal the UI to clear the prior draft and stream the revision
+                # fresh, so the user sees continuous output instead of a frozen
+                # cursor while the answer is regenerated.
+                yield {
+                    "type": "revising",
+                    "label": f"Revising answer with audit findings (pass {_audit_i + 1})…",
+                }
+                try:
+                    _revised = ""
+                    with client.chat.stream(
+                        model=_gen_llm, messages=_revision_messages, temperature=0.1,
+                    ) as _rev_stream:
+                        for _chunk in _rev_stream:
+                            _delta = _chunk.data.choices[0].delta.content
+                            if _delta:
+                                _revised += _delta
+                                yield {"type": "token", "content": _delta}
+                    _revised = _strip_meta_leak(_revised).strip()
+                    if _revised:
+                        full_answer = _revised
+                        audited = True
+                except Exception as _exc:
+                    logger.warning("Audit revision skipped: %s", _exc)
+                    break
+
         # --- 7b. Backbone self-check (bounded, 1 call) ---
         # When a master-list article was injected, verify the answer covers all
         # its items.  Uses the actual retrieved text — no training-memory risk.
@@ -759,6 +876,7 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
             question=question,
             sufficiency=sufficiency,
             confidence=confidence,
+            audited=audited,
         )
         yield {"type": "done", "answer": final_answer, "audit_trace": audit_trace}
 

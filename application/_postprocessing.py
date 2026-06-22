@@ -147,9 +147,9 @@ def _build_confidence_banner(confidence: "dict[str, Any]") -> str:
     score     = confidence.get("confidence_score", 0.0)
     breakdown = confidence.get("breakdown", {})
     dist      = confidence.get("legal_force_distribution", {})
-    icon = "⚠️" if level in ("LOW", "CRITICAL") else "ℹ️"
+    label = "Warning" if level in ("LOW", "CRITICAL") else "Note"
     lines: list[str] = [
-        f"> {icon} **Confidence: {level}** (Score: {score:.0%})."
+        f"> **{label} — Confidence: {level}** (Score: {score:.0%})."
         " This answer is based on automated retrieval and should be"
         " independently verified before relying on it for compliance decisions.",
     ]
@@ -188,15 +188,21 @@ def _postprocess_answer(
     question: str,
     sufficiency: dict[str, Any],
     confidence: dict[str, Any] | None = None,
+    audited: bool = False,
 ) -> str:
-    """Apply lightweight safety formatting to the generated answer."""
+    """Apply lightweight safety formatting to the generated answer.
+
+    When ``audited`` is True a real LLM Auditor pass has already verified the
+    legal backbone, so the crude regex backbone flag (which could contradict its
+    own answer) is suppressed in favour of the Auditor's verdict.
+    """
     processed = _soften_categorical_language(
         answer,
         route,
         sufficiency=sufficiency,
     )
     processed = _RULE_LABEL_PATTERN.sub("", processed)
-    backbone_warnings = _validate_legal_backbone(processed, question, route)
+    backbone_warnings = [] if audited else _validate_legal_backbone(processed, question, route)
     banner = _build_uncertainty_banner(route, sufficiency=sufficiency)
     parts: list[str] = []
     if banner:
