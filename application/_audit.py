@@ -71,14 +71,13 @@ def _max_gap_refs() -> int:
 def _audit_model() -> str:
     """Model for the (cheap, structured) audit call.
 
-    Defaults to the main generation model so audit accuracy is never silently
-    regressed; set ``CRSS_AUDIT_MODEL`` (e.g. ``mistral-small-latest``) to trade
-    a little audit precision for speed.
+    The audit returns a structured true/false verdict, a task a mid-tier model
+    handles reliably, so it defaults to ``mistral-medium-latest`` — roughly half
+    the latency of the large generation model with negligible loss of guardrail
+    precision.  Override with ``CRSS_AUDIT_MODEL`` (e.g. ``mistral-large-latest``
+    for maximum precision, or ``mistral-small-latest`` for maximum speed).
     """
-    return os.environ.get(
-        "CRSS_AUDIT_MODEL",
-        os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
-    )
+    return os.environ.get("CRSS_AUDIT_MODEL", "mistral-medium-latest")
 
 
 def _needs_revision(findings: dict[str, Any]) -> bool:

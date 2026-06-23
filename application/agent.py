@@ -95,6 +95,7 @@ from application._context import (                       # noqa: F401
     _extract_inline_refs,
     _format_definitions,
     _format_context,
+    _trim_provisions_to_budget,
     _community_summary_header,
 )
 from application._prompts import (                       # noqa: F401
@@ -177,8 +178,11 @@ def _rewrite_standalone_question(
     rewrite_messages.append({"role": "user", "content": question})
 
     try:
+        # Cheap reformulation task — the output is a self-contained question fed
+        # back into retrieval, never shown to the user — so it runs on a fast
+        # model by default (CRSS_REWRITE_MODEL, default mistral-small-latest).
         response = client.chat.complete(
-            model=os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
+            model=os.environ.get("CRSS_REWRITE_MODEL", "mistral-small-latest"),
             messages=rewrite_messages,
             temperature=0,
             max_tokens=120,
@@ -563,12 +567,24 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                 )
                 context_parts.append(backbone_header + _format_context(backbone_provisions))
 
-            context_parts.append(_format_context(provisions))
+            # Bound the prompt size: broad routes can retrieve 40+ provisions
+            # (~220 KB / ~56 K tokens), which inflates the large model's
+            # time-to-first-token. Keep the highest-priority provisions and drop
+            # the low-value tail. The backbone block above is rendered in full.
+            _budgeted = _trim_provisions_to_budget(provisions)
+            if len(_budgeted) < len(provisions):
+                logger.info(
+                    "Context budget: kept %d of %d provisions (tail trimmed)",
+                    len(_budgeted), len(provisions),
+                )
+            context_parts.append(_format_context(_budgeted))
         context = "\n\n---\n\n".join(context_parts)
 
-        logger.debug(
-            "Context assembled: %d provisions + %d definitions, %d chars",
-            len(provisions), len(definitions), len(context),
+        logger.info(
+            "Context assembled: %d provisions + %d definitions, %d chars "
+            "(~%d tokens) — sending to %s",
+            len(provisions), len(definitions), len(context), len(context) // 4,
+            os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
         )
 
         yield {

@@ -266,7 +266,6 @@ class TestRetrieveRouteProvisionsCommunity:
             target_celexes={"32024R1689"},
             explicit_refs=[],
             role_specs=[],
-            has_definitions=False,
             hyde_builder=_noop_hyde,
         )
 
@@ -293,7 +292,6 @@ class TestRetrieveRouteProvisionsCommunity:
             target_celexes=None,
             explicit_refs=[],
             role_specs=[],
-            has_definitions=False,
             hyde_builder=_noop_hyde,
         )
 
@@ -314,32 +312,12 @@ class TestRetrieveRouteProvisionsCommunity:
             target_celexes=None,
             explicit_refs=[],
             role_specs=[],
-            has_definitions=False,
             hyde_builder=_noop_hyde,
         )
 
         assert "community" in retriever.calls
         assert "retrieve" not in retriever.calls
         assert result["provisions"] == []
-
-    def test_map_results_key_present_in_return(self):
-        """map_results key must always exist in the return dict."""
-        retriever = _FakeCommunityRetriever()
-        result = _retrieve_route_provisions(
-            "List all obligations under the AI Act.",
-            retriever,
-            client=_FAKE_DECOMPOSE_CLIENT,
-            k=20,
-            route=_DUMMY_ROUTE_COMMUNITY,
-            target_celexes=None,
-            explicit_refs=[],
-            role_specs=[],
-            has_definitions=False,
-            hyde_builder=_noop_hyde,
-        )
-        assert "map_results" in result
-        assert isinstance(result["map_results"], list)
-
 
 # ---------------------------------------------------------------------------
 # 6. Sufficiency: community_summary_search route

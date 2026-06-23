@@ -198,7 +198,6 @@ def test_retrieve_route_provisions_skips_hyde_for_direct_lookup():
         target_celexes={"32024R1689"},
         explicit_refs=["Article 26"],
         role_specs=[],
-        has_definitions=False,
         hyde_builder=lambda *_args, **_kwargs: pytest.fail("HyDE should not run"),
     )
 
@@ -227,7 +226,6 @@ def test_retrieve_route_provisions_skips_hyde_for_role_lookup():
         target_celexes={"32024R1689"},
         explicit_refs=[],
         role_specs=[("provider", "32024R1689")],
-        has_definitions=False,
         hyde_builder=lambda *_args, **_kwargs: pytest.fail("HyDE should not run"),
     )
 
@@ -260,7 +258,6 @@ def test_retrieve_route_provisions_cross_regulation_combines_all_paths():
         target_celexes={"32024R1689", "32017R0745"},
         explicit_refs=["Article 43"],
         role_specs=[("provider", "32024R1689")],
-        has_definitions=False,
         hyde_builder=lambda *_args, **_kwargs: "synthetic hyde text",
     )
 
@@ -316,7 +313,6 @@ def test_retrieve_route_provisions_legal_qualification_forces_backbone_refs():
         target_celexes={"32024R1689", "32017R0745"},
         explicit_refs=["Article 5"],
         role_specs=[("deployer", "32024R1689"), ("manufacturer", "32017R0745")],
-        has_definitions=False,
         hyde_builder=lambda *_args, **_kwargs: "synthetic hyde text",
     )
 

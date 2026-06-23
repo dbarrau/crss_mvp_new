@@ -6,6 +6,8 @@ definition lookup results.  No LLM calls; no retriever I/O.
 """
 from __future__ import annotations
 
+import os
+
 from application._config import _BODY_LIMIT, _INLINE_REF_RE
 
 # ---------------------------------------------------------------------------
@@ -13,6 +15,51 @@ from application._config import _BODY_LIMIT, _INLINE_REF_RE
 # ---------------------------------------------------------------------------
 
 _MAX_POINTER_REFS = 10
+
+# Per-provision rendering budgets.  These bound how much child-paragraph and
+# cross-reference detail each provision contributes to the LLM prompt.  The
+# rolled-up body (capped at _BODY_LIMIT) already carries the provision's
+# substance, so a long tail of children/citations mostly inflated the prompt
+# (a ~27-child article rendered to ~25 KB; a full 40-provision context reached
+# ~313 KB / ~78 K tokens, slowing generation and risking rate-limit stalls).
+# Override via env if a deployment needs more breadth.
+def _int_env(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.environ.get(name, default)))
+    except (TypeError, ValueError):
+        return default
+
+
+_MAX_CHILD_LINES = _int_env("CRSS_MAX_CHILD_LINES", 12)
+_CHILD_CHARS = _int_env("CRSS_CHILD_CHARS", 700)
+_CHILD_MATCHED_CHARS = _int_env("CRSS_CHILD_MATCHED_CHARS", 1000)
+_MAX_CITE_LINES = _int_env("CRSS_MAX_CITE_LINES", 6)
+_CITE_CHARS = _int_env("CRSS_CITE_CHARS", 700)
+# Interpretive links (guidance↔legislation INTERPRETS edges).  Kept tight so
+# surfacing MDCG interpretation alongside binding text does not re-inflate the
+# prompt (the bloat lever the context budget guards).
+_MAX_INTERP_LINES = _int_env("CRSS_MAX_INTERP_LINES", 3)
+_INTERP_CHARS = _int_env("CRSS_INTERP_CHARS", 600)
+
+# Global cap on the rendered provision context (chars).  The LLM must prefill
+# every input token before it emits the first output token, so an oversized
+# context directly inflates (and destabilises) time-to-first-token on the large
+# generation model.  Broad routes (e.g. cross_regulation) can retrieve 40+
+# provisions → ~220 KB / ~56 K tokens; we keep the highest-priority provisions
+# (the retriever orders direct / role / reranked hits first and appends low-value
+# cross-reference + pointer expansions last) and drop the tail once the budget is
+# hit.  ~140 KB ≈ ~35 K tokens preserves the decisive backbone while roughly
+# halving prefill latency.  Override via CRSS_CONTEXT_CHAR_BUDGET.
+_CONTEXT_CHAR_BUDGET = _int_env("CRSS_CONTEXT_CHAR_BUDGET", 140_000)
+
+# Only trim when the provision bag is large enough that bloat is a real risk.
+# Single-regulation queries retrieve at most k=20 provisions; even at max
+# per-provision size (~17 KB) that stays around 340 KB — the trim was designed
+# for the 40+ provision cross-regulation case (40 × 17 KB = 680 KB, compacted
+# to 140 KB ≈ 35 K tokens).  At or below the threshold every provision is
+# preserved so the LLM gets complete coverage (important for "what is X about"
+# overview questions where every article matters).
+_TRIM_PROVISION_THRESHOLD = _int_env("CRSS_TRIM_THRESHOLD", 25)
 
 # CELEX prefixes that identify MDCG guidance documents.
 _GUIDANCE_CELEX_PREFIXES = ("MDCG_",)
@@ -145,6 +192,36 @@ def _community_summary_header(provisions: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _trim_provisions_to_budget(
+    provisions: list[dict], budget: int = _CONTEXT_CHAR_BUDGET
+) -> list[dict]:
+    """Drop the lowest-priority tail so the rendered context fits ``budget`` chars.
+
+    Provisions arrive in priority order (direct lookups, role hits and reranked
+    vector hits first; cross-reference / pointer expansions appended last), so we
+    keep the leading provisions and stop once adding the next would exceed the
+    budget.  At least one provision is always kept.  Returns the input unchanged
+    when it already fits, so narrow-scope queries are unaffected.
+
+    Skipped entirely for small bags (``len <= _TRIM_PROVISION_THRESHOLD``): only
+    broad cross-regulation routes accumulate enough provisions to need trimming,
+    and trimming a narrow query would silently drop relevant articles from an
+    overview answer.
+    """
+    if not provisions or len(provisions) <= _TRIM_PROVISION_THRESHOLD:
+        return provisions
+    kept: list[dict] = []
+    total = 0
+    for i, p in enumerate(provisions, 1):
+        role = (p.get("provision_role") or "").strip().upper()
+        size = len(_format_one_provision(i, p, role))
+        if kept and total + size > budget:
+            break
+        kept.append(p)
+        total += size
+    return kept
+
+
 def _format_context(provisions: list[dict]) -> str:
     """Turn retriever results into a structured text block for the LLM.
 
@@ -234,7 +311,7 @@ def _format_one_provision(index: int, p: dict, role: str) -> str:
     for c in children:
         ref = c.get("ref") or c.get("kind", "")
         is_match = bool(matched_leaf and c.get("id") == matched_leaf)
-        limit = 1200 if is_match else 1000
+        limit = _CHILD_MATCHED_CHARS if is_match else _CHILD_CHARS
         text = (c.get("raw_text") or c.get("text") or "")
         if len(text) > limit:
             cut = text[:limit]
@@ -248,23 +325,46 @@ def _format_one_provision(index: int, p: dict, role: str) -> str:
                 matched_lines.append(f"  [\u2605 MATCHED] {ref}: {text}")
             else:
                 child_lines.append(f"  {ref}: {text}")
-    child_lines = (matched_lines + child_lines)[:40]
+    # Keep the matched leaf plus the leading children; the rolled-up body above
+    # already summarises the provision, so a long tail of child paragraphs is
+    # largely redundant and was the dominant source of context bloat (a single
+    # article with ~27 children rendered to ~25 KB). See _MAX_CHILD_LINES.
+    child_lines = (matched_lines + child_lines)[:_MAX_CHILD_LINES]
 
-    # Cross-referenced provisions (separate internal vs cross-regulation)
+    # Cross-referenced provisions (separate internal vs cross-regulation).
+    # Cross-regulation citations are more decisive than internal ones, so they
+    # are kept first and the combined list is capped.
     cited = p.get("cited_provisions") or []
     cross_reg = p.get("cross_reg_cited") or []
     cross_reg_ids = {c.get("id") for c in cross_reg}
-    cite_lines: list[str] = []
+    _xreg_cites: list[str] = []
+    _internal_cites: list[str] = []
     for c in cited:
         ref = c.get("ref", "")
         is_xreg = c.get("id") in cross_reg_ids
-        # Give more text budget to cross-regulation citations;
-        # internal citations also need room for substantive annex content.
-        limit = 1000 if is_xreg else 1000
-        text = (c.get("text") or "")[:limit]
+        text = (c.get("text") or "")[:_CITE_CHARS]
         if text:
             tag = " [CROSS-REG]" if is_xreg else ""
-            cite_lines.append(f"  -> {ref}{tag}: {text}")
+            line = f"  -> {ref}{tag}: {text}"
+            (_xreg_cites if is_xreg else _internal_cites).append(line)
+    cite_lines = (_xreg_cites + _internal_cites)[:_MAX_CITE_LINES]
+
+    # Interpretive links — guidance↔legislation INTERPRETS edges.  For a
+    # legislation provision, surface the MDCG guidance that interprets it; for a
+    # guidance node, surface the binding provisions it interprets.  This anchors
+    # non-binding interpretation to its authority (and vice versa) without the
+    # LLM having to infer the link.
+    interp_lines: list[str] = []
+    for g in (p.get("interpreting_guidance") or [])[:_MAX_INTERP_LINES]:
+        ref = g.get("ref", "")
+        text = (g.get("text") or "")[:_INTERP_CHARS]
+        if text:
+            interp_lines.append(f"  [GUIDANCE interprets this] {ref}: {text}")
+    for ip in (p.get("interpreted_provisions") or [])[:_MAX_INTERP_LINES]:
+        ref = ip.get("ref", "")
+        text = (ip.get("text") or "")[:_INTERP_CHARS]
+        if text:
+            interp_lines.append(f"  [INTERPRETS legislation] {ref}: {text}")
 
     section = header + "\n" + body
     if p.get("_cross_reg_expansion"):
@@ -275,4 +375,6 @@ def _format_one_provision(index: int, p: dict, role: str) -> str:
         section += "\n\nParagraphs/Points:\n" + "\n".join(child_lines)
     if cite_lines:
         section += "\n\nCross-references:\n" + "\n".join(cite_lines)
+    if interp_lines:
+        section += "\n\nInterpretive links:\n" + "\n".join(interp_lines)
     return section

@@ -27,7 +27,11 @@ MISTRAL_API_KEY=<key>
 
 Optional env vars (can go in `.env` or shell):
 ```
-MISTRAL_MODEL=mistral-large-latest     # override LLM model
+MISTRAL_MODEL=mistral-large-latest     # user-facing answer + revision model
+CRSS_HYDE_MODEL=mistral-small-latest   # HyDE passage (embedded, never shown) — fast by default
+CRSS_REWRITE_MODEL=mistral-small-latest # standalone-question rewrite (internal) — fast by default
+CRSS_AUDIT_MODEL=mistral-medium-latest # audit verdict (structured) — mid-tier by default
+CRSS_CONTEXT_CHAR_BUDGET=140000        # cap on rendered provision context (~35K tokens); trims low-priority tail to bound LLM time-to-first-token
 CRSS_LEXICAL=1                         # set to 0 to disable BM25 lexical channel + RRF fusion
 CRSS_RERANKER=1                        # set to 0 to disable cross-encoder reranker
 CRSS_RERANKER_MODEL=BAAI/bge-reranker-v2-m3  # default reranker; override if needed
@@ -53,8 +57,8 @@ docker run -d --name crss-neo4j -p 7474:7474 -p 7687:7687 \
 
 ### Run tests
 ```bash
-# All tests (skip broken import test)
-python -m pytest tests/ --ignore=tests/test_batch_embedder.py -q
+# All tests
+python -m pytest tests/ -q
 
 # Single test file
 python -m pytest tests/test_agent_routing.py -q

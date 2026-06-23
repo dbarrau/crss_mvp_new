@@ -56,7 +56,7 @@ LEGISLATION = {
     "32026R0977": {
         "name": "Commission Implementing Regulation (EU) 2026/977",
         "number": "2026/977",
-        "type": "digital_services_act",
+        "type": "medical_device_implementing_regulation",
         "jurisdiction": "EU",
     }
 }

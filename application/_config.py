@@ -59,6 +59,11 @@ _LEGISLATION_PATTERNS: dict[str, list[str]] = {
         "data protection regulation", "data subject", "personal data",
         "data controller", "data processor",
     ],
+    "Commission Implementing Regulation (EU) 2026/977": [
+        "2026/977", "implementing regulation (eu) 2026/977",
+        "notified body fee", "notified body fees", "notified body quotation",
+        "conformity assessment quotation",
+    ],
 }
 
 # Validate that every curated legislation pattern key exists in the catalog.
@@ -123,7 +128,28 @@ def _build_mdcg_mappings() -> None:
         _REG_PATTERNS[human_name] = patterns
 
 
+def _build_core_mappings() -> None:
+    """Safety net: ensure every core (non-MDCG) catalog entry is detectable.
+
+    ``_LEGISLATION_PATTERNS`` is a hand-curated subset.  If a regulation is added
+    to ``domain/legislation_catalog.py`` without a matching pattern entry here,
+    ``_detect_mentioned_regulations`` would silently never fire for it — the
+    retrieval scope would exclude it even when the question names it explicitly
+    (this is exactly what happened to CIR 2026/977).  To prevent that class of
+    gap, register each catalog entry's bare ``number`` (e.g. "2026/977") as a
+    minimal fallback detection pattern when no curated entry exists.
+    """
+    for celex_key, meta in _LEGISLATION.items():
+        name = meta["name"]
+        number = meta.get("number")
+        if name in _REG_PATTERNS:
+            continue  # already curated above
+        if number:
+            _REG_PATTERNS[name] = [number]
+
+
 _build_mdcg_mappings()
+_build_core_mappings()
 
 # ---------------------------------------------------------------------------
 # Provision reference regexes

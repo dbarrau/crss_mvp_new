@@ -114,9 +114,15 @@ def _hyde_query(question: str, client: Any) -> str:
     encoding the question directly (query-to-document mismatch).
 
     The generation is capped at 100 tokens to minimise latency.
+
+    HyDE output is never shown to the user — it is embedded and discarded — so it
+    runs on a fast model by default (``CRSS_HYDE_MODEL``, default
+    ``mistral-small-latest``).  Using the large generation model here adds several
+    seconds per request with no quality benefit (the embedding only needs
+    plausible regulatory vocabulary).
     """
     resp = client.chat.complete(
-        model=os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
+        model=os.environ.get("CRSS_HYDE_MODEL", "mistral-small-latest"),
         messages=[{
             "role": "user",
             "content": (
@@ -364,7 +370,6 @@ def _retrieve_route_provisions(
     provisions: list[dict] = []
     hyde_text: str | None = None
     legal_qualification_targets: list[_ProvisionLookupTarget] = []
-    map_results: list[dict] = []
 
     if route.id in {"provision_lookup", "cross_regulation", "legal_qualification"}:
         direct_provisions = _retrieve_direct_provisions(

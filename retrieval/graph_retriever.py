@@ -87,8 +87,11 @@ _PARENT_KINDS = frozenset({
     "article", "annex_section", "annex_subsection", "annex_point",
     "annex_part",
     "recital", "section",
-    # Guidance (MDCG)
+    # Guidance (MDCG) — guidance_paragraph and guidance_chart are anchor-worthy
+    # so a retrieved deep guidance leaf resolves to its own paragraph/chart
+    # rather than collapsing up to the enclosing section.
     "guidance_section", "guidance_subsection",
+    "guidance_paragraph", "guidance_chart",
 })
 
 # Graph expansion: given top-k article IDs, fetch children + cross-refs.
@@ -171,6 +174,32 @@ WITH art, parents, children, siblings, internal_cited,
        binding_force: xref.binding_force
      })[..8] AS cross_reg_cited
 
+// Inbound INTERPRETS: when `art` is a legislation provision, pull the MDCG
+// guidance that interprets it so authoritative interpretation appears beside
+// the binding text (edge direction is (:Guidance)-[:INTERPRETS]->(:Provision)).
+OPTIONAL MATCH (interp_g:Guidance)-[:INTERPRETS]->(art)
+WHERE interp_g.text_for_analysis IS NOT NULL
+
+WITH art, parents, children, siblings, internal_cited, cross_reg_cited,
+     [x IN collect(DISTINCT {
+       id:   interp_g.id,
+       ref:  interp_g.display_ref,
+       text: interp_g.text_for_analysis
+     }) WHERE x.id IS NOT NULL][..4] AS interpreting_guidance
+
+// Outbound INTERPRETS: when `art` is a guidance node, pull the legislation
+// provisions it interprets so the guidance is anchored to the binding source.
+OPTIONAL MATCH (art)-[:INTERPRETS]->(interp_p:Provision)
+WHERE interp_p.text_for_analysis IS NOT NULL
+
+WITH art, parents, children, siblings, internal_cited, cross_reg_cited,
+     interpreting_guidance,
+     [x IN collect(DISTINCT {
+       id:   interp_p.id,
+       ref:  interp_p.display_ref,
+       text: interp_p.text_for_analysis
+     }) WHERE x.id IS NOT NULL][..4] AS interpreted_provisions
+
 RETURN
   art.id              AS article_id,
   art.celex           AS celex,
@@ -183,7 +212,9 @@ RETURN
   art.binding_force   AS binding_force,
   parents + children + siblings AS children,
   internal_cited + cross_reg_cited AS cited_provisions,
-  cross_reg_cited
+  cross_reg_cited,
+  interpreting_guidance,
+  interpreted_provisions
 """
 
 # Reverse cross-regulation expansion: find articles in OTHER regulations

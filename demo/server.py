@@ -16,13 +16,27 @@ sys.path.insert(0, str(Path(__file__).parent))  # for export module
 import argparse
 import json
 import logging
+import os
 
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, request, send_from_directory, stream_with_context
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
 
-logging.basicConfig(level=logging.WARNING)
+# INFO-level so the terminal shows live pipeline progress (routing, retrieval,
+# context size, confidence) while the LLM prefills.  The large generation model's
+# time-to-first-token can be 10-40s on a big prompt; without these logs the
+# terminal looks frozen even though the pipeline is working.  Set CRSS_LOG_LEVEL
+# to override (e.g. WARNING for quiet, DEBUG for context-size traces).
+logging.basicConfig(
+    level=getattr(logging, os.environ.get("CRSS_LOG_LEVEL", "INFO").upper(), logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
+# Quiet the noisy HTTP client libraries that would otherwise flood INFO.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
 from application.agent import ask_stream, ask_with_trace
 from export import generate_markdown

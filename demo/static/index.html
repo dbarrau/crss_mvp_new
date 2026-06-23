@@ -313,6 +313,25 @@
     font-weight: 600;
     color: var(--primary-light);
     user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  /* live spinner shown in the summary while the agent is working */
+  .summary-spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid #c7d2e0;
+    border-top-color: var(--primary-light);
+    border-radius: 50%;
+    flex-shrink: 0;
+    animation: spin-icon 0.7s linear infinite;
+  }
+  .summary-check { color: #2a8a4c; flex-shrink: 0; }
+  /* highlight the panel while a phase is in progress */
+  .reasoning-panel.active {
+    border-color: var(--primary-light);
+    box-shadow: 0 0 0 3px rgba(69,90,100,0.08);
   }
   .reasoning-panel ul {
     list-style: none;
@@ -364,6 +383,10 @@
   /* fade-in re-render when markdown finalises */
   @keyframes mdReveal { from { opacity: 0.6; } to { opacity: 1; } }
   .msg.agent.md-ready { animation: mdReveal 0.3s ease; }
+
+  /* smooth fade-out before audit revision clears the draft */
+  .msg.agent { transition: opacity 0.25s ease; }
+  .msg.agent.revising-fade { opacity: 0; }
 
   /* ── Export button ── */
   .export-btn {
@@ -471,12 +494,52 @@ const STEP_LABELS = {
 
 function createReasoningPanel() {
   const details = document.createElement('details');
-  details.className = 'reasoning-panel';
-  if (debugMode) details.open = true;
-  details.innerHTML = '<summary>Agent reasoning</summary><ul id="reason-steps"></ul>';
+  details.className = 'reasoning-panel active';
+  details.open = true;  // open while the agent works; collapses when done
+  details.innerHTML =
+    '<summary><span class="summary-spinner"></span>' +
+    '<span class="summary-text">Analysing your question…</span></summary>' +
+    '<ul id="reason-steps"></ul>';
   chat.appendChild(details);
   chat.scrollTop = chat.scrollHeight;
   return details;
+}
+
+// Plain-language phase labels for the live summary line, keyed by step id.
+const PHASE_TEXT = {
+  rewrite:         'Rewriting your question for retrieval…',
+  definitions:     'Detecting legal terms…',
+  regulations:     'Identifying relevant regulations…',
+  roles:           'Detecting actor roles…',
+  route:           'Planning the retrieval strategy…',
+  direct:          'Looking up cited provisions…',
+  hyde:            'Drafting a hypothetical answer to guide search…',
+  retrieval:       'Searching the knowledge graph…',
+  pointers:        'Expanding cross-references…',
+  context:         'Assembling the legal context…',
+  audit_retrieval: 'Pulling additional provisions to close gaps…',
+};
+
+function phaseText(id) {
+  if (id && id.startsWith('audit')) return 'Auditing the answer against the legal backbone…';
+  return PHASE_TEXT[id] || 'Working…';
+}
+
+// Update the always-visible summary line. `busy` shows a spinner; otherwise a ✓.
+function setPanelStatus(panel, text, busy) {
+  const summary = panel.querySelector('summary');
+  let icon = summary.querySelector('.summary-spinner, .summary-check');
+  const txt = summary.querySelector('.summary-text');
+  txt.textContent = text;
+  const wantClass = busy ? 'summary-spinner' : 'summary-check';
+  if (!icon || !icon.classList.contains(wantClass)) {
+    if (icon) icon.remove();
+    icon = document.createElement('span');
+    icon.className = wantClass;
+    if (!busy) icon.textContent = '✓';
+    summary.insertBefore(icon, txt);
+  }
+  panel.classList.toggle('active', busy);
 }
 
 function upsertStep(stepsList, id, label, state, badge) {
@@ -587,6 +650,33 @@ async function sendQuestion() {
     let fullAnswer = '';
     let streamError = null;
     let renderScheduled = false;
+    let currentRunningStepId = null;
+
+    // Elapsed-time ticker shown during the slow LLM prefill (time-to-first-token
+    // can be 10-40s on a large prompt). Keeps the summary line counting up so the
+    // user sees the agent is alive rather than frozen.
+    let genStartTime = 0;
+    let genTicker = null;
+    let firstTokenSeen = false;
+    function startGenTicker(label) {
+      stopGenTicker();
+      genStartTime = Date.now();
+      const tick = () => {
+        const secs = Math.round((Date.now() - genStartTime) / 1000);
+        setPanelStatus(reasonPanel, `${label} (${secs}s)`, true);
+      };
+      tick();
+      genTicker = setInterval(tick, 1000);
+    }
+    function stopGenTicker() {
+      if (genTicker) { clearInterval(genTicker); genTicker = null; }
+    }
+
+    // Flip the in-progress step (if any) to a completed ✓.
+    function markRunningDone() {
+      stepsList.querySelectorAll('li.running').forEach(li => li.classList.replace('running', 'done'));
+      currentRunningStepId = null;
+    }
 
     function scheduleMarkdownRender() {
       if (renderScheduled) return;
@@ -633,32 +723,61 @@ async function sendQuestion() {
             // Extract a numeric badge from labels like "5 provision(s)"
             const badgeMatch = label.match(/(\d+)\s+provision/);
             const badge = badgeMatch ? badgeMatch[1] : null;
-            upsertStep(stepsList, event.id, label, 'done', badge);
+
+            if (event.id === currentRunningStepId) {
+              // Second emission of the same step (e.g. audit: running → verdict).
+              // Complete it in place with the final label.
+              upsertStep(stepsList, event.id, label, 'done', badge);
+              currentRunningStepId = null;
+            } else {
+              // A new phase started: complete the previous one and show this one
+              // as in-progress, with a live spinner + plain-language summary.
+              markRunningDone();
+              upsertStep(stepsList, event.id, label, 'running', badge);
+              currentRunningStepId = event.id;
+              setPanelStatus(reasonPanel, phaseText(event.id), true);
+            }
             smartScroll();
 
           } else if (event.type === 'generating') {
-            stepsList.querySelectorAll('li.running').forEach(li => li.classList.replace('running', 'done'));
-            const stepCount = stepsList.querySelectorAll('li').length;
+            markRunningDone();
+            // Collapse the detailed list once drafting starts, but keep the live
+            // summary line (with spinner + elapsed timer) visible so progress is
+            // always shown during the slow time-to-first-token wait.
             if (!debugMode) reasonPanel.removeAttribute('open');
-            reasonPanel.querySelector('summary').textContent =
-              `Reasoning ✓ (${stepCount} step${stepCount !== 1 ? 's' : ''}) — generating answer…`;
-
-          } else if (event.type === 'revising') {
-            // The audit loop is regenerating the answer. Clear the prior draft
-            // and stream the revision fresh so the cursor never looks frozen.
-            fullAnswer = '';
-            agentBubble.innerHTML = '';
-            agentBubble.classList.add('stream-cursor');
-            reasonPanel.querySelector('summary').textContent =
-              event.label || 'Revising answer…';
+            firstTokenSeen = false;
+            startGenTicker('Drafting the answer…');
             smartScroll();
 
+          } else if (event.type === 'revising') {
+            // Audit found gaps and is regenerating. Keep the live status visible
+            // (this is the slow phase users were getting no feedback on), then
+            // fade out the draft smoothly before the revision streams in fresh.
+            firstTokenSeen = false;
+            startGenTicker(event.label || 'Revising the answer with audit findings…');
+            agentBubble.classList.add('revising-fade');
+            setTimeout(() => {
+              fullAnswer = '';
+              agentBubble.innerHTML = '';
+              agentBubble.classList.remove('revising-fade');
+              agentBubble.classList.add('stream-cursor');
+              smartScroll();
+            }, 250); // matches transition duration
+
           } else if (event.type === 'token') {
+            // First token landed — stop the elapsed ticker and show the draft.
+            if (!firstTokenSeen) {
+              firstTokenSeen = true;
+              stopGenTicker();
+              setPanelStatus(reasonPanel, 'Writing the answer…', true);
+            }
             fullAnswer += event.content;
             // Render markdown progressively — batched via rAF for smoothness
             scheduleMarkdownRender();
 
           } else if (event.type === 'done') {
+            markRunningDone();
+            stopGenTicker();
             fullAnswer = event.answer || fullAnswer;
             agentBubble.classList.remove('stream-cursor');
             agentBubble.classList.add('md-ready');
@@ -678,8 +797,9 @@ async function sendQuestion() {
             agentBubble.appendChild(copyBtn);
 
             const stepCount = stepsList.querySelectorAll('li').length;
-            reasonPanel.querySelector('summary').textContent =
-              `Reasoning ✓ (${stepCount} step${stepCount !== 1 ? 's' : ''})`;
+            setPanelStatus(reasonPanel,
+              `Reasoning complete — ${stepCount} step${stepCount !== 1 ? 's' : ''}`, false);
+            if (!debugMode) reasonPanel.removeAttribute('open');
             conversationHistory.push({role: 'agent', content: fullAnswer});
             enableExportButtons();
             chat.scrollTop = chat.scrollHeight;
@@ -693,9 +813,12 @@ async function sendQuestion() {
       streamError = err.message || 'Network error';
     }
 
+    stopGenTicker();
     if (streamError) {
-      agentBubble.classList.remove('stream-cursor');
+      agentBubble.classList.remove('stream-cursor', 'revising-fade');
       agentBubble.innerHTML = '<em>Error: ' + escapeHtml(streamError) + '</em>';
+      markRunningDone();
+      setPanelStatus(reasonPanel, 'Stopped — an error occurred', false);
     }
 
     busy = false;
