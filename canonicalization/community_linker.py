@@ -5,10 +5,15 @@ runs as the **optional** 5th stage of the canonicalization pipeline:
 
     crosslinker → delegation_linker → term_linker → role_linker → community_linker
 
-This stage is *skipped* (and returns all-zeros) when the ``--no-communities``
-flag is passed to the canonicalization CLI, or when the ``networkx`` package
-is not installed.  It does NOT fail the pipeline — community detection is an
-enrichment, not a correctness requirement.
+This stage is *skipped* (and returns all-zeros) **only** when the
+``--no-communities`` flag is passed to the canonicalization CLI (handled
+upstream in ``__main__`` — ``link_communities`` is never called in that case).
+
+If the stage *is* requested but its dependency (``networkx``) is missing, it
+**raises** rather than skipping silently: a missing dep would otherwise disable
+community-level retrieval with no visible error. Install deps via
+``pip install -r requirements.txt``, or pass ``--no-communities`` to opt out
+deliberately.
 
 Usage::
 
@@ -62,12 +67,18 @@ def link_communities(
             sys.path.insert(0, repo_root)
         from scripts.build_communities import build_communities
     except ImportError as exc:
-        logger.warning(
-            "community_linker: could not import build_communities (%s). "
-            "Ensure networkx is installed.  Skipping stage.",
-            exc,
-        )
-        return {"nodes": 0, "edges": 0, "communities": 0}
+        # Fail loud: this function is only called when community detection is
+        # actually wanted (the --no-communities path short-circuits upstream in
+        # __main__, never reaching here). A missing dependency must not silently
+        # disable community-level retrieval — surface it with a fix and an
+        # explicit opt-out.
+        raise RuntimeError(
+            "community_linker: cannot run community detection — failed to import "
+            f"build_communities ({exc}). Its dependency 'networkx' is likely not "
+            "installed. Install it with 'pip install -r requirements.txt', or "
+            "re-run canonicalization with --no-communities to skip this stage "
+            "deliberately."
+        ) from exc
 
     if dry_run:
         logger.info(

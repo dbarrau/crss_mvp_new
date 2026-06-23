@@ -25,6 +25,7 @@ Note:
 
 MDCG_DOCUMENTS = {
     "MDCG_2020_3": {
+        "tier": 1,
         "name": "MDCG 2020-3 Rev.1",
         "title": (
             "Guidance on significant changes regarding the transitional "
@@ -37,6 +38,7 @@ MDCG_DOCUMENTS = {
         "download_url": "https://health.ec.europa.eu/document/download/800e8e87-d4eb-4cc5-b5ad-07a9146d7c90_en?filename=mdcg_2020-3_en_1.pdf",
     },
     "MDCG_2019_11": {
+        "tier": 1,
         "name": "MDCG 2019-11",
         "title": (
             "Guidance on Qualification and Classification of Software "
@@ -49,6 +51,7 @@ MDCG_DOCUMENTS = {
         "download_url": "https://health.ec.europa.eu/document/download/b45335c5-1679-4c71-a91c-fc7a4d37f12b_en?filename=mdcg_2019_11_en.pdf"
     },
     "MDCG_2020_6": {
+        "tier": 1,
         "name": "MDCG 2020-6",
         "title": (
             "Regulation (EU) 2017/745: Clinical evidence needed formedical devices previously CE marked underDirectives 93/42/EEC"
@@ -60,6 +63,7 @@ MDCG_DOCUMENTS = {
         "download_url": "https://health.ec.europa.eu/system/files/2020-09/md_mdcg_2020_6_guidance_sufficient_clinical_evidence_en_0.pdf"
     },
     "MDCG_2020_5": {
+        "tier": 1,
         "name": "MDCG 2020-5",
         "title": (
             "Clinical Evaluation - Equivalence"
@@ -71,6 +75,7 @@ MDCG_DOCUMENTS = {
         "download_url": "https://health.ec.europa.eu/system/files/2020-09/md_mdcg_2020_5_guidance_clinical_evaluation_equivalence_en_0.pdf"
     },
     "MDCG_2020_13": {
+        "tier": 1,
         "name": "MDCG 2020-13",
         "title": (
             "Clinical evaluation assessment report template"
@@ -81,6 +86,7 @@ MDCG_DOCUMENTS = {
         "download_url": "https://health.ec.europa.eu/system/files/2020-07/mdcg_clinical_evaluationtemplate_en_0.pdf"
     },
     "MDCG_2023_3": {
+        "tier": 1,
         "name": "MDCG 2023-3 Rev.2",
         "title": (
             "Questions and Answers on vigilance termsand concepts as outlined in the Regulation(EU) 2017/745 and Regulation (EU) 2017/746"
@@ -91,6 +97,7 @@ MDCG_DOCUMENTS = {
         "download_url": "https://health.ec.europa.eu/document/download/af1433fd-ed64-4c53-abc7-612a7f16f976_en?filename=mdcg_2023-3_en.pdf"
     },
     "MDCG_2019_5": {
+        "tier": 1,
         "name": "MDCG 2019-5",
         "title": (
             "Guidance on Technical Documentation for medical devices "
@@ -102,6 +109,7 @@ MDCG_DOCUMENTS = {
         "download_url": "https://ec.europa.eu/docsroom/documents/34922/attachments/1/translations/en/renditions/native"
     },
     "MDCG_2025_6": {
+        "tier": 1,
         "name": "MDCG 2025-6",
         "title": (
             "Interplay between the Medical DevicesRegulation (MDR) & In vitro Diagnostic"
@@ -113,6 +121,7 @@ MDCG_DOCUMENTS = {
         "download_url": "https://health.ec.europa.eu/document/download/b78a17d7-e3cd-4943-851d-e02a2f22bbb4_en?filename=mdcg_2025-6_en.pdf",
     },
     "MDCG_2022_18": {
+        "tier": 1,
         "name": "MDCG 2022-18",
         "title": ("MDCG Position Paper on the applicationof Article 97 MDR to legacy devices forwhich the MDD or AIMDD certificateexpires before the issuance of a MDRcertificate"),
         "type": "guidance",
@@ -127,6 +136,7 @@ MDCG_DOCUMENTS = {
 # ═══════════════════════════════════════════════════════════════════════════
 
     "MDCG_2020_7": {
+        "tier": 2,
         "name": "MDCG 2020-7",
         "title": (
             "Post-Market Clinical Follow-up (PMCF) Plan Template - "
@@ -138,6 +148,7 @@ MDCG_DOCUMENTS = {
         "download_url": "https://health.ec.europa.eu/system/files/2020-09/md_mdcg_2020_7_guidance_pmcf_plan_template_en_0.pdf"
     },
     "MDCG_2022_21": {
+        "tier": 2,
         "name": "MDCG 2022-21",
         "title": (
             "Guidance on Periodic Safety Update Report (PSUR) according to "
@@ -149,6 +160,7 @@ MDCG_DOCUMENTS = {
         "download_url": "https://health.ec.europa.eu/document/download/a7df24c3-d4a3-4218-a8e0-726febfa01c2_en?filename=mdcg_2022-21_en.pdf"
     },
     "MDCG_2024_3": {
+        "tier": 2,
         "name": "MDCG 2024-3",
         "title": (
             "Guidance on content of the ClinicalInvestigation Plan for clinicalinvestigations of medical devices"
@@ -159,6 +171,7 @@ MDCG_DOCUMENTS = {
         "download_url": "https://health.ec.europa.eu/document/download/690de85a-ac17-45ea-bb32-7839540c25c4_en?filename=mdcg_2024-3_en_0.pdf"
     },
     "MDCG_2021_24": {
+        "tier": 2,
         "name": "MDCG 2021-24",
         "title": (
             "Guidance on classification of medical devices"
@@ -174,6 +187,7 @@ MDCG_DOCUMENTS = {
 # ═══════════════════════════════════════════════════════════════════════════
 
     "MDCG_2021_6": {
+        "tier": 3,
         "name": "MDCG 2021-6",
         "title": (
             "Guidance on sufficient clinical evidence for legacy devices - "
@@ -185,6 +199,7 @@ MDCG_DOCUMENTS = {
         "download_url": None,  # TODO: Add download URL
     },
     "MDCG_2021_5": {
+        "tier": 3,
         "name": "MDCG 2021-5",
         "title": (
             "Guidance on Harmonised Standards (HS) - Common Specifications (CS) "
@@ -196,6 +211,7 @@ MDCG_DOCUMENTS = {
         "download_url": None,  # TODO: Add download URL
     },
     "MDCG_2022_5": {
+        "tier": 3,
         "name": "MDCG 2022-5",
         "title": (
             "Guidance on borderline between Medical Devices Regulation (EU) "
@@ -207,3 +223,23 @@ MDCG_DOCUMENTS = {
         "download_url": None,  # TODO: Add download URL
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# Ingest-priority helpers
+# ---------------------------------------------------------------------------
+# ``tier`` is an *upload-priority* hint mirroring the TIER sections above
+# (1 = upload first / curated core; higher = lower priority). It is NOT a legal
+# or semantic hierarchy. The default build set (``scripts/build_all.py``) and
+# the README pipeline both derive from it, so the curated list lives in exactly
+# one place. An entry without a ``tier`` is treated as lowest priority (i.e.
+# not uploaded by default until it is promoted with an explicit tier).
+
+DEFAULT_INGEST_TIER = 1
+
+
+def default_doc_ids(max_tier: int = DEFAULT_INGEST_TIER) -> list[str]:
+    """MDCG doc IDs to ingest by default — those with ``tier <= max_tier``,
+    in catalog order. Untagged entries are treated as lowest priority."""
+    return [k for k, v in MDCG_DOCUMENTS.items() if v.get("tier", 99) <= max_tier]
+

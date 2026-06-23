@@ -13,7 +13,7 @@ Python 3.12 is required. The virtualenv is named `crss_mvp`:
 ```bash
 pyenv virtualenv 3.12.9 crss_mvp
 pyenv local crss_mvp
-pip install beautifulsoup4 lxml neo4j python-dotenv mistralai sentence-transformers torch playwright requests flask
+pip install -r requirements.txt   # pinned single source of truth for all deps
 playwright install chromium
 ```
 
@@ -23,6 +23,7 @@ NEO4J_URI=bolt://localhost:7687
 NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=<password>
 MISTRAL_API_KEY=<key>
+LLAMA_CLOUD_API_KEY=<key>   # only to ingest/re-parse MDCG guidance PDFs (llama-cloud); not needed for CELEX regs or query-only
 ```
 
 Optional env vars (can go in `.env` or shell):
@@ -68,8 +69,24 @@ python -m pytest tests/test_agent_routing.py::test_select_question_route_prefers
 ```
 
 ### Run the pipeline (full ingest from scratch)
+
+One command runs the whole DAG in the only correct order (preflight → scrape +
+parse every catalog doc → load → embed → canonicalize → community summaries).
+The doc set is derived from the catalogs, so it can't drift:
 ```bash
-python -m ingestion.run_pipeline --doc 32017R0745 --lang EN
+python scripts/build_all.py          # full build (wipes); add --check for preflight only
+```
+MDCG guidance follows the catalog's `tier` upload-priority — by default only
+tier 1 (the curated core, matching the README list) is ingested. Useful flags:
+`--mdcg-all` / `--mdcg-tier N` (widen guidance), `--no-mdcg` (regulations only),
+`--docs <id...>` (subset), `--no-wipe` (incremental), `--no-summaries`,
+`--strict`, `-y` (skip wipe prompt).
+
+To run the stages manually instead (this is exactly what `build_all.py` does),
+scrape + parse **each** document first — repeat the first line per CELEX / MDCG
+id; the README lists the full set:
+```bash
+python -m ingestion.run_pipeline --doc 32017R0745 --lang EN   # repeat per doc (MDR, IVDR, AI Act, GDPR, CIR, MDCG_*)
 python scripts/load_neo4j.py --wipe
 python scripts/embed_provisions.py
 python -m canonicalization --cleanup

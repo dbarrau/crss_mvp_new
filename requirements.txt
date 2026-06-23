@@ -1,0 +1,42 @@
+# CRSS — Compliance Readiness Support System
+# Pinned runtime dependencies — the single source of truth for the environment.
+#
+# Python 3.12 required. Install with:
+#   pip install -r requirements.txt
+#   playwright install chromium        # one-time Chromium download for scraping
+#
+# Versions are pinned to a known-good set. `torch` resolves to the CPU build on
+# macOS; for CUDA/ROCm install the matching wheel from https://pytorch.org first,
+# then run this file.
+
+# ── Ingestion: scraping & HTML/PDF parsing ──────────────────────────────────
+beautifulsoup4==4.14.3        # EUR-Lex HTML parsing
+lxml==6.0.2                   # fast parser backend for BeautifulSoup
+playwright==1.58.0            # headless-Chromium scraper for EUR-Lex
+requests==2.32.5              # MDCG guidance PDF downloads
+PyYAML==6.0.3                 # MDCG parser front-matter handling
+llama-cloud==2.3.0            # MDCG PDF parsing (LlamaParse v2) — needs LLAMA_CLOUD_API_KEY
+
+# ── Graph store ─────────────────────────────────────────────────────────────
+neo4j==6.1.0                  # Bolt driver, loader, BM25 full-text index
+
+# ── Embeddings & retrieval ──────────────────────────────────────────────────
+sentence-transformers==5.3.0  # multilingual-e5 embeddings + cross-encoder reranker
+torch==2.10.0                 # backend for sentence-transformers
+numpy==2.4.2                  # in-memory cosine similarity
+
+# ── Canonicalization: community detection ───────────────────────────────────
+networkx==3.6.1               # Louvain community detection — REQUIRED by stage 7
+# python-louvain==0.16        # optional: preferred Louvain impl; networkx is the fallback
+
+# ── Agent / LLM ─────────────────────────────────────────────────────────────
+mistralai==2.0.4              # answer generation, HyDE, audit, community summaries
+
+# ── Demo server ─────────────────────────────────────────────────────────────
+flask==3.1.3                  # demo/server.py SSE streaming UI
+
+# ── Config ──────────────────────────────────────────────────────────────────
+python-dotenv==1.2.2          # .env loading
+
+# ── Development / testing ───────────────────────────────────────────────────
+pytest==9.0.2                 # test suite (tests/)

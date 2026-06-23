@@ -54,19 +54,11 @@ pyenv local crss_mvp
 ### 2. Install Dependencies
 
 ```bash
-pip install \
-  beautifulsoup4 \
-  lxml \
-  neo4j \
-  python-dotenv \
-  mistralai \
-  sentence-transformers \
-  torch \
-  playwright \
-  requests
+pip install -r requirements.txt
 ```
 
-Then install the Playwright browser:
+`requirements.txt` is the pinned single source of truth for all runtime and
+test dependencies. Then install the Playwright browser:
 
 ```bash
 playwright install chromium
@@ -118,9 +110,23 @@ NEO4J_URI=bolt://localhost:7687
 NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=your_password
 MISTRAL_API_KEY=your_mistral_api_key
+
+# Only required to ingest/re-parse MDCG guidance PDFs (the `MDCG_*` docs).
+# Not needed for regulation-only setups or for querying an already-loaded graph.
+LLAMA_CLOUD_API_KEY=your_llamacloud_api_key
 ```
 
 > The loader auto-converts `http://localhost:7474` → `bolt://localhost:7687`, so either URI format works.
+
+**MDCG guidance dependency.** The `MDCG_*` documents are parsed from PDF via
+[LlamaParse](https://cloud.llamaindex.ai/) (the `llama-cloud` package, pinned in
+`requirements.txt`). Parsing each guidance PDF therefore requires a
+`LLAMA_CLOUD_API_KEY` **and** the source PDF — supplied either by a `download_url`
+in [`domain/mdcg_catalog.py`](domain/mdcg_catalog.py) or placed manually under
+`data/guidance/<DOC_ID>/EN/raw/`. Already-parsed `*_clean.md` artifacts are
+cached and reused, so the key is only needed for the first parse (or after you
+delete the cache to force a re-parse). The EUR-Lex regulations (CELEX docs) do
+**not** use LlamaParse and need no key.
 
 ### 5. Mistral API Key
 
@@ -130,11 +136,29 @@ Get one at [console.mistral.ai](https://console.mistral.ai/). The agent uses `mi
 
 ## Quick Start — Full Pipeline
 
+**One command** runs the entire DAG in the correct order, with a preflight check
+that fails fast on missing dependencies, env vars, or an unreachable Neo4j:
+
+```bash
+python scripts/build_all.py            # full from-scratch build (wipes)
+python scripts/build_all.py --check    # preflight only — verify setup, do no work
+```
+
+It derives the document set from the catalogs (so it can't drift). MDCG guidance
+follows the catalog's `tier` upload-priority — by default only **tier 1** (the
+curated core, i.e. the 9 docs listed below) is ingested; use `--mdcg-all` (every
+tier) or `--mdcg-tier N` to widen, `--no-mdcg` to skip guidance entirely. Other
+flags: `--docs <id...>`, `--no-wipe`, `--no-summaries`, `--strict`.
+
+<details>
+<summary>Or run the stages by hand (what <code>build_all.py</code> orchestrates)</summary>
+
 ```bash
 # 1. Scrape & parse regulations
 python -m ingestion.run_pipeline --doc 32017R0745 --lang EN
 python -m ingestion.run_pipeline --doc 32017R0746 --lang EN
 python -m ingestion.run_pipeline --doc 32024R1689 --lang EN
+python -m ingestion.run_pipeline --doc 32016R0679 --lang EN
 python -m ingestion.run_pipeline --doc 32026R0977 --lang EN
 
 # 1b. Parse MDCG guidance documents (PDF)
@@ -163,6 +187,8 @@ python scripts/generate_community_summaries.py
 # 6. Chat
 python scripts/chat.py
 ```
+
+</details>
 
 ---
 
@@ -306,6 +332,7 @@ Runs a retriever test + a full agent test. Requires Neo4j (with embeddings) and 
 python -m ingestion.run_pipeline --doc 32017R0745
 python -m ingestion.run_pipeline --doc 32017R0746
 python -m ingestion.run_pipeline --doc 32024R1689
+python -m ingestion.run_pipeline --doc 32016R0679
 python -m ingestion.run_pipeline --doc 32026R0977
 python -m ingestion.run_pipeline --doc MDCG_2019_5
 python -m ingestion.run_pipeline --doc MDCG_2019_11
