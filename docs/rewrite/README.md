@@ -70,9 +70,16 @@ net says new ≥ old.
         backbone** end to end (table, injection, anchor render, C3 self-check,
         prompt discipline) — fully graph-derived now (`cd272de`, `3d44bae`,
         −211 LOC).
-  - [ ] **B2 / A3** — `_AI_ACT_HIGH_RISK_BACKBONE_REFS` (classification-chain
-        high-risk cluster): derive from `TRIGGERS_OBLIGATION_CLUSTER`.
-  - [ ] **A6** — definition anchor (`_ANCHOR_DEFINITION_TERMS`).
+  - [x] **B2 / A3** — `_AI_ACT_HIGH_RISK_BACKBONE_REFS` derived from the graph:
+        completed Art 6's `TRIGGERS_OBLIGATION_CLUSTER` (Art 17-21 + Annex
+        IV/VI/VII) so `retrieve_by_chain` reproduces the full list; hardcode
+        deleted (`8213f88`). Retrieval net 20/20.
+  - [x] **A6** — assessed and **kept**: `_ANCHOR_DEFINITION_TERMS` is genuine
+        curation (foundational subject-matter definition per reg), not
+        edge-derivable (IVDR's is point (2), not (1)). Fold into a
+        `DefinitionExpander` in Phase 3, not a deletion.
+  - Remaining hardcodes are KEEP: B3 `_GATE_ARTICLES`, B4
+    `_IMPLICIT_PROVISION_REFS` (small seed/lexical config).
 - **Phase 3 — agent spine**: fold detection into `scenario.py`; route the audit
   gap-fill and corrective pass through `RetrievalPlan`.
 - **Phase 4 — delete** subsumed patches, hardcoded tables, and dead env flags.

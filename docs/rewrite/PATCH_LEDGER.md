@@ -29,10 +29,24 @@ of idempotent expanders under one budget and one dedup.
 |---|---|---|---|---|
 | A1 | `_retrieve_route_provisions` (route-branched retrieval) | `_retrieval.py:370` (~400 LOC of `if route.id == …`) | Different question types need different seeds/expansions | **FOLD** → routes become thin *policies* selecting expanders; the branching dissolves |
 | A2 | Obligation-backbone force-retrieval (`_get_obligation_backbone_refs`) | `_retrieval.py:231` + `_OBLIGATION_MASTER_ARTICLES` `_config.py:203` | Role obligation questions missed the statutory anchor articles | **DERIVE** → `RoleExpander` traverses `OBLIGATION_OF` from the role node |
-| A3 | AI-Act high-risk backbone (`_AI_ACT_HIGH_RISK_BACKBONE_REFS`) | `_retrieval.py:69` | Class-IIb-SaMD benchmark: obligation cluster not retrieved when `role_specs` empty | **DERIVE** → `ReasoningChainExpander` from the high-risk seed via `TRIGGERS_OBLIGATION_CLUSTER` |
+| A3 | AI-Act high-risk backbone (`_AI_ACT_HIGH_RISK_BACKBONE_REFS`) | `_retrieval.py:69` | Class-IIb-SaMD benchmark: obligation cluster not retrieved when `role_specs` empty | **DERIVED & DELETED** (`8213f88`) → completed Article 6's `TRIGGERS_OBLIGATION_CLUSTER` (added Art 17-21 + Annex IV/VI/VII to the curated chain); `retrieve_by_chain` now reproduces the full list, hardcode gone |
 | A4 | Corrective retrieval pass (`_run_corrective_retrieval_pass`) | `_retrieval.py:1006` | Selected route retrieved insufficient evidence | **FOLD** → re-run `RetrievalPlan` with added seeds; not a parallel codepath |
 | A5 | Audit gap-retrieve (`_gap_retrieve`) | `_audit.py:244` | Auditor names a missing provision/topic to close a backbone gap | **FOLD** → same `RetrievalPlan` re-run; auditor supplies seeds, not a private retriever path |
-| A6 | Definition anchor force-injection (`_ANCHOR_DEFINITION_TERMS`) | `_definitions.py:28` | Short foundational terms ("ai system") lost the 15-term cap race → training-memory fallback | **FOLD** → `DefinitionExpander` with priority for in-scope subject-matter anchors |
+| A6 | Definition anchor force-injection (`_ANCHOR_DEFINITION_TERMS`) | `_definitions.py:28` | Short foundational terms ("ai system") lost the 15-term cap race → training-memory fallback | **KEEP** (was FOLD) — genuine curation, *not* edge-derivable (see verdict); relocate into a `DefinitionExpander` in Phase 3, don't delete |
+
+> **A6 — empirical verdict (KEEP, not a delete target).** `_ANCHOR_DEFINITION_TERMS`
+> is structurally unlike B1/B2: it duplicates no graph *edge*, it designates each
+> regulation's foundational subject-matter definition (AI Act→"ai system" Art
+> 3(1), MDR→"medical device" Art 2(1), GDPR→"personal data" Art 4(1), IVDR→"in
+> vitro diagnostic medical device" Art 2(2)). The obvious derivation — "the first
+> definition (point 1) in the definitions article" — reproduces 3 of 4 but
+> **breaks on IVDR**, whose point (1) is "medical device" (cross-referencing the
+> MDR) while its foundational term is point (2). No clean graph signal marks "the
+> subject-matter definition," so deriving it would just relocate the same
+> curation behind an IVDR special-case (net-neutral). It is small (4 entries),
+> tested, and load-bearing (it implements the cap-race fix). Treat like B4:
+> **keep**, and fold into a unified `DefinitionExpander` (priority ordering over
+> the cap) as a Phase-3 refactor — not a Phase-2 deletion.
 
 > Once A1–A6 share one plan + one dedup, the "redundant patches working against
 > CRSS" the rewrite targets largely disappear. Net check: the
@@ -129,14 +143,20 @@ table duplicating graph edges.
 > deliberate Phase-2 task, then delete the table. (Caveat: GDPR controller→129 /
 > processor→61 are paragraph-grained and likely over-linked — a RoleExpander
 > precision concern, not a recall gap.)
-| B2 | `_AI_ACT_HIGH_RISK_BACKBONE_REFS` flat article list | `_retrieval.py:69` | The high-risk obligation cluster | **DERIVE** from reasoning-chain edges (`TRIGGERS_OBLIGATION_CLUSTER`) |
+| B2 | `_AI_ACT_HIGH_RISK_BACKBONE_REFS` flat article list | `_retrieval.py:69` | The high-risk obligation cluster | **DERIVED & DELETED** (`8213f88`) — completed Art 6's `TRIGGERS_OBLIGATION_CLUSTER`, `retrieve_by_chain` reproduces the full list |
 | B3 | `_GATE_ARTICLES` (classification-chain gate refs) | `_retrieval.py:481` | Entry seeds for the classification traversal | **DERIVE / KEEP-as-seed-config** — small, may stay as a seed policy if not edge-backed |
 | B4 | `_IMPLICIT_PROVISION_REFS` (keyword→canonical ref) | `_config.py:238` | Topic→provision shortcuts (lawful basis→Art 6, etc.) | **KEEP** (relocate) — genuine lexical shortcuts, not graph-derivable; small + tested |
 
 > B1 + B2 are the prize: deleting them and proving the graph traversal
 > reproduces the obligation set is the single most validating step of the
 > rewrite, and it finally connects `reasoning_linker` / `role_linker` output to
-> retrieval.
+> retrieval. **Both now DONE** (`3d44bae`, `8213f88`). Common pattern: each
+> hardcode was scar tissue masking an *incomplete* curated graph — the fix was
+> to complete the graph (AR Art 11 via `role_linker`; Art 17-21 + annexes in the
+> Art 6 reasoning chain), prove `OBLIGATION_OF` / `TRIGGERS_OBLIGATION_CLUSTER`
+> traversal reproduces the list on a green retrieval net, then delete. B3
+> (`_GATE_ARTICLES`) and B4 (`_IMPLICIT_PROVISION_REFS`) remain KEEP — small
+> seed/lexical config, not edge-derivable.
 
 ---
 
