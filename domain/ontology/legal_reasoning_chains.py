@@ -136,17 +136,28 @@ _AI_ACT_EDGES: list[LegalReasoningEdge] = [
             "Article 14",  # Human oversight
             "Article 15",  # Accuracy, robustness, cybersecurity
             "Article 16",  # Provider obligations master list
+            "Article 17",  # Quality management system
+            "Article 18",  # Documentation keeping
+            "Article 19",  # Automatically generated logs
+            "Article 20",  # Corrective actions and duty of information
+            "Article 21",  # Cooperation with competent authorities
             "Article 43",  # Conformity assessment
             "Article 47",  # EU declaration of conformity
             "Article 48",  # CE marking
             "Article 49",  # Registration in EU database
             "Article 72",  # Post-market monitoring
             "Article 73",  # Reporting of serious incidents
+            "Annex IV",    # Technical documentation content (Art 11 delegates here)
+            "Annex VI",    # Conformity assessment based on internal control
+            "Annex VII",   # Conformity assessment based on QMS + tech-doc review
         ),
         rationale=(
             "Classification as a high-risk AI system under Article 6 activates "
-            "the full Title III Chapter 2 obligation cluster for providers, "
-            "plus post-market surveillance obligations in Title IX."
+            "the full Title III Chapter 2 provider obligation cluster (Articles "
+            "9-21), the conformity-assessment + registration regime (Articles "
+            "43-49) and the dependent annexes (IV technical documentation, VI/VII "
+            "conformity assessment), plus post-market surveillance in Title IX "
+            "(Articles 72-73)."
         ),
     ),
 
