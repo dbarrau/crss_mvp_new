@@ -46,8 +46,15 @@ net says new ≥ old.
   - [x] Extend the regression net ([REGRESSION_NET.md](REGRESSION_NET.md)): quality
         set 2→32, faithfulness/attribution metrics, retrieval `--snapshot`/`--diff`
   - [ ] Capture the `main` baseline (needs live Neo4j) before Phase 1
-- **Phase 1 — contracts**: typed `Provision` / `Evidence` / `Scenario`; adapt
-  current code to emit/consume them with zero behaviour change.
+- **Phase 1 — contracts** *(in progress)*
+  - [x] Define typed `Provision` / `Definition` / `Scenario` / `Evidence`
+        (`application/contracts.py`) — additive, zero behaviour change.
+        `Provision`/`Definition` are lossless typed views over the canonical
+        dict; equivalence tests pin `text_payload()` to the existing
+        `_faithfulness` helpers so adoption cannot drift.
+  - [ ] Migrate `_faithfulness` corpus building onto `Provision.text_payload()`
+        (first real consumer; net must stay green).
+  - [ ] Thread a `Scenario` through `ask_stream`'s detection stage.
 - **Phase 2 — retrieval core + expanders** behind `RetrievalPlan`; migrate one
   route at a time, deleting bespoke retrieval as each lands.
 - **Phase 3 — agent spine**: fold detection into `scenario.py`; route the audit
