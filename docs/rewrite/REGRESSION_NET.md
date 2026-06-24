@@ -63,10 +63,23 @@ quality sets:
 - [x] **Capture the pre-Phase-2 baseline** (live Neo4j + Mistral). Captured on
       `read-path-rewrite@HEAD` — *not* literal `main` — so `--diff` isolates the
       Phase-2 retrieval deltas rather than folding in this session's
-      faithfulness/scoping changes.
-      - Retrieval (done): `python scripts/eval_retrieval.py --snapshot eval/baseline_retrieval.json`
-        → 20/20 recall, 20/20 route.
-      - Quality: `CRSS_CLARIFY=0 python scripts/eval_answer_quality.py --out eval/baseline_quality.json --quiet`
+      faithfulness/scoping changes. **Re-captured post-reset** (commit
+      `fcfe1f9`): the first capture sat on a stale graph (`OBLIGATION_OF` 813);
+      a clean `python -m canonicalization --cleanup` + L0→L1 community summaries
+      rebuilt it (1164 edges, 50 chains, 125 L0 + 58 L1 summaries), and both
+      baselines were re-taken on that consistent DB. Read-path code is identical
+      across the two captures, so the deltas isolate the graph rebuild alone.
+      - Retrieval (`eval/baseline_retrieval.json`): **19/20 recall, 20/20 route**.
+        Command: `python scripts/eval_retrieval.py --snapshot eval/baseline_retrieval.json`.
+        The one miss is TC_011 (GPAI provider obligations) — a retrieval-path
+        top-k truncation, *not* a graph gap (the `provider --OBLIGATION_OF-->`
+        set holds Art 53/55; they drop at k=8). Fixed by the planned A2/A6
+        expanders; see PATCH_LEDGER A2 finding.
+      - Quality (`eval/baseline_quality.json`, label `post-reset-baseline`):
+        **mean 6.86/10 (32/32 graded), fabricated 134, misattributed 37,
+        near-verbatim 20** — improved from the pre-reset capture (6.82, 158, 41,
+        29) on the cleaner graph alone. Command:
+        `CRSS_CLARIFY=0 CRSS_EVAL_CASE_TIMEOUT=420 python -u scripts/eval_answer_quality.py --out eval/baseline_quality.json --quiet --label post-reset-baseline`
         (`CRSS_CLARIFY=0` so role-less questions are answered, not deflected to
         a clarification — the ask-first gate is orthogonal to the retrieval
         rewrite and would otherwise void the answer scores).
