@@ -73,6 +73,33 @@ of idempotent expanders under one budget and one dedup.
 > Phase-2 task). The deterministic retrieval net caught this; the deletion was
 > reverted.
 
+> **A2/A3/B1 — RESOLVED & DELETED (commits b5e98c6 → 3d44bae).** The blocker
+> above was cleared by giving the `community_summary_search` route the *same*
+> graph traversal (`retrieve_by_roles`, k=40 for the complete obligation set).
+> A bug surfaced and was fixed en route: a dual-role query
+> (`[provider, deployer]`) returned only 2 in-scope rows because
+> `EQUIVALENT_ROLE` expansion flooded 58 MDR/IVDR obligations and the Cypher's
+> `ORDER BY article_id LIMIT 60` truncated the AI-Act rows (`32017…` sorts
+> before `32024…`) *before* the Python celex filter ran — fixed by pushing the
+> celex filter **into the Cypher, before the LIMIT**. With the community route
+> at parity, the following were deleted, each gated on a green 20/20 retrieval
+> net:
+> - GPAI safety net + `_AI_ACT_GPAI_REFS` (`cceae41`)
+> - community GPAI sub-question (`cd272de`)
+> - **B1**: `_OBLIGATION_MASTER_ARTICLES`, `_get_obligation_backbone_refs`,
+>   `_is_obligation_breadth_question`, the backbone-injection block, the
+>   "OBLIGATIONS MASTER LIST" rendering, the **C3 backbone self-check**
+>   (`CRSS_BACKBONE_SELFCHECK` flag gone) and its prompt discipline (`3d44bae`,
+>   −211 LOC).
+>
+> **Caveat recorded:** B1 was *not* purely graph-derivable. The table designated
+> each role's "obligation overview" article and encoded curated shared-master
+> knowledge (GDPR Art 32 for both controller & processor) that has no
+> OBLIGATION_OF / title signal. The deliberate trade (user decision) was to drop
+> the explicit completeness *anchor + self-check* in favour of A2's ranked
+> obligations being present in the main context. Answer-impact validated on the
+> 8 `role_obligations` quality cases (the only ones the backbone ever fired on).
+
 ---
 
 ## B. Hardcoded knowledge that the graph already holds

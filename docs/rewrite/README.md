@@ -55,8 +55,24 @@ net says new ≥ old.
   - [ ] Migrate `_faithfulness` corpus building onto `Provision.text_payload()`
         (first real consumer; net must stay green).
   - [ ] Thread a `Scenario` through `ask_stream`'s detection stage.
-- **Phase 2 — retrieval core + expanders** behind `RetrievalPlan`; migrate one
-  route at a time, deleting bespoke retrieval as each lands.
+- **Phase 2 — retrieval core + expanders** *(in progress)* — graph-derive the
+  obligation set, then delete the hardcodes it duplicated. Landed:
+  - [x] **A2** — `retrieve_by_roles` relevance-ranks the role's `OBLIGATION_OF`
+        set (article-preferred, celex-scoped, guaranteed cap) instead of an
+        arbitrary first-k; celex filter pushed into the Cypher before its LIMIT
+        so cross-reg equivalence never crowds out in-scope obligations
+        (`d94c01f`, `cceae41`). TC_011 passes via traversal; retrieval net 20/20.
+  - [x] **AR Article 11** graph gap closed (`role_linker` `_title_is_role_named`,
+        `6a248f1`) + edges materialised — last B1 gap.
+  - [x] **Community route at A2 parity** — derives the role obligation set via
+        the same traversal (`b5e98c6`), unblocking deletion.
+  - [x] **Deleted** the GPAI safety net + sub-question and the **B1 obligation
+        backbone** end to end (table, injection, anchor render, C3 self-check,
+        prompt discipline) — fully graph-derived now (`cd272de`, `3d44bae`,
+        −211 LOC).
+  - [ ] **B2 / A3** — `_AI_ACT_HIGH_RISK_BACKBONE_REFS` (classification-chain
+        high-risk cluster): derive from `TRIGGERS_OBLIGATION_CLUSTER`.
+  - [ ] **A6** — definition anchor (`_ANCHOR_DEFINITION_TERMS`).
 - **Phase 3 — agent spine**: fold detection into `scenario.py`; route the audit
   gap-fill and corrective pass through `RetrievalPlan`.
 - **Phase 4 — delete** subsumed patches, hardcoded tables, and dead env flags.
