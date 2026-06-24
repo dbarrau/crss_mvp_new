@@ -556,26 +556,10 @@ def _retrieve_route_provisions(
         # a single query vector to capture all of them.
         _k_comm = 30
         sub_questions = _decompose_question(question, client)
-        # For AI Act provider obligation-breadth questions, always guarantee a
-        # GPAI-specific sub-question.  The LLM decomposer won't generate one
-        # unless the user explicitly mentioned GPAI, causing GPAI community
-        # embeddings to lose the cosine similarity contest against the denser
-        # High-Risk AI clusters even though both are in scope.
-        if _is_obligation_breadth_question(question, route, role_specs) and any(
-            role_term == "provider" and celex == "32024R1689"
-            for role_term, celex in role_specs
-        ):
-            _has_gpai_sq = any(
-                "general-purpose" in sq.lower() or "gpai" in sq.lower()
-                or "article 53" in sq.lower()
-                for sq in sub_questions
-            )
-            if not _has_gpai_sq:
-                sub_questions.append(
-                    "What are the specific obligations of providers of general-purpose "
-                    "AI models under Articles 53 to 55 of the EU AI Act, including "
-                    "additional obligations for models posing systemic risk?"
-                )
+        # GPAI articles (53–55) no longer need a forced sub-question: the role
+        # pass below traverses OBLIGATION_OF and pins the provider's complete
+        # obligation set (incl. GPAI + systemic-risk) deterministically,
+        # regardless of how the community embeddings rank.
         logger.debug(
             "community_summary_search: decomposed into %d sub-questions: %s",
             len(sub_questions), sub_questions,
