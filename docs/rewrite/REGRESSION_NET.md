@@ -60,7 +60,17 @@ quality sets:
       aggregate (`fabricated_total` / `misattributed_total` / `near_verbatim_total`).
 - [x] Add baseline-snapshot + `--diff` mode to `eval_retrieval.py`
       (`--snapshot PATH` / `--diff PATH`, stable provision-id identity).
-- [ ] **Capture the `main` baseline** (needs live Neo4j + Mistral), before Phase 1:
-      - `git checkout main && python scripts/eval_retrieval.py --snapshot eval/baseline_retrieval_main.json`
-      - `python scripts/eval_answer_quality.py --out eval/baseline_quality_main.json --quiet`
-      - commit both baselines so every migration step can `--diff` against them.
+- [x] **Capture the pre-Phase-2 baseline** (live Neo4j + Mistral). Captured on
+      `read-path-rewrite@HEAD` — *not* literal `main` — so `--diff` isolates the
+      Phase-2 retrieval deltas rather than folding in this session's
+      faithfulness/scoping changes.
+      - Retrieval (done): `python scripts/eval_retrieval.py --snapshot eval/baseline_retrieval.json`
+        → 20/20 recall, 20/20 route.
+      - Quality: `CRSS_CLARIFY=0 python scripts/eval_answer_quality.py --out eval/baseline_quality.json --quiet`
+        (`CRSS_CLARIFY=0` so role-less questions are answered, not deflected to
+        a clarification — the ask-first gate is orthogonal to the retrieval
+        rewrite and would otherwise void the answer scores).
+
+Every Phase 2+ migration step diffs against these: `eval_retrieval.py --diff
+eval/baseline_retrieval.json`, and compare `eval/baseline_quality.json`
+fabricated/misattributed totals.

@@ -1,0 +1,396 @@
+{
+  "TC_001": {
+    "celexes": [
+      "32017R0745",
+      "MDCG_2019_11"
+    ],
+    "retrieved_ids": [
+      "32017R0745_anx_VIII",
+      "32017R0745_art_10",
+      "32017R0745_art_11",
+      "32017R0745_art_13",
+      "32017R0745_art_14",
+      "32017R0745_art_52",
+      "MDCG_2019_11_decision_steps_for_deciding_if_a_software_is_cover",
+      "MDCG_2019_11_medical_device",
+      "MDCG_2019_11_sec_1",
+      "MDCG_2019_11_sec_3_2",
+      "MDCG_2019_11_sec_3_3",
+      "MDCG_2019_11_sec_4",
+      "MDCG_2019_11_sec_4_2_1",
+      "MDCG_2019_11_sec_9"
+    ],
+    "route": "classification_chain"
+  },
+  "TC_002": {
+    "celexes": [
+      "32017R0745"
+    ],
+    "retrieved_ids": [
+      "32017R0745_art_83"
+    ],
+    "route": "provision_lookup"
+  },
+  "TC_003": {
+    "celexes": [
+      "32017R0745",
+      "32017R0746",
+      "32024R1689"
+    ],
+    "retrieved_ids": [
+      "32017R0745_anx_VIII",
+      "32017R0745_art_10",
+      "32017R0745_art_11",
+      "32017R0745_art_13",
+      "32017R0745_art_14",
+      "32017R0745_art_52",
+      "32017R0746_art_48",
+      "32024R1689_anx_I",
+      "32024R1689_anx_III",
+      "32024R1689_anx_IV",
+      "32024R1689_anx_VI",
+      "32024R1689_anx_VII",
+      "32024R1689_anx_XIII",
+      "32024R1689_art_10",
+      "32024R1689_art_11",
+      "32024R1689_art_12",
+      "32024R1689_art_13",
+      "32024R1689_art_14",
+      "32024R1689_art_15",
+      "32024R1689_art_16",
+      "32024R1689_art_17",
+      "32024R1689_art_18",
+      "32024R1689_art_19",
+      "32024R1689_art_20",
+      "32024R1689_art_21",
+      "32024R1689_art_43",
+      "32024R1689_art_47",
+      "32024R1689_art_48",
+      "32024R1689_art_49",
+      "32024R1689_art_5",
+      "32024R1689_art_51",
+      "32024R1689_art_55",
+      "32024R1689_art_56",
+      "32024R1689_art_6",
+      "32024R1689_art_72",
+      "32024R1689_art_73",
+      "32024R1689_art_9"
+    ],
+    "route": "classification_chain"
+  },
+  "TC_004": {
+    "celexes": [
+      "32017R0745"
+    ],
+    "retrieved_ids": [
+      "32017R0745_anx_IX_chp_II_4_4.5",
+      "32017R0745_anx_I_chp_III_23_23.2",
+      "32017R0745_art_1",
+      "32017R0745_art_103",
+      "32017R0745_art_2",
+      "32017R0745_art_4",
+      "32017R0745_art_61",
+      "32017R0745_cpt_I"
+    ],
+    "route": "definition_lookup"
+  },
+  "TC_005": {
+    "celexes": [
+      "32016R0679",
+      "32017R0745"
+    ],
+    "retrieved_ids": [
+      "32016R0679_art_1",
+      "32016R0679_art_35",
+      "32016R0679_art_38",
+      "32016R0679_art_39",
+      "32016R0679_art_4",
+      "32016R0679_art_6",
+      "32016R0679_art_9",
+      "32016R0679_art_91",
+      "32017R0745_anx_IV",
+      "32017R0745_anx_I_chp_II_18_18.7",
+      "32017R0745_anx_I_chp_II_22",
+      "32017R0745_anx_VI_part_C_5_5.4",
+      "32017R0745_anx_XV_chp_I_2",
+      "32017R0745_art_10",
+      "32017R0745_art_15",
+      "32017R0745_art_16",
+      "32017R0745_art_2",
+      "32017R0745_art_33",
+      "32017R0745_art_92"
+    ],
+    "route": "cross_regulation"
+  },
+  "TC_006": {
+    "celexes": [
+      "32017R0745"
+    ],
+    "retrieved_ids": [
+      "32017R0745_art_10"
+    ],
+    "route": "provision_lookup"
+  },
+  "TC_007": {
+    "celexes": [
+      "32024R1689"
+    ],
+    "retrieved_ids": [
+      "32024R1689_art_5"
+    ],
+    "route": "provision_lookup"
+  },
+  "TC_008": {
+    "celexes": [
+      "32017R0745"
+    ],
+    "retrieved_ids": [
+      "32017R0745_anx_I"
+    ],
+    "route": "provision_lookup"
+  },
+  "TC_009": {
+    "celexes": [
+      "32017R0746",
+      "MDCG_2019_11"
+    ],
+    "retrieved_ids": [
+      "32017R0746_anx_VIII",
+      "32017R0746_art_10",
+      "32017R0746_art_11",
+      "32017R0746_art_13",
+      "32017R0746_art_14",
+      "32017R0746_art_48",
+      "MDCG_2019_11_f_2_expert_system",
+      "MDCG_2019_11_f_4_home_care_monitoring_wired_or_mobile",
+      "MDCG_2019_11_figure_2_decision_steps_to_assist_qualification_of",
+      "MDCG_2019_11_sec_3_2",
+      "MDCG_2019_11_sec_3_4",
+      "MDCG_2019_11_sec_4_2_1",
+      "MDCG_2019_11_sec_5",
+      "MDCG_2019_11_sec_5_1"
+    ],
+    "route": "classification_chain"
+  },
+  "TC_010": {
+    "celexes": [
+      "32017R0745"
+    ],
+    "retrieved_ids": [
+      "32017R0745_art_61"
+    ],
+    "route": "provision_lookup"
+  },
+  "TC_011": {
+    "celexes": [
+      "32024R1689"
+    ],
+    "retrieved_ids": [
+      "32024R1689_anx_XI",
+      "32024R1689_art_50",
+      "32024R1689_art_51",
+      "32024R1689_art_53",
+      "32024R1689_art_54",
+      "32024R1689_art_94"
+    ],
+    "route": "role_obligations"
+  },
+  "TC_012": {
+    "celexes": [
+      "32017R0745",
+      "32024R1689"
+    ],
+    "retrieved_ids": [
+      "32017R0745_anx_XI_1",
+      "32017R0745_anx_XI_2",
+      "32017R0745_anx_XI_part_A_6_6.3",
+      "32017R0745_anx_XI_part_B_15_15.2",
+      "32024R1689_anx_IV_1",
+      "32024R1689_art_2",
+      "32024R1689_art_74",
+      "32024R1689_rct_23"
+    ],
+    "route": "cross_regulation"
+  },
+  "TC_013": {
+    "celexes": [
+      "32016R0679"
+    ],
+    "retrieved_ids": [
+      "32016R0679_art_6"
+    ],
+    "route": "provision_lookup"
+  },
+  "TC_014": {
+    "celexes": [
+      "32017R0745"
+    ],
+    "retrieved_ids": [
+      "32017R0745_anx_II"
+    ],
+    "route": "provision_lookup"
+  },
+  "TC_015": {
+    "celexes": [
+      "32017R0745"
+    ],
+    "retrieved_ids": [
+      "32017R0745_art_120"
+    ],
+    "route": "provision_lookup"
+  },
+  "TC_016": {
+    "celexes": [
+      "32017R0745",
+      "32017R0746",
+      "32024R1689"
+    ],
+    "retrieved_ids": [
+      "32017R0745_anx_VIII",
+      "32017R0745_art_10",
+      "32017R0745_art_11",
+      "32017R0745_art_13",
+      "32017R0745_art_14",
+      "32017R0745_art_52",
+      "32017R0746_art_48",
+      "32024R1689_anx_I",
+      "32024R1689_anx_III",
+      "32024R1689_anx_IV",
+      "32024R1689_anx_VI",
+      "32024R1689_anx_VII",
+      "32024R1689_anx_XIII",
+      "32024R1689_art_10",
+      "32024R1689_art_11",
+      "32024R1689_art_12",
+      "32024R1689_art_13",
+      "32024R1689_art_14",
+      "32024R1689_art_15",
+      "32024R1689_art_16",
+      "32024R1689_art_17",
+      "32024R1689_art_18",
+      "32024R1689_art_19",
+      "32024R1689_art_20",
+      "32024R1689_art_21",
+      "32024R1689_art_43",
+      "32024R1689_art_47",
+      "32024R1689_art_48",
+      "32024R1689_art_49",
+      "32024R1689_art_5",
+      "32024R1689_art_51",
+      "32024R1689_art_55",
+      "32024R1689_art_56",
+      "32024R1689_art_6",
+      "32024R1689_art_72",
+      "32024R1689_art_73",
+      "32024R1689_art_9"
+    ],
+    "route": "classification_chain"
+  },
+  "TC_017": {
+    "celexes": [
+      "32017R0745"
+    ],
+    "retrieved_ids": [
+      "32017R0745_anx_IX_chp_II_4",
+      "32017R0745_anx_IX_chp_II_4_4.3",
+      "32017R0745_anx_IX_chp_II_4_4.5",
+      "32017R0745_anx_IX_chp_II_5",
+      "32017R0745_anx_IX_chp_II_5_5.1",
+      "32017R0745_anx_VII_1_1.2_1.2.1",
+      "32017R0745_art_54",
+      "32017R0745_art_55"
+    ],
+    "route": "role_obligations"
+  },
+  "TC_018": {
+    "celexes": [
+      "32017R0745",
+      "32024R1689"
+    ],
+    "retrieved_ids": [
+      "32017R0745_anx_VI_part_C_6_6.5_6.5.4",
+      "32017R0745_art_100",
+      "32017R0745_art_27",
+      "32017R0745_art_73",
+      "32024R1689_anx_V",
+      "32024R1689_anx_V_5",
+      "32024R1689_art_3",
+      "32024R1689_rct_63"
+    ],
+    "route": "definition_lookup"
+  },
+  "TC_019": {
+    "celexes": [
+      "32017R0745"
+    ],
+    "retrieved_ids": [
+      "32017R0745_anx_IV",
+      "32017R0745_anx_I_chp_II_18_18.7",
+      "32017R0745_anx_I_chp_II_22",
+      "32017R0745_anx_VI_part_C_5_5.4",
+      "32017R0745_anx_XV_chp_I_2",
+      "32017R0745_art_92"
+    ],
+    "route": "role_obligations"
+  },
+  "TC_020": {
+    "celexes": [
+      "32024R1689"
+    ],
+    "retrieved_ids": [
+      "32024R1689_anx_III_1",
+      "32024R1689_anx_III_4",
+      "32024R1689_anx_III_8",
+      "32024R1689_anx_IV_1",
+      "32024R1689_anx_IV_2",
+      "32024R1689_anx_IV_3",
+      "32024R1689_anx_IV_5",
+      "32024R1689_anx_IX_2",
+      "32024R1689_anx_IX_3",
+      "32024R1689_anx_VIII_sec_A",
+      "32024R1689_anx_VIII_sec_B",
+      "32024R1689_anx_V_1",
+      "32024R1689_anx_V_6",
+      "32024R1689_anx_V_7",
+      "32024R1689_anx_XII_1",
+      "32024R1689_anx_XI_sec_2",
+      "32024R1689_anx_X_7",
+      "32024R1689_art_1",
+      "32024R1689_art_10",
+      "32024R1689_art_101",
+      "32024R1689_art_108",
+      "32024R1689_art_109",
+      "32024R1689_art_110",
+      "32024R1689_art_13",
+      "32024R1689_art_14",
+      "32024R1689_art_16",
+      "32024R1689_art_2",
+      "32024R1689_art_26",
+      "32024R1689_art_40",
+      "32024R1689_art_42",
+      "32024R1689_art_53",
+      "32024R1689_art_55",
+      "32024R1689_art_59",
+      "32024R1689_art_71",
+      "32024R1689_art_77",
+      "32024R1689_art_83",
+      "32024R1689_art_9",
+      "32024R1689_art_93",
+      "32024R1689_art_95",
+      "32024R1689_art_96",
+      "32024R1689_cpt_III.sct_2",
+      "32024R1689_cpt_III.sct_5",
+      "32024R1689_cpt_IX.sct_1",
+      "32024R1689_cpt_IX.sct_2",
+      "32024R1689_cpt_IX.sct_3",
+      "32024R1689_cpt_IX.sct_4",
+      "32024R1689_cpt_IX.sct_5",
+      "32024R1689_cpt_V.sct_3",
+      "32024R1689_rct_140",
+      "32024R1689_rct_180",
+      "32024R1689_rct_59",
+      "32024R1689_rct_62"
+    ],
+    "route": "community_summary_search"
+  }
+}

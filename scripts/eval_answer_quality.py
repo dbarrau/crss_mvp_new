@@ -31,6 +31,7 @@ import argparse
 import json
 import os
 import re
+import signal
 import sys
 import time
 from pathlib import Path
@@ -85,6 +86,41 @@ def _parse_reliance(text: str) -> str:
 _FABRICATED_RE = re.compile(r"FAITHFULNESS FLAG\*\*\s*[—\-]\s*(\d+)\s+of\s+(\d+)", re.I)
 _MISATTRIBUTED_RE = re.compile(r"ATTRIBUTION FLAG\*\*\s*[—\-]\s*(\d+)\s+of\s+(\d+)", re.I)
 _NEAR_RE = re.compile(r"Wording check\*\*\s*[—\-]\s*(\d+)\s+quote", re.I)
+
+
+# Hard per-case wall-clock timeout. A Mistral stream that stalls mid-response
+# blocks forever (no read timeout in the SDK path), which hangs the whole run —
+# observed: one case stuck 69 min with leaked sockets. SIGALRM abandons a stuck
+# case, records it, and lets the run finish in bounded time. Override with
+# CRSS_EVAL_CASE_TIMEOUT (seconds).
+_CASE_TIMEOUT_S = int(os.environ.get("CRSS_EVAL_CASE_TIMEOUT", "300"))
+_timed_out_flag = {"v": False}
+
+
+class _CaseTimeout(Exception):
+    pass
+
+
+def _on_alarm(signum, frame):  # noqa: ANN001
+    _timed_out_flag["v"] = True
+    raise _CaseTimeout()
+
+
+def _timeout_result(case: dict) -> dict:
+    return {
+        "id": case["id"],
+        "label": case.get("label", ""),
+        "score": None,
+        "scores": [],
+        "reliance": "(timeout)",
+        "faithfulness": {"fabricated": 0, "misattributed": 0, "near_verbatim": 0, "total_quotes": 0},
+        "gen_s": _CASE_TIMEOUT_S,
+        "judge_s": 0.0,
+        "answer_chars": 0,
+        "answer": "",
+        "judge_text": f"TIMEOUT after {_CASE_TIMEOUT_S}s",
+        "timed_out": True,
+    }
 
 
 def _parse_faithfulness(answer: str) -> dict[str, int]:
@@ -203,14 +239,38 @@ def main() -> int:
     from retrieval.graph_retriever import GraphRetriever
     retriever = GraphRetriever()
 
+    signal.signal(signal.SIGALRM, _on_alarm)
+
+    def _flush_partial() -> None:
+        # Kill-safe: persist after every case so a hang/kill never loses the run.
+        if args.out:
+            Path(args.out).write_text(json.dumps(
+                {"label": args.label, "judge_model": args.judge_model,
+                 "partial": True, "results": results}, indent=2))
+
     results = []
     for case in cases:
-        r = _run_case(
-            case, retriever, rubric,
-            k=args.k, judge_model=args.judge_model, judge_runs=args.judge_runs,
-            answer_override=answer_override,
-        )
+        _timed_out_flag["v"] = False
+        signal.alarm(_CASE_TIMEOUT_S)
+        try:
+            r = _run_case(
+                case, retriever, rubric,
+                k=args.k, judge_model=args.judge_model, judge_runs=args.judge_runs,
+                answer_override=answer_override,
+            )
+        except Exception as exc:  # noqa: BLE001 — one bad case must not kill the run
+            r = _timeout_result(case)
+            if not _timed_out_flag["v"]:
+                r["reliance"] = "(error)"
+                r["judge_text"] = f"ERROR: {exc}"
+            print(f"  {case['id']}  {r['reliance'].upper()} — {r['judge_text'][:80]}", flush=True)
+            results.append(r)
+            _flush_partial()
+            continue
+        finally:
+            signal.alarm(0)
         results.append(r)
+        _flush_partial()
         score_str = f"{r['score']}" if r["score"] is not None else "PARSE_FAIL"
         fc = r["faithfulness"]
         faith_str = (
