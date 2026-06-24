@@ -55,6 +55,24 @@ of idempotent expanders under one budget and one dedup.
 > vector-truncated) + A6 DefinitionExpander (pin the in-scope defined term) fix
 > it directly; the old hardcoded backbone was masking it by force-injecting 53.
 
+> **A2 — LANDED (commit d94c01f), but deletion is not yet unlocked.**
+> `retrieve_by_roles` now relevance-ranks the role's `OBLIGATION_OF` set
+> (article-preferred, celex-scoped, cap 14) instead of taking an arbitrary
+> first-k. Retrieval net 19/20→20/20 (TC_011 passes via traversal); on the
+> A2-path quality cases fabrication fell −17 with combined fab+mis −2 (the full
+> set's apparent +31 misattribution is generation noise — see REGRESSION_NET).
+> **However**, attempting to delete the GPAI safety net (force-add Art 53/55)
+> regressed **TC_020** — the `community_summary_search` route dropped Art 55.
+> A2 only governs the *role* routes (`role_obligations` / `cross_regulation` /
+> `legal_qualification` with roles); the community route has no roles, so its
+> obligation completeness still rests on the safety net + backbone injection.
+> **So A3/the safety net are NOT pure scar tissue — they are load-bearing for
+> the community route.** Deleting `_OBLIGATION_MASTER_ARTICLES` /
+> `_get_obligation_backbone_refs` / the GPAI safety net is blocked until the
+> community route *also* derives its obligation cluster from the graph (its own
+> Phase-2 task). The deterministic retrieval net caught this; the deletion was
+> reverted.
+
 ---
 
 ## B. Hardcoded knowledge that the graph already holds

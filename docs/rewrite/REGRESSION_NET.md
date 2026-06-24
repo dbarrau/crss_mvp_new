@@ -51,6 +51,22 @@ quality sets:
 - fabricated + misattributed quote counts ≤ baseline, **and**
 - mean rubric score ≥ baseline (no single case drops > 1.0).
 
+> **Measurement caveat — the quality net's fab/mis/score are noisy and must be
+> read per-code-path (learned in Phase 2, A2 run).** Generation runs at non-zero
+> temperature, so the same question yields different answers — and different
+> quote counts — run to run. Concretely: on the 21 quality cases where A2
+> changes *nothing* (it only touches `retrieve_by_roles`), misattribution still
+> swung 18→34 (+89%) between two runs. Aggregate fab/mis deltas at that
+> magnitude are therefore **not** a reliable migration signal. Two rules follow:
+> 1. **Attribute deltas only to cases on the changed code path.** For A2 (role
+>    routes), that meant comparing the 11 role-invoking cases (fab −17, combined
+>    fab+mis −2) — not the full-set's noise-dominated +31.
+> 2. The deterministic **retrieval** net is the trustworthy gate; the quality
+>    net corroborates direction, not single-case pass/fail. A future hardening
+>    is to run generation at temp 0 for eval so the fab/mis signal is clean.
+> This is why the "no single case drops > 1.0" sub-rule above cannot be applied
+> literally to a stochastic generator — a no-op produces >1.0 swings.
+
 ## Immediate next actions
 
 - [x] Expand `quality_set.json` to the route × reg × role matrix — **32 cases**
