@@ -18,6 +18,35 @@ from application._config import (
 
 logger = logging.getLogger(__name__)
 
+# Foundational subject-matter definition of each regulation, keyed by CELEX.
+# When a regulation is explicitly in scope (its CELEX is in ``target_celexes``)
+# its root definition is the most load-bearing anchor in the answer — yet being
+# short, these terms lose the longest-first race against the
+# ``_MAX_RELATED_DEFINITIONS`` cap and used to be dropped from context, forcing
+# the LLM to backfill them from training memory (the AI Act Article 3(1)
+# 'AI system' fallback).  These anchors are force-injected past the cap.
+_ANCHOR_DEFINITION_TERMS: dict[str, str] = {
+    "32024R1689": "ai system",                           # AI Act, Article 3(1)
+    "32017R0745": "medical device",                      # MDR, Article 2(1)
+    "32017R0746": "in vitro diagnostic medical device",  # IVDR, Article 2(2)
+    "32016R0679": "personal data",                       # GDPR, Article 4(1)
+}
+
+
+def _term_match_pattern(term_lower: str) -> re.Pattern:
+    """Compile a word-boundary regex for *term_lower* that also matches its plural.
+
+    Defined-term index keys are stored in canonical singular form (e.g.
+    ``"ai system"``), but regulation and question text overwhelmingly use the
+    plural (e.g. ``"high-risk AI systems"``).  A naive ``\\bai system\\b`` misses
+    every plural occurrence — which is exactly how the AI Act's Article 3(1)
+    'AI system' definition was silently dropped from cross-regulation answers,
+    forcing the LLM to backfill it from training memory.  Allowing an optional
+    trailing ``s`` on the final token closes that gap without the false
+    positives of unbounded substring matching.
+    """
+    return re.compile(r"\b" + re.escape(term_lower) + r"s?\b", re.IGNORECASE)
+
 
 def _detect_defined_terms(
     question: str, retriever,
@@ -47,8 +76,8 @@ def _detect_defined_terms(
     for term_lower, _tn in sorted(
         term_index.items(), key=lambda x: len(x[0]), reverse=True,
     ):
-        # Word-boundary match to avoid spurious substring hits
-        if re.search(r"\b" + re.escape(term_lower) + r"\b", q_lower):
+        # Word-boundary match (plural-aware) to avoid spurious substring hits
+        if _term_match_pattern(term_lower).search(q_lower):
             if term_lower in seen_terms:
                 continue
             seen_terms.add(term_lower)
@@ -124,7 +153,7 @@ def _expand_definitions_from_provisions(
     ):
         if term_lower in seen_terms:
             continue
-        if not re.search(r"\b" + re.escape(term_lower) + r"\b", context_text):
+        if not _term_match_pattern(term_lower).search(context_text):
             continue
 
         results = retriever.find_by_term(term_lower)
@@ -150,5 +179,27 @@ def _expand_definitions_from_provisions(
             added,
             ", ".join(d.get("term", "?") for d in expanded[len(existing):]),
         )
+
+    # Force-inject each in-scope regulation's foundational definition past the
+    # cap above.  Prepended so the subject-matter anchor leads the definitions
+    # block; skipped when the term was already captured by the scan or has no
+    # graph match.
+    if target_celexes:
+        for celex in sorted(target_celexes):
+            anchor = _ANCHOR_DEFINITION_TERMS.get(celex)
+            if not anchor or anchor in seen_terms:
+                continue
+            results = retriever.find_by_term(anchor)
+            same_reg = [r for r in results if r.get("celex") == celex]
+            results = same_reg or results
+            formal = [r for r in results if r.get("definition_type") == "formal"]
+            results = formal or results
+            if not results:
+                continue
+            expanded.insert(0, results[0])
+            seen_terms.add(anchor)
+            logger.info(
+                "Force-injected anchor definition '%s' for %s.", anchor, celex,
+            )
 
     return expanded

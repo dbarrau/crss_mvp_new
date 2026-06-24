@@ -142,6 +142,12 @@ LEGAL FORCE AWARENESS (mandatory):
 - [NON-BINDING GUIDANCE] sources are MDCG guidance documents. They represent the European Commission's interpretive position but do NOT create legal obligations. When citing them, you MUST include a caveat such as: "This is based on non-binding MDCG guidance and is not itself a legal requirement."
 - When your answer draws on BOTH binding and non-binding sources, distinguish them explicitly. Never present guidance conclusions as if they were regulatory obligations.
 - If the REGULATORY CONTEXT contains only non-binding sources for a question that requires binding law, state this limitation explicitly rather than answering as if the guidance were the regulation.
+
+USE OF INTERPRETIVE GUIDANCE (mandatory when guidance is in context):
+- The non-binding status of MDCG guidance is a reason to CAVEAT it, NOT a reason to omit it. Guidance is the operational interpretation layer a compliance officer actually needs — especially for "how do I comply", cross-regulation interplay, and classification questions.
+- When the REGULATORY CONTEXT contains [NON-BINDING GUIDANCE] sources relevant to the question, you MUST surface their interpretation in a dedicated "Interpretive Guidance (non-binding)" subsection. State what the guidance says, which binding provision it interprets, and attach the non-binding caveat.
+- When a cited binding provision carries an attached "[GUIDANCE interprets this]" line in the context, you MUST consume that interpretation rather than ignoring it — tie it to the provision it explains.
+- The rule "defer to the Regulation, present guidance as supportive not determinative" governs HOW you weight guidance against binding text in a conflict; it does NOT license dropping relevant guidance from the answer entirely.
 """
 
 # ---------------------------------------------------------------------------
@@ -265,6 +271,16 @@ def _build_route_answer_guidance(
             "as conclusions, not as the starting point for analysis."
         )
         lines.append(
+            "STEP 6 — INTERPRETIVE GUIDANCE (non-binding): "
+            "If the REGULATORY CONTEXT contains [NON-BINDING GUIDANCE] (MDCG) sources "
+            "relevant to the classification or its obligations, add a dedicated "
+            "'Interpretive Guidance (non-binding)' subsection. Summarise what the "
+            "guidance says, name the binding provision it interprets, and attach the "
+            "non-binding caveat. Do NOT omit relevant guidance merely because it is "
+            "non-binding — it is the operational interpretation layer the reader needs. "
+            "If no guidance is in context, skip this step silently."
+        )
+        lines.append(
             "CALIBRATION: Distinguish explicit law from inference. "
             "Where the classification depends on factual assessment (intended purpose, "
             "whether third-party conformity assessment is required, FLOPs count), "
@@ -335,6 +351,16 @@ def _build_route_answer_guidance(
             "  Step 6 — RESIDUAL UNCERTAINTY: State what factual or legal questions "
             "remain unresolved and what would change the conclusion. Explicitly "
             "distinguish what the retrieved text states from what you are inferring."
+        )
+        lines.append(
+            "  Step 7 — INTERPRETIVE GUIDANCE (non-binding): If the REGULATORY "
+            "CONTEXT contains [NON-BINDING GUIDANCE] (MDCG) sources relevant to the "
+            "interplay (e.g. MDCG 2025-6 on MDR/AI Act interaction), add a dedicated "
+            "'Interpretive Guidance (non-binding)' subsection summarising what the "
+            "guidance says, the binding provision it interprets, and the non-binding "
+            "caveat. Do NOT drop relevant guidance merely because it is non-binding — "
+            "for cross-regulatory interplay it is often the most practically useful "
+            "source. Skip silently if no guidance is in context."
         )
 
         has_gdpr = bool(

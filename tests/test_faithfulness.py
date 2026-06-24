@@ -12,6 +12,7 @@ from application._faithfulness import (
     extract_context_refs,
     extract_quotes,
     faithfulness_mode,
+    grounding_verdict,
     out_of_scope_citation_refs,
     remove_unverified_quotes,
     verify_quote,
@@ -106,6 +107,43 @@ def test_verify_quote_accepts_markdown_emphasis_inside_quote():
     assert verify_quote(quote, corpus) is True
 
 
+def test_verify_quote_tolerates_hyphen_vs_space_orthography():
+    """An LLM 'tidying' a verbatim quote (machine readable -> machine-readable)
+    must not turn a grounded operational obligation into a false flag."""
+    corpus = _normalize(
+        "The provider shall draw up a written machine readable, physical or "
+        "electronically signed EU declaration of conformity for each high-risk "
+        "AI system."
+    )
+    quote = (
+        "The provider shall draw up a written machine-readable, physical or "
+        "electronically signed EU declaration of conformity"
+    )
+    assert verify_quote(quote, corpus) is True
+
+
+def test_verify_quote_tolerates_apostrophe_glyph_variants():
+    corpus = _normalize(
+        "‘AI system’ means a machine-based system that is designed to "
+        "operate with varying levels of autonomy."
+    )
+    # Model emits a straight ASCII apostrophe instead of the typographic glyph.
+    quote = "'AI system' means a machine-based system that is designed to operate"
+    assert verify_quote(quote, corpus) is True
+
+
+def test_verify_quote_still_rejects_fabrication_after_orthographic_folding():
+    """Dash/apostrophe folding must not let a genuinely fabricated quote pass."""
+    corpus = _normalize(
+        "Annex III, Point 1: remote biometric identification systems."
+    )
+    fabricated = (
+        "AI systems intended to be used for the analysis of medical data for "
+        "diagnostic and treatment purposes."
+    )
+    assert verify_quote(fabricated, corpus) is False
+
+
 def test_verify_quote_handles_ellipsis_split():
     corpus = _normalize(
         "Manufacturers shall establish, document, implement and maintain a "
@@ -152,10 +190,87 @@ def test_build_corpus_includes_article_text_and_children():
         {"text": "Fallback provision text."},
     ]
     corpus = _build_corpus(provisions)
-    assert "article 6: high-risk ai systems" in corpus
+    # Dashes fold to spaces during normalization (high-risk -> high risk).
+    assert "article 6: high risk ai systems" in corpus
     assert "paragraph one body." in corpus
     assert "paragraph two body." in corpus
     assert "fallback provision text." in corpus
+
+
+def test_build_corpus_includes_interpretive_guidance_links():
+    provisions = [
+        {
+            "article_text": "Article 52: GPAI transparency.",
+            "children": [],
+            "interpreting_guidance": [
+                {"ref": "MDCG 2025-6", "text": "Satisfying AI Act risk management "
+                 "does not substitute for a GDPR DPIA."},
+            ],
+            "interpreted_provisions": [
+                {"ref": "Article 9", "text": "Risk management system text."},
+            ],
+        },
+    ]
+    corpus = _build_corpus(provisions)
+    assert "does not substitute for a gdpr dpia" in corpus
+    assert "risk management system text." in corpus
+
+
+def test_build_corpus_includes_definitions_block():
+    provisions = [{"article_text": "Some obligation text."}]
+    definitions = [
+        {
+            "term": "AI system",
+            "definition_text": (
+                "'AI system' means a machine-based system that is designed to "
+                "operate with varying levels of autonomy."
+            ),
+        },
+    ]
+    corpus = _build_corpus(provisions, definitions)
+    # Dashes fold to spaces during normalization (machine-based -> machine based).
+    assert "machine based system" in corpus
+
+
+def test_check_faithfulness_verifies_quote_drawn_from_definition():
+    """A verbatim quote of a definition must verify once the definitions block
+    is part of the corpus (regression: the AI Act Article 3(1) definition quote
+    used to be falsely flagged because definitions were excluded)."""
+    provisions = [{"article_text": "Unrelated obligation text about logging."}]
+    definitions = [
+        {
+            "term": "AI system",
+            "definition_text": (
+                "'AI system' means a machine-based system that is designed to "
+                "operate with varying levels of autonomy and that may exhibit "
+                "adaptiveness after deployment."
+            ),
+        },
+    ]
+    answer = (
+        "Per Article 3(1): “'AI system' means a machine-based system that "
+        "is designed to operate with varying levels of autonomy and that may "
+        "exhibit adaptiveness after deployment.”"
+    )
+    report = check_faithfulness(answer, provisions, definitions)
+    assert report.ok is True
+    assert report.verified_count == 1
+
+
+def test_check_faithfulness_flags_training_memory_quote_not_in_context():
+    """A quote pulled from training memory (not in provisions or definitions)
+    is flagged even when it carries a plausible provision label — the v3 MDR
+    Annex II 6.1 leak."""
+    provisions = [{"article_text": "Manufacturers shall draw up technical documentation."}]
+    definitions = []
+    answer = (
+        "The MDR requires: “A description of any software updates, including "
+        "the procedure for the validation of the updated software, and the impact "
+        "of the update on the device performance.” [MDR Annex II, point 6.1]"
+    )
+    report = check_faithfulness(answer, provisions, definitions)
+    assert report.ok is False
+    assert report.unverified_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -213,6 +328,88 @@ def test_check_faithfulness_with_no_quotes_returns_clean_empty_report():
 
 
 # ---------------------------------------------------------------------------
+# Graduated grounding verdict (exact / near / absent)
+# ---------------------------------------------------------------------------
+
+
+def test_grounding_verdict_exact_for_verbatim_quote():
+    corpus = _normalize(
+        "Providers of high-risk AI systems shall implement a risk management "
+        "system throughout the lifecycle of the system."
+    )
+    quote = (
+        "Providers of high-risk AI systems shall implement a risk management "
+        "system throughout the lifecycle of the system."
+    )
+    assert grounding_verdict(quote, corpus) == "exact"
+
+
+def test_grounding_verdict_near_for_dropped_article():
+    """A dropped 'the' is near-verbatim, not a fabrication."""
+    corpus = _normalize(
+        "that, for explicit or implicit objectives, infers, from the input it "
+        "receives, how to generate outputs such as predictions, content, "
+        "recommendations, or decisions."
+    )
+    quote = (
+        "infers, from input it receives, how to generate outputs such as "
+        "predictions, content, recommendations, or decisions."
+    )
+    assert grounding_verdict(quote, corpus) == "near"
+    assert verify_quote(quote, corpus) is True
+
+
+def test_grounding_verdict_absent_for_fabricated_clause():
+    corpus = _normalize(
+        "Post-market monitoring shall be based on a post-market monitoring plan."
+    )
+    quote = (
+        "AI systems intended to be used for the analysis of medical data for "
+        "diagnostic, prognostic, or treatment purposes in clinical settings."
+    )
+    assert grounding_verdict(quote, corpus) == "absent"
+
+
+def test_near_verbatim_quote_is_kept_not_redacted():
+    provisions = [{
+        "article_text": (
+            "For high-risk AI systems which are safety components of devices "
+            "covered by Regulations (EU) 2017/745 and (EU) 2017/746, the "
+            "notification of serious incidents shall be limited to those "
+            "referred to in Article 3, point 49(c)."
+        ),
+    }]
+    # Model reworded slightly ('which are safety components of devices' ->
+    # 'that are safety components of devices', dropped the regulation cite).
+    answer = (
+        "Per Article 73(10): “For high-risk AI systems that are safety "
+        "components of devices, the notification of serious incidents shall be "
+        "limited to those referred to in Article 3, point 49(c).”"
+    )
+    report = check_faithfulness(answer, provisions)
+    assert report.unverified_count == 0          # not treated as fabrication
+    assert report.near_verbatim_count == 1       # surfaced for wording check
+    assert report.ok is True
+    # The grounded quote survives redaction.
+    kept = remove_unverified_quotes(answer, report)
+    assert "notification of serious incidents shall be limited" in kept
+
+
+def test_warning_block_separates_removed_from_near_verbatim():
+    removed = Quote("Annex III point 1(a) covers medical diagnosis in clinics.", 0, 56)
+    near = Quote("infers from input it receives how to generate outputs.", 60, 114)
+    report = FaithfulnessReport(
+        total_quotes=2, verified=[], unverified=[removed], near_verbatim=[near],
+    )
+    block = build_warning_block(report)
+    assert block is not None
+    assert "FAITHFULNESS FLAG" in block          # loud tier for removed
+    assert "Wording check" in block               # light tier for near-verbatim
+    for line in block.splitlines():
+        assert line.startswith(">")
+
+
+# ---------------------------------------------------------------------------
 # build_warning_block
 # ---------------------------------------------------------------------------
 
@@ -255,6 +452,108 @@ def test_remove_unverified_quotes_removes_only_flagged_spans():
     redacted = remove_unverified_quotes(answer, report)
     assert "Annex III point 1(a) covers medical diagnosis" not in redacted
     assert "Final sentence." in redacted
+
+
+# ---------------------------------------------------------------------------
+# Structural guards: concatenation + misattribution
+# ---------------------------------------------------------------------------
+
+
+_STRUCTURAL_PROVISIONS = [
+    {
+        "article_ref": "Article 43",
+        "article_text": (
+            "Where a high-risk AI system is to undergo a substantial "
+            "modification, the high-risk AI system shall undergo a new "
+            "conformity assessment procedure."
+        ),
+    },
+    {
+        "article_ref": "Article 15",
+        "article_text": (
+            "High-risk AI systems shall be designed and developed in such a "
+            "way that they achieve an appropriate level of accuracy, robustness "
+            "and cybersecurity."
+        ),
+    },
+    {
+        "article_ref": "Article 47",
+        "article_text": (
+            "The provider shall draw up a written EU declaration of conformity "
+            "and keep it at the disposal of the national competent authorities."
+        ),
+    },
+]
+
+
+def test_concatenation_blob_attributed_to_one_article_is_flagged_and_removed():
+    # The v7 failure mode: a single quote concatenating the verbatim text of
+    # three distinct provisions, all jammed under one [Article 43] citation.
+    # Each fragment is individually grounded, so grounding alone would pass it.
+    answer = (
+        "Under [Article 43 AI Act] the duties are: "
+        '"Where a high-risk AI system is to undergo a substantial modification, '
+        "the high-risk AI system shall undergo a new conformity assessment "
+        "procedure. High-risk AI systems shall be designed and developed in such "
+        "a way that they achieve an appropriate level of accuracy, robustness and "
+        "cybersecurity. The provider shall draw up a written EU declaration of "
+        'conformity and keep it at the disposal of the national competent authorities."'
+    )
+    report = check_faithfulness(answer, _STRUCTURAL_PROVISIONS)
+    assert report.misattributed_count == 1
+    assert report.verified_count == 0
+    assert report.ok is False
+    redacted = remove_unverified_quotes(answer, report)
+    assert "EU declaration of conformity" not in redacted
+
+
+def test_real_text_under_wrong_citation_is_flagged_as_misattributed():
+    # Real Article 47 text, but the answer attributes it to [Article 15].
+    answer = (
+        "The accuracy duty in [Article 15 AI Act] requires that "
+        '"The provider shall draw up a written EU declaration of conformity and '
+        'keep it at the disposal of the national competent authorities."'
+    )
+    report = check_faithfulness(answer, _STRUCTURAL_PROVISIONS)
+    assert report.misattributed_count == 1
+    assert report.verified_count == 0
+
+
+def test_correctly_cited_quote_passes_structural_guards():
+    answer = (
+        'Per [Article 15 AI Act], "High-risk AI systems shall be designed and '
+        "developed in such a way that they achieve an appropriate level of "
+        'accuracy, robustness and cybersecurity."'
+    )
+    report = check_faithfulness(answer, _STRUCTURAL_PROVISIONS)
+    assert report.verified_count == 1
+    assert report.misattributed_count == 0
+    assert report.ok is True
+
+
+def test_misattribution_silent_when_cited_provision_not_retrieved():
+    # If the cited provision was never retrieved we cannot adjudicate
+    # attribution — the quote must not be falsely flagged as misattributed.
+    answer = (
+        "As set out in [Article 99 AI Act], "
+        '"High-risk AI systems shall be designed and developed in such a way '
+        "that they achieve an appropriate level of accuracy, robustness and "
+        'cybersecurity."'
+    )
+    report = check_faithfulness(answer, _STRUCTURAL_PROVISIONS)
+    assert report.misattributed_count == 0
+    assert report.verified_count == 1
+
+
+def test_attribution_flag_distinct_from_fabrication_flag_in_warning_block():
+    blob = Quote("x" * 250, 0, 250)
+    report = FaithfulnessReport(total_quotes=1, misattributed=[blob])
+    block = build_warning_block(report)
+    assert block is not None
+    assert "ATTRIBUTION FLAG" in block
+    assert "FAITHFULNESS FLAG" not in block       # not a fabrication
+    for line in block.splitlines():
+        assert line.startswith(">")
 
 
 def test_extract_citation_refs_detects_articles_and_annexes():

@@ -36,7 +36,53 @@ CRSS_CONTEXT_CHAR_BUDGET=140000        # cap on rendered provision context (~35K
 CRSS_LEXICAL=1                         # set to 0 to disable BM25 lexical channel + RRF fusion
 CRSS_RERANKER=1                        # set to 0 to disable cross-encoder reranker
 CRSS_RERANKER_MODEL=BAAI/bge-reranker-v2-m3  # default reranker; override if needed
+CRSS_FAITHFULNESS_CHECK=1              # ON by default: verify every verbatim quote against the
+                                       # retrieved corpus (provisions + definitions + guidance);
+                                       # unverified quotes are redacted + a warning is prepended.
+                                       # Set to 0 to disable; 2 (strict) reserved for future re-prompt.
+CRSS_CLARIFY=1                         # ON by default: ask-first scope gate. When an obligation
+                                       # question omits the decisive actor role, CRSS asks which
+                                       # role before answering instead of silently assuming one.
+                                       # Set to 0 to disable (always answer single-shot).
 ```
+
+**Ask-first scope gate** (`application/_scoping.py`, deterministic, no LLM):
+actor role is the backbone of every EU compliance answer (and the audit loop's
+first check), yet users rarely state it because they do not know it is the
+decisive variable. After routing, if an *obligation-focused* question has **no
+detected actor role** and at least one role-partitioned regulation in scope,
+CRSS emits a `clarify` event (slot + framework-scoped candidate roles + a legal
+rationale) and a `done` event carrying the rendered question, then stops — it
+does **not** retrieve or generate. The gate stays silent for definition/
+provision-lookup/community-overview routes, when a role is already present, or
+when no real options exist. The loop closes via the existing standalone-question
+rewrite: the user's reply ("I'm the deployer") is folded back into the original
+question on the next turn, the role is detected, and the role-aware answer flows
+— so chat clients must append the clarification turn to `history`.
+
+Faithfulness verification is deterministic (no LLM call). Its corpus mirrors the
+full REGULATORY CONTEXT — provisions, the definitions block, and interpretive
+guidance lines. Matching is graduated into three tiers so a trivial rewording is
+not treated like a fabrication: **exact** (verbatim substring) → kept silently;
+**near-verbatim** (grounded with minor wording differences, e.g. a dropped "the";
+high character recall + a long contiguous matching span) → kept with a light
+"verify exact wording" note; **absent** (cannot be grounded) → stripped from the
+answer with a loud flag. Normalisation folds the hyphen/dash family and
+apostrophe variants so orthographic edits ("machine-readable" vs "machine
+readable") never cause a false flag.
+
+Grounding alone (does this text exist *somewhere* in context?) is not enough
+once the retriever force-loads a whole obligation cluster: the LLM can then dump
+a wall of real provision text concatenated under a single citation, and every
+fragment verifies individually. Two structural guards run on already-grounded
+quotes and **remove** offenders under a distinct **ATTRIBUTION FLAG** (kept
+separate from the fabrication flag, since the text is real but displaced):
+**concatenation** — a single quote drawing a long contiguous span from more than
+two distinct provisions is a dump, not a quotation; **misattribution** — a quote
+whose text is absent from the specific provision its nearest `[Article X]` label
+cites (parent articles count, e.g. Article 43 grounds an `Article 43(4)` cite).
+Misattribution stays silent when the cited provision was never retrieved, so it
+cannot adjudicate and never false-flags.
 
 Retrieval combines a dense (cosine) channel with a lexical (Neo4j BM25 full-text)
 channel fused via Reciprocal Rank Fusion; an optional cross-encoder reranker runs
@@ -149,6 +195,7 @@ The agent is decomposed across private sub-modules, all re-exported from `applic
 | Module | Responsibility |
 |---|---|
 | `_routing.py` | Deterministic question classification into `_QuestionRoute` (no LLM) |
+| `_scoping.py` | Ask-first scope gate: detect a missing decisive actor role and clarify before answering (no LLM) |
 | `_definitions.py` | Detect defined terms in the question; expand via provision graph |
 | `_retrieval.py` | Orchestrate vector + graph retrieval; HyDE query expansion; corrective passes |
 | `_context.py` | Assemble structured context string (definitions, provisions, cross-refs) |

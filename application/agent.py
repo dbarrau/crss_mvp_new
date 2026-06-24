@@ -72,6 +72,10 @@ from application._definitions import (                   # noqa: F401
     _detect_defined_terms,
     _expand_definitions_from_provisions,
 )
+from application._scoping import (                        # noqa: F401
+    assess_scope as _assess_scope,
+    render_clarification_markdown as _render_clarification_markdown,
+)
 from application._retrieval import (                     # noqa: F401
     _hyde_query,
     _merge_unique_provisions,
@@ -330,6 +334,43 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
             "id": "route",
             "label": f"Route: {route.label} — {route.rationale}",
         }
+
+        # --- 2b. Ask-first scope gate ---
+        # When an obligation question omits the decisive actor role, ask for it
+        # before retrieving/generating rather than silently assuming a role
+        # (the backbone of every compliance answer). Deterministic; no LLM.
+        if os.environ.get("CRSS_CLARIFY", "1") != "0":
+            scope = _assess_scope(
+                retrieval_question,
+                route_id=route.id,
+                target_celexes=target_celexes,
+                role_specs=role_specs,
+                explicit_refs=explicit_refs,
+                is_definition_question=is_def_q,
+            )
+            if scope.needs_clarification and scope.clarification is not None:
+                clar = scope.clarification
+                logger.info("Scope gate: asking for missing slot %r", clar.slot)
+                yield {
+                    "type": "clarify",
+                    "slot": clar.slot,
+                    "question": clar.question,
+                    "rationale": clar.rationale,
+                    "options": [
+                        {
+                            "label": o.label,
+                            "value": o.value,
+                            "frameworks": o.frameworks,
+                        }
+                        for o in clar.options
+                    ],
+                }
+                yield {
+                    "type": "done",
+                    "answer": _render_clarification_markdown(clar),
+                    "clarification": True,
+                }
+                return
 
         # --- 3. Route-specific retrieval ---
         retrieval_result = _retrieve_route_provisions(
@@ -832,24 +873,27 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
 
         # --- 7d. Faithfulness verification (deterministic, no LLM call) ---
         # Verify every verbatim quote in the answer appears in the retrieved
-        # corpus.  Flag mode prepends a warning block listing unverified
-        # quotes.  Off by default — opt in with CRSS_FAITHFULNESS_CHECK=1
-        # (flag) or =2 (strict; currently same behaviour, reserved for a
-        # future single re-prompt loop).
-        _faith_mode = _faithfulness_mode(os.environ.get("CRSS_FAITHFULNESS_CHECK"))
+        # corpus (provisions + definitions + interpretive guidance).  ON by
+        # default: unverified quotes are redacted and a warning block is
+        # prepended.  Disable with CRSS_FAITHFULNESS_CHECK=0; =2 reserved for a
+        # future single re-prompt loop (currently same behaviour as flag mode).
+        _faith_mode = _faithfulness_mode(os.environ.get("CRSS_FAITHFULNESS_CHECK", "1"))
         if _faith_mode >= 1 and full_answer:
             try:
-                _faith_report = _check_faithfulness(full_answer, provisions)
-                if not _faith_report.ok:
-                    # Enforce deterministic redaction so unverified verbatim
-                    # quotations never survive in user-facing output.
+                _faith_report = _check_faithfulness(full_answer, provisions, definitions)
+                if not _faith_report.ok or _faith_report.near_verbatim:
+                    # Redact only genuinely divergent quotes (near-verbatim ones
+                    # are grounded and stay); surface both tiers in the block.
                     full_answer = _remove_unverified_quotes(full_answer, _faith_report)
                     _faith_block = _build_faithfulness_warning(_faith_report)
                     if _faith_block:
                         full_answer = f"{_faith_block}\n\n{full_answer}"
                     logger.info(
-                        "Faithfulness check flagged %d/%d quote(s)",
+                        "Faithfulness check: %d fabricated, %d misattributed, "
+                        "%d near-verbatim, of %d quote(s)",
                         _faith_report.unverified_count,
+                        _faith_report.misattributed_count,
+                        _faith_report.near_verbatim_count,
                         _faith_report.total_quotes,
                     )
                 else:
@@ -869,7 +913,7 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
         _faith_report_for_conf = None
         if _faith_mode >= 1 and full_answer:
             try:
-                _faith_report_for_conf = _check_faithfulness(full_answer, provisions)
+                _faith_report_for_conf = _check_faithfulness(full_answer, provisions, definitions)
             except Exception:
                 pass
         _had_pointer_expansion = any(

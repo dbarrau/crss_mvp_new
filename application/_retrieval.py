@@ -58,6 +58,22 @@ _STATUS_ANCHOR_ROUTES: frozenset[str] = frozenset({
     "cross_regulation",
 })
 
+# Deterministic obligation set that a high-risk AI Act classification triggers.
+# The classification_chain reasoning edges reach most of these, but miss the
+# Section-3 provider duties (notably Article 20 corrective actions) and the
+# dependent annexes (Article 11 → Annex IV; Article 43 → Annex VI/VII).  The
+# prompt asks the LLM to enumerate the *complete* statutory obligation set, so
+# any of these absent from context get backfilled from training memory — the
+# root cause of unverified obligation quotes.  Force-retrieving the fixed set
+# closes that gap (provisions already present are deduped on merge).
+_AI_ACT_HIGH_RISK_BACKBONE_REFS: tuple[str, ...] = (
+    "Article 9", "Article 10", "Article 11", "Article 12", "Article 13",
+    "Article 14", "Article 15", "Article 16", "Article 17", "Article 18",
+    "Article 19", "Article 20", "Article 21", "Article 43", "Article 47",
+    "Article 48", "Article 49", "Article 72", "Article 73",
+    "Annex IV", "Annex VI", "Annex VII",
+)
+
 # ---------------------------------------------------------------------------
 # HyDE query generation
 # ---------------------------------------------------------------------------
@@ -496,6 +512,25 @@ def _retrieve_route_provisions(
             for p in uncovered_results:
                 if p.get("article_id") not in {cp.get("article_id") for cp in chain_provisions}:
                     chain_provisions.append(p)
+
+        # Force-retrieve the full AI Act high-risk obligation backbone whenever
+        # the AI Act is in scope on this route.  The reasoning-edge traversal
+        # reaches most obligation articles but misses the Section-3 provider
+        # duties and the dependent annexes; without them present, the LLM
+        # backfills real law from training memory (unverified obligation
+        # quotes).  Provisions already in chain_provisions are deduped on merge.
+        if not target_celexes or "32024R1689" in target_celexes:
+            backbone_targets = [
+                _ProvisionLookupTarget(ref=ref, celexes=frozenset({"32024R1689"}))
+                for ref in _AI_ACT_HIGH_RISK_BACKBONE_REFS
+            ]
+            backbone_provisions = _retrieve_lookup_targets(retriever, backbone_targets)
+            added = _merge_unique_provisions(chain_provisions, backbone_provisions)
+            if added:
+                logger.info(
+                    "classification_chain: force-retrieved %d high-risk "
+                    "obligation backbone provision(s).", added,
+                )
 
         if chain_provisions:
             provisions = chain_provisions
