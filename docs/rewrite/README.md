@@ -57,6 +57,16 @@ net says new ≥ old.
   - [ ] Thread a `Scenario` through `ask_stream`'s detection stage.
 - **Phase 2 — retrieval core + expanders** *(in progress)* — graph-derive the
   obligation set, then delete the hardcodes it duplicated. Landed:
+  - [x] **A1** — folded `_retrieve_route_provisions`'s `if route.id == …` ladder
+        into named idempotent expanders + a thin four-phase orchestrator (277 →
+        124 LOC, behaviour-neutral); extended the retrieval net to drive the full
+        sufficiency + corrective pipeline (`86e4aa2`) so the corrective pass is
+        gateable; then folded the corrective pass (A4) to re-run those expanders
+        via one channel-aware `_recover`, collapsing the duplicate missing-CELEX
+        branches (`9e09e0c`, `8652328`, behaviour-exact). The rigid route→expander
+        *table* (A1.2) was intentionally not built — the phase structure already
+        is the "thin policy" end state. A5 (audit gap-retrieve) folds next on the
+        same pattern, now gateable.
   - [x] **A2** — `retrieve_by_roles` relevance-ranks the role's `OBLIGATION_OF`
         set (article-preferred, celex-scoped, guaranteed cap) instead of an
         arbitrary first-k; celex filter pushed into the Cypher before its LIMIT

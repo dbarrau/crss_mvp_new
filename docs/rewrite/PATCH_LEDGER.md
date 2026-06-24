@@ -27,11 +27,11 @@ of idempotent expanders under one budget and one dedup.
 
 | # | Patch | Location | Failure it fixed | Disposition |
 |---|---|---|---|---|
-| A1 | `_retrieve_route_provisions` (route-branched retrieval) | `_retrieval.py:370` (~400 LOC of `if route.id == …`) | Different question types need different seeds/expansions | **FOLD** → routes become thin *policies* selecting expanders; the branching dissolves |
+| A1 | `_retrieve_route_provisions` (route-branched retrieval) | `_retrieval.py` (~277 LOC of `if route.id == …`) | Different question types need different seeds/expansions | **FOLDED** (`9e09e0c`, `8652328`) → each mechanism is now a named idempotent expander; the orchestrator is a thin policy sequencing them in four phases (seed → role → primary bag → merge → safety net), 277 → 124 LOC; the corrective pass re-runs the same primitives (A4) instead of a parallel codepath |
 | A2 | Obligation-backbone force-retrieval (`_get_obligation_backbone_refs`) | `_retrieval.py:231` + `_OBLIGATION_MASTER_ARTICLES` `_config.py:203` | Role obligation questions missed the statutory anchor articles | **DERIVE** → `RoleExpander` traverses `OBLIGATION_OF` from the role node |
 | A3 | AI-Act high-risk backbone (`_AI_ACT_HIGH_RISK_BACKBONE_REFS`) | `_retrieval.py:69` | Class-IIb-SaMD benchmark: obligation cluster not retrieved when `role_specs` empty | **DERIVED & DELETED** (`8213f88`) → completed Article 6's `TRIGGERS_OBLIGATION_CLUSTER` (added Art 17-21 + Annex IV/VI/VII to the curated chain); `retrieve_by_chain` now reproduces the full list, hardcode gone |
-| A4 | Corrective retrieval pass (`_run_corrective_retrieval_pass`) | `_retrieval.py:1006` | Selected route retrieved insufficient evidence | **FOLD** → re-run `RetrievalPlan` with added seeds; not a parallel codepath |
-| A5 | Audit gap-retrieve (`_gap_retrieve`) | `_audit.py:244` | Auditor names a missing provision/topic to close a backbone gap | **FOLD** → same `RetrievalPlan` re-run; auditor supplies seeds, not a private retriever path |
+| A4 | Corrective retrieval pass (`_run_corrective_retrieval_pass`) | `_retrieval.py` | Selected route retrieved insufficient evidence | **FOLDED** (`8652328`) → each recovery re-runs a retrieval primitive/expander with sufficiency-gap seeds through one channel-aware `_recover`; duplicate cross_reg/legal_qual missing-CELEX branches collapsed; behaviour-exact on the extended net |
+| A5 | Audit gap-retrieve (`_gap_retrieve`) | `_audit.py:244` | Auditor names a missing provision/topic to close a backbone gap | **FOLD (pending)** → same pattern as A4: auditor supplies seeds, re-run the expanders. Gate on the extended net (now drives sufficiency + corrective) before touching |
 | A6 | Definition anchor force-injection (`_ANCHOR_DEFINITION_TERMS`) | `_definitions.py:28` | Short foundational terms ("ai system") lost the 15-term cap race → training-memory fallback | **KEEP** (was FOLD) — genuine curation, *not* edge-derivable (see verdict); relocate into a `DefinitionExpander` in Phase 3, don't delete |
 
 > **A6 — empirical verdict (KEEP, not a delete target).** `_ANCHOR_DEFINITION_TERMS`
@@ -52,6 +52,46 @@ of idempotent expanders under one budget and one dedup.
 > CRSS" the rewrite targets largely disappear. Net check: the
 > Class-IIb-SaMD case must retrieve the same obligation cluster via A2/A3's
 > graph-derived expanders as the hardcoded lists do today.
+
+> **A1 — FOLDED (commits `9e09e0c` extract, `8652328` corrective).** Done in
+> three gated steps, each proven on the deterministic retrieval net:
+> 1. **Extract** — every inline "pull more provisions" mechanism became a named
+>    idempotent expander (`_expand_legal_qualification_backbone`,
+>    `_inject_gdpr_cross_reg_backbone`, `_expand_classification_chain`,
+>    `_expand_community_summary`, `_expand_hyde_vector`,
+>    `_inject_prohibited_practices_safety_net`). The orchestrator is now a thin
+>    policy sequencing them in four phases (seed → role → primary bag → merge →
+>    safety net), 277 → 124 LOC. Behaviour-neutral: net `--diff` +0/-0/0. Also
+>    dropped the dead `curated_provisions` return field (computed, never read)
+>    and an unused `get_obligation_chain` import.
+> 2. **Extend the net (prerequisite)** — `_run_case` stopped at
+>    `_retrieve_route_provisions`, so the deterministic net never exercised
+>    `_evaluate_route_sufficiency` / `_run_corrective_retrieval_pass` — the
+>    answer-affecting stages A4/A5 must be gated on. Those stages are
+>    deterministic under the LLM stubs (sufficiency uses no LLM; the corrective
+>    pass's only LLM hook is HyDE, stubbed), so the net now drives the full
+>    `ask_stream` pipeline. Recall is monotonic (corrective only adds) so the
+>    gate cannot weaken — still 20/20; TC_012 now exercises the status-anchor
+>    recovery deterministically (`86e4aa2`).
+> 3. **Fold A4** — the corrective pass's seven recoveries collapse onto one
+>    channel-aware `_recover` closure (merge + log + recompute only when
+>    something lands) + a `_targets` helper; the byte-identical cross_reg /
+>    legal_qual missing-CELEX branches merge into one. Behaviour-**exact** on the
+>    extended net (TC_012 recovers identically).
+>
+> **A1.2 (route→expander *table*) — intentionally not built.** The phase-
+> structured orchestrator already is the "thin policy, branching dissolved" end
+> state the disposition asks for. A rigid declarative table would have to encode
+> the genuinely non-uniform route policies (which seed channels, which primary
+> expander, the merge-prepend phase, the `should_run_hyde` predicate) — a config
+> DSL that reads *worse* than the current phase structure. Reframed as achieved.
+>
+> **LOC honesty.** `_retrieval.py` is ~+115 net across A1: extraction adds
+> function signatures + preserves the file's heavy comment density (CLAUDE.md:
+> match surrounding comment density). The *debt* — overlapping mechanisms,
+> duplicated corrective branches, dead channel/import — went down; raw LOC ticked
+> up on boilerplate, which an extraction refactor cannot avoid. The campaign's
+> raw-LOC reductions come from the deletions (B1 −211, B2, GPAI), not A1.
 
 > **A2 — empirical proof (TC_011, post-reset baseline).** Question: *"baseline
 > obligations for providers of general-purpose AI models"* (GPAI = Art 3(63)).

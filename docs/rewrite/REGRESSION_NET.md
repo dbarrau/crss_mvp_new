@@ -76,6 +76,14 @@ quality sets:
       aggregate (`fabricated_total` / `misattributed_total` / `near_verbatim_total`).
 - [x] Add baseline-snapshot + `--diff` mode to `eval_retrieval.py`
       (`--snapshot PATH` / `--diff PATH`, stable provision-id identity).
+- [x] **Extend the retrieval net to the full `ask_stream` pipeline** (`86e4aa2`).
+      `_run_case` stopped at `_retrieve_route_provisions`; it now also runs
+      definition expansion → `_evaluate_route_sufficiency` → the bounded
+      corrective pass, all deterministic under the LLM stubs (HyDE stubbed;
+      sufficiency uses no LLM). This closes gap #3 *and* makes the
+      sufficiency/corrective stages — the A4/A5 fold targets — deterministically
+      gateable. Recall is monotonic (corrective only adds), so the gate cannot
+      weaken; TC_012 now exercises the status-anchor recovery (8→10 provisions).
 - [x] **Capture the pre-Phase-2 baseline** (live Neo4j + Mistral). Captured on
       `read-path-rewrite@HEAD` — *not* literal `main` — so `--diff` isolates the
       Phase-2 retrieval deltas rather than folding in this session's
