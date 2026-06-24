@@ -345,6 +345,28 @@ def _detect_modality(text: str, title: str | None) -> str | None:
     return None
 
 
+def _title_is_role_named(title: str, role_regex: re.Pattern) -> bool:
+    """True when a provision's title is essentially just an actor-role name.
+
+    An article titled exactly "Authorised representative" is that role's duty
+    article even when its first sentence is a conditional ("Where the
+    manufacturer ... designates a sole authorised representative") with no
+    leading modal — so ``_detect_modality`` returns None and the article is
+    otherwise skipped. Firing only when the role term spans essentially the
+    whole title (allowing a leading/trailing article) keeps this from
+    over-linking longer titles such as "Obligations of importers", which the
+    "obligation" keyword path already covers.
+    """
+    if not title:
+        return False
+    t = title.strip().lower()
+    m = role_regex.search(t)
+    if not m:
+        return False
+    remainder = (t[: m.start()] + t[m.end():]).strip(" .,:;-")
+    return remainder in ("", "the", "a", "an")
+
+
 def _build_obligation_edges(
     actor_terms: list[dict[str, Any]],
     provisions: list[dict[str, Any]],
@@ -365,15 +387,28 @@ def _build_obligation_edges(
         title = prov.get("title") or ""
         sentence = _first_sentence(strip_context_prefix(prov.get("text")))
         modality = _detect_modality(sentence, title)
-        if not modality:
-            continue
         title_lower = title.lower()
         for role in candidates:
             role_in_title = bool(title and role["term_regex"].search(title_lower))
             role_in_sentence = bool(role["term_regex"].search(sentence))
             if not role_in_title and not role_in_sentence:
                 continue
-            if role_in_title and "obligation" not in title_lower and not role_in_sentence:
+            # A provision whose title *is* this role's name is its duty article
+            # even when the first sentence carries no modal (e.g. MDR Art 11
+            # "Authorised representative"). This supplies the obligation modality
+            # only for the role the title names — a different role merely
+            # mentioned in the sentence stays unlinked.
+            eff_modality = modality
+            if eff_modality is None and _title_is_role_named(title, role["term_regex"]):
+                eff_modality = "obligation"
+            if eff_modality is None:
+                continue
+            if (
+                role_in_title
+                and "obligation" not in title_lower
+                and not role_in_sentence
+                and not _title_is_role_named(title, role["term_regex"])
+            ):
                 continue
             pair = (prov["id"], role["role_id"])
             if pair in seen:
@@ -382,7 +417,7 @@ def _build_obligation_edges(
             edges.append({
                 "provision_id": prov["id"],
                 "role_id": role["role_id"],
-                "modality": modality,
+                "modality": eff_modality,
                 "cue": "title" if role_in_title and not role_in_sentence else "text",
             })
     return edges

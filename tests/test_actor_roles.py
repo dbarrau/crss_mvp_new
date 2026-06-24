@@ -3,9 +3,68 @@ from canonicalization.role_linker import (
     _build_actor_roles,
     _build_equivalent_edges,
     _build_includes_edges,
+    _build_obligation_edges,
+    _build_role_regex,
     _select_actor_terms,
+    _title_is_role_named,
 )
 from domain.ontology.actor_roles import detect_role_specs
+
+
+# Article 11 of the MDR/IVDR is titled exactly "Authorised representative" and
+# opens with a conditional ("Where the manufacturer ... designates a sole
+# authorised representative") that carries no modal verb, so _detect_modality
+# misses it and the role's core duty article went unlinked. A title that *is*
+# the role name supplies the obligation modality.
+_AR_ART_11_TEXT = (
+    "Where the manufacturer of a device is not established in a Member State, "
+    "the device may only be placed on the Union market if the manufacturer "
+    "designates a sole authorised representative."
+)
+
+
+def test_title_is_role_named_fires_only_on_bare_role_title():
+    ar_regex = _build_role_regex("authorised representative")
+    importer_regex = _build_role_regex("importer")
+    manufacturer_regex = _build_role_regex("manufacturer")
+    assert _title_is_role_named("Authorised representative", ar_regex)
+    assert _title_is_role_named("The authorised representative", ar_regex)
+    # Titles already covered by the "obligation" keyword path must not fire here.
+    assert not _title_is_role_named("Obligations of importers", importer_regex)
+    assert not _title_is_role_named(
+        "General obligations of manufacturers", manufacturer_regex
+    )
+    assert not _title_is_role_named("", ar_regex)
+
+
+def test_build_obligation_edges_links_role_named_title_without_modal():
+    actor_terms = [
+        {
+            "term_normalized": "authorised_representative",
+            "celex": "32017R0745",
+            "term": "authorised representative",
+        },
+        {
+            "term_normalized": "manufacturer",
+            "celex": "32017R0745",
+            "term": "manufacturer",
+        },
+    ]
+    provisions = [{
+        "id": "32017R0745_art_11",
+        "celex": "32017R0745",
+        "title": "Authorised representative",
+        "text": _AR_ART_11_TEXT,
+    }]
+
+    edges = _build_obligation_edges(actor_terms, provisions)
+    linked_roles = {e["role_id"] for e in edges}
+
+    # The article's named role is linked …
+    assert "32017R0745::role::authorised_representative" in linked_roles
+    # … but a different role merely mentioned in the sentence is not.
+    assert "32017R0745::role::manufacturer" not in linked_roles
+    assert all(e["modality"] == "obligation" for e in edges)
 
 
 def test_detect_role_specs_resolves_hospital_to_deployer_and_users():
