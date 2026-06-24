@@ -227,12 +227,35 @@ over the typed `Evidence` set.
 
 | # | Patch | Location / flag | Purpose | Disposition |
 |---|---|---|---|---|
-| C1 | Faithfulness check (fabricated/near) | `_faithfulness.py`, `CRSS_FAITHFULNESS_CHECK` | Redact ungrounded quotes | **KEEP** → into `verify.py` |
-| C2 | Attribution guard (concatenation/misattribution) | `_faithfulness.py`, this session | Catch grounded-but-displaced text | **KEEP** → into `verify.py`; first brick of proof-carrying answers |
-| C3 | Backbone self-check | `agent.py:803`, `CRSS_BACKBONE_SELFCHECK` | Validate the obligation backbone is present | **KEEP/REVIEW** — may be redundant once backbone is graph-derived (A2/A3) |
-| C4 | Citation-scope check | `agent.py:848`, `CRSS_CITATION_SCOPE_CHECK` | Flag cited refs absent from context | **KEEP** → into `verify.py` |
-| C5 | Confidence scoring | `_confidence.py` | 5-component composite | **KEEP** → reads `Evidence` provenance directly |
-| C6 | Ask-first scope gate | `_scoping.py`, `CRSS_CLARIFY` | Clarify missing decisive actor role | **KEEP** → into `scenario.py` (it is a scenario-completeness check) |
+| C1 | Faithfulness check (fabricated/near) | `_faithfulness.py`, `CRSS_FAITHFULNESS_CHECK` | Redact ungrounded quotes | **FOLDED** → orchestration now in `verify.py` (logic in `_faithfulness.py` unchanged) |
+| C2 | Attribution guard (concatenation/misattribution) | `_faithfulness.py` | Catch grounded-but-displaced text | **FOLDED** → `verify.py`; first brick of proof-carrying answers |
+| C3 | Backbone self-check | (was `agent.py`, `CRSS_BACKBONE_SELFCHECK`) | Validate the obligation backbone is present | **DELETED** with B1 (`3d44bae`) — redundant once obligations are graph-derived; flag gone |
+| C4 | Citation-scope check | (was `agent.py`), `CRSS_CITATION_SCOPE_CHECK` | Flag cited refs absent from context | **FOLDED** → `verify.py` |
+| C5 | Confidence scoring | `_confidence.py` | 5-component composite | **FOLDED** (orchestration) → `verify.py` calls `compute_confidence`; scorers unchanged |
+| C6 | Ask-first scope gate | `_scoping.py`, `CRSS_CLARIFY` | Clarify missing decisive actor role | **KEEP** → belongs in `scenario.py`, *not* `verify.py`: it is a pre-retrieval scenario-completeness gate, a different phase from post-generation verification |
+
+> **C1/C2/C4/C5 — FOLDED into `application/verify.py`.** The three post-
+> generation blocks that were scattered inline in `ask_stream` (7c citation-
+> scope, 7d faithfulness/attribution, 7e confidence) now run as one
+> `verify_answer(...) -> VerificationResult` stage; `ask_stream` just yields the
+> confidence event from the result. **Behaviour-neutral relocation**: same order
+> (scope → faithfulness → confidence), same env flags read inside `verify.py`,
+> identical redaction/warning/confidence — the underlying `_faithfulness.py` /
+> `_confidence.py` functions are untouched, so their 37 unit tests still pass.
+> The fold also **closes a zero-coverage gap**: the post-gen orchestration had no
+> direct tests; `tests/test_verify.py` (8 deterministic cases over fixed
+> answer + evidence) now pins redaction, the citation-scope note + its single-reg
+> guard, the env toggles, and the confidence shape.
+>
+> **Open follow-up (recorded, not yet taken — answer-affecting).** Confidence's
+> faithfulness input is recomputed on the *post-redaction* answer; since
+> redaction has already removed every fabricated/misattributed quote,
+> `unverified_count` is always 0 there, so the confidence faithfulness component
+> is a **constant 1.0** — dead signal, plus a wasted second `check_faithfulness`
+> call. Computing the report **once** (before redaction) and reusing it for both
+> redaction and confidence would make that component meaningful and remove the
+> redundant call, but it changes confidence numbers and is only quality-net-
+> gateable, so it is left as a separate, user-approved step.
 
 ---
 

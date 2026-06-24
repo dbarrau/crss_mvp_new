@@ -97,4 +97,14 @@ net says new ≥ old.
     `_IMPLICIT_PROVISION_REFS` (small seed/lexical config).
 - **Phase 3 — agent spine**: fold detection into `scenario.py`; route the audit
   gap-fill and corrective pass through `RetrievalPlan`.
+  - [x] **C1/C2/C4/C5 → `verify.py`** — the three scattered post-generation
+        blocks in `ask_stream` (citation-scope, faithfulness/attribution,
+        confidence) folded into one `verify_answer(...) -> VerificationResult`
+        stage; behaviour-neutral relocation (underlying scorers untouched, their
+        37 tests pass) + 8 new deterministic `test_verify.py` cases closing the
+        post-gen orchestration's zero-coverage gap. C3 was already deleted with
+        B1. C6 (ask-first gate) stays for `scenario.py` — a pre-retrieval phase,
+        not verification. Open follow-up: confidence's faithfulness component is
+        a constant 1.0 (recomputed post-redaction); compute-once fix deferred as
+        an answer-affecting, user-approved step (see ledger).
 - **Phase 4 — delete** subsumed patches, hardcoded tables, and dead env flags.
