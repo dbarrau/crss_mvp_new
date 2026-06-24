@@ -66,17 +66,24 @@ table duplicating graph edges.
 |---|---|---|---|---|
 | B1 | `_OBLIGATION_MASTER_ARTICLES` `(role,celex)→[articles]` | `_config.py:203` | `OBLIGATION_OF` edge data, hand-transcribed | **DERIVE** from `ActorRole` → `OBLIGATION_OF` |
 
-> **B1 — empirical verdict (graph diff, captured run).** `OBLIGATION_OF`
-> traversal reproduces *or exceeds* the hardcode for **9 of 13** `(role,celex)`
-> pairs (provider → 9 articles incl. 16+53; MDR manufacturer → 26). It does **not**
-> for 4 — these are genuine canonicalization gaps the table was masking:
-> - GDPR `controller` / `processor`: the `ActorRole` nodes **don't exist** →
->   zero `OBLIGATION_OF` edges (`role_linker` never created GDPR roles).
+> **B1 — empirical verdict (re-measured on the post-reset clean graph, commit
+> `fcfe1f9`).** `OBLIGATION_OF` traversal reproduces *or exceeds* the hardcode for
+> **11 of 13** `(role,celex)` pairs (provider → 9 articles incl. 16+53; MDR
+> manufacturer → 26; GDPR controller → 129 provisions, processor → 61). The
+> first measurement (stale graph, 813 edges) found 4 gaps; the clean rebuild
+> (`role_linker` re-run, 1164 edges) **closed two of them** — the GDPR
+> `controller`/`processor` `ActorRole` nodes now exist with full obligation
+> edges, confirming they were *stale*, not genuinely absent. **One gap remains**:
 > - MDR & IVDR `authorised representative`: node exists but `Article 11` (its
->   core duties) is unlinked.
-> So B1 is ~70% scar tissue, ~30% band-aid. The correct fix is to **complete the
-> graph** (create the GDPR roles + link AR Art 11 in `role_linker`), then delete
-> the table — not to delete the table over a still-incomplete graph.
+>   core duties) stays unlinked — a real `role_linker` heuristic miss
+>   (`_detect_modality` requires a modal in the first sentence; AR Art 11 has a
+>   role-named title but no leading modal). The drafted-then-reverted
+>   `_title_is_role_named` helper is the fix.
+> So B1 is now ~85% scar tissue, ~15% band-aid. The remaining graph-completion
+> step (link AR Art 11) is a small, scoped `role_linker` change — do it as a
+> deliberate Phase-2 task, then delete the table. (Caveat: GDPR controller→129 /
+> processor→61 are paragraph-grained and likely over-linked — a RoleExpander
+> precision concern, not a recall gap.)
 | B2 | `_AI_ACT_HIGH_RISK_BACKBONE_REFS` flat article list | `_retrieval.py:69` | The high-risk obligation cluster | **DERIVE** from reasoning-chain edges (`TRIGGERS_OBLIGATION_CLUSTER`) |
 | B3 | `_GATE_ARTICLES` (classification-chain gate refs) | `_retrieval.py:481` | Entry seeds for the classification traversal | **DERIVE / KEEP-as-seed-config** — small, may stay as a seed policy if not edge-backed |
 | B4 | `_IMPLICIT_PROVISION_REFS` (keyword→canonical ref) | `_config.py:238` | Topic→provision shortcuts (lawful basis→Art 6, etc.) | **KEEP** (relocate) — genuine lexical shortcuts, not graph-derivable; small + tested |
