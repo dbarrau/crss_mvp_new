@@ -284,6 +284,274 @@ def _retrieve_direct_provisions(
     return direct_provisions
 
 
+# ---------------------------------------------------------------------------
+# Retrieval expanders — the idempotent "pull more provisions" units
+#
+# Each expander performs exactly one of the mechanisms that used to live inline
+# in ``_retrieve_route_provisions``'s ``if route.id == …`` ladder. They are the
+# composable substrate the route plan sequences; A1.2 turns that sequencing into
+# a declarative per-route plan, and A1.3 lets the corrective pass re-run the same
+# expanders instead of duplicating their bodies. Each either returns its
+# contribution or merges into a passed-in channel list in place, mirroring the
+# pre-fold call sites exactly so the fold stays behaviour-neutral.
+# ---------------------------------------------------------------------------
+
+
+def _expand_legal_qualification_backbone(
+    question: str,
+    retriever,
+    *,
+    target_celexes: set[str] | None,
+    role_specs: list[tuple[str, str]],
+    explicit_refs: list[str],
+    direct_provisions: list[dict],
+) -> list[_ProvisionLookupTarget]:
+    """Force-retrieve the curated legal-qualification backbone into the direct
+    channel; return the targets (the sufficiency stage consumes them)."""
+    mentioned_regs = {
+        reg_name
+        for reg_name, celex in _REG_NAME_TO_CELEX.items()
+        if target_celexes and celex in target_celexes
+    }
+    targets = _build_legal_qualification_targets(
+        question,
+        mentioned_regs=mentioned_regs,
+        role_specs=role_specs,
+    )
+    curated = _retrieve_lookup_targets(
+        retriever,
+        [target for target in targets if target.ref not in explicit_refs],
+    )
+    _merge_unique_provisions(direct_provisions, curated)
+    return targets
+
+
+def _inject_gdpr_cross_reg_backbone(
+    question: str,
+    retriever,
+    *,
+    target_celexes: set[str] | None,
+    role_specs: list[tuple[str, str]],
+    explicit_refs: list[str],
+    direct_provisions: list[dict],
+) -> None:
+    """Force-retrieve the GDPR backbone for cross-regulation questions.
+
+    The ``legal_qualification`` route already force-retrieves GDPR Articles 4, 6,
+    9, 35 via ``_build_legal_qualification_targets``, but that route only fires
+    when medical-device + AI Act overlap is detected. A GDPR + AI Act or
+    GDPR + MDR cross-reg question (no medical-device signal) routes here instead,
+    and without this the GDPR backbone arrives only by accident via vector
+    retrieval — missing it caps answer quality. Reuses
+    ``_build_legal_qualification_targets`` since it already handles GDPR correctly
+    and is regulation-combination-aware.
+    """
+    mentioned = {
+        reg_name
+        for reg_name, celex in _REG_NAME_TO_CELEX.items()
+        if target_celexes and celex in target_celexes
+    }
+    targets = _build_legal_qualification_targets(
+        question,
+        mentioned_regs=mentioned,
+        role_specs=role_specs,
+    )
+    if not targets:
+        return
+    backbone = _retrieve_lookup_targets(
+        retriever,
+        [target for target in targets if target.ref not in explicit_refs],
+    )
+    added = _merge_unique_provisions(direct_provisions, backbone)
+    if added:
+        logger.info(
+            "Cross-regulation backbone injection (GDPR in scope): "
+            "%d provision(s) force-retrieved.",
+            added,
+        )
+
+
+def _expand_classification_chain(
+    question: str,
+    retriever,
+    *,
+    client: Any,
+    k: int,
+    target_celexes: set[str] | None,
+    hyde_text: str | None,
+    hyde_builder,
+) -> tuple[list[dict], str | None]:
+    """Traverse the classification gate articles for the detected regulations.
+
+    Seeds the chain from well-known classification gates; in-scope CELEXes with
+    no gate entry (notably MDCG guidance, GDPR, implementing regs) are covered by
+    a scoped vector pass so a named source still reaches context. Falls back to a
+    plain HyDE vector pass when no graph edges resolve. Returns the provisions
+    and the (possibly newly built) HyDE text.
+    """
+    chain_provisions: list[dict] = []
+
+    # Map detected regulations to their primary classification gate articles.
+    _GATE_ARTICLES: dict[str, list[str]] = {
+        "32024R1689": ["Article 6", "Article 51", "Article 5"],
+        "32017R0745": ["Article 52", "Article 10"],
+        "32017R0746": ["Article 48", "Article 10"],
+    }
+    for celex, gate_refs in _GATE_ARTICLES.items():
+        if target_celexes and celex not in target_celexes:
+            continue
+        chain_results = retriever.retrieve_by_chain(gate_refs, celex)
+        for p in chain_results:
+            if p.get("article_id") not in {cp.get("article_id") for cp in chain_provisions}:
+                chain_provisions.append(p)
+
+    # In-scope CELEXes that have no entry in _GATE_ARTICLES (notably MDCG
+    # guidance documents, but also GDPR and implementing regulations) would
+    # otherwise be silently dropped on this route — the gate-article loop only
+    # knows how to traverse MDR/IVDR/AI-Act classification chains. When the user
+    # explicitly scopes the question to such a document, retrieve it via a scoped
+    # vector pass so the named source actually reaches the context.
+    uncovered_celexes = (target_celexes or set()) - set(_GATE_ARTICLES)
+    if uncovered_celexes:
+        if hyde_text is None:
+            hyde_text = hyde_builder(question, client)
+        hyde_vec = retriever.encode_as_passage(hyde_text)
+        uncovered_results = retriever.retrieve(
+            question,
+            k=k,
+            target_celexes=uncovered_celexes,
+            query_vec=hyde_vec,
+        )
+        for p in uncovered_results:
+            if p.get("article_id") not in {cp.get("article_id") for cp in chain_provisions}:
+                chain_provisions.append(p)
+
+    if chain_provisions:
+        return chain_provisions, hyde_text
+
+    # No graph edges loaded yet — fall back to HyDE
+    logger.debug("classification_chain: no graph edges found, falling back to HyDE")
+    if hyde_text is None:
+        hyde_text = hyde_builder(question, client)
+    hyde_vec = retriever.encode_as_passage(hyde_text)
+    provisions = retriever.retrieve(
+        question,
+        k=k,
+        target_celexes=target_celexes,
+        query_vec=hyde_vec,
+    )
+    return provisions, hyde_text
+
+
+def _expand_community_summary(
+    question: str,
+    retriever,
+    *,
+    client: Any,
+    target_celexes: set[str] | None,
+    role_specs: list[tuple[str, str]],
+) -> list[dict]:
+    """Breadth-first community retrieval: decompose into sub-questions so each
+    obligation tier gets an independent slot, then pin the detected roles'
+    complete ``OBLIGATION_OF`` set so niche obligation articles (e.g. GPAI
+    Art 53/55) are never lost to the vector contest.
+    """
+    _k_comm = 30
+    sub_questions = _decompose_question(question, client)
+    logger.debug(
+        "community_summary_search: decomposed into %d sub-questions: %s",
+        len(sub_questions), sub_questions,
+    )
+    # Distribute k budget across sub-questions; floor at 5 so thin sub-queries
+    # still get meaningful community coverage.
+    per_q_k = max(5, _k_comm // len(sub_questions))
+
+    seen_article_ids: set[str | None] = set()
+    provisions: list[dict] = []
+    for sq in sub_questions:
+        sq_vec = retriever.encode_as_query(sq)
+        sq_provisions = retriever.retrieve_by_communities_hierarchical(
+            sq,
+            k_communities=per_q_k,
+            k_provisions=per_q_k * 3,
+            target_celexes=target_celexes,
+            query_vec=sq_vec,
+        )
+        for p in sq_provisions:
+            aid = p.get("article_id")
+            if aid not in seen_article_ids:
+                seen_article_ids.add(aid)
+                provisions.append(p)
+
+    # Pin the detected roles' statutory obligations via the same graph traversal
+    # the role routes use (A2). This breadth route owes completeness, so it takes
+    # the role's *complete* article obligation set (high k lifts the cap past the
+    # largest role's article count; query_vec only orders the set), not a
+    # relevance-capped top-k that would drop niche articles like GPAI
+    # systemic-risk Art 55.
+    if role_specs:
+        comm_role_obligations = retriever.retrieve_by_roles(
+            role_specs,
+            k=40,
+            query_vec=retriever.encode_as_query(question),
+            target_celexes=target_celexes,
+        )
+        for p in comm_role_obligations:
+            aid = p.get("article_id")
+            if aid not in seen_article_ids:
+                seen_article_ids.add(aid)
+                provisions.append(p)
+    return provisions
+
+
+def _expand_hyde_vector(
+    question: str,
+    retriever,
+    *,
+    client: Any,
+    k: int,
+    target_celexes: set[str] | None,
+    hyde_builder,
+) -> tuple[list[dict], str]:
+    """Single HyDE-expanded vector pass — the general retrieval default."""
+    hyde_text = hyde_builder(question, client)
+    hyde_vec = retriever.encode_as_passage(hyde_text)
+    provisions = retriever.retrieve(
+        question,
+        k=k,
+        target_celexes=target_celexes,
+        query_vec=hyde_vec,
+    )
+    return provisions, hyde_text
+
+
+def _inject_prohibited_practices_safety_net(
+    question: str,
+    retriever,
+    *,
+    target_celexes: set[str] | None,
+    provisions: list[dict],
+) -> None:
+    """For AI Act prohibition-focused questions, force-include Article 5 so
+    quote/citation checks validate against retrieved text."""
+    if not _is_ai_act_prohibited_practices_question(question, target_celexes):
+        return
+    has_article_5 = any(
+        p.get("celex") == _AI_ACT_CELEX
+        and (p.get("article_ref") or "") == "Article 5"
+        for p in provisions
+    )
+    if has_article_5:
+        return
+    art5 = retriever.retrieve_by_refs(["Article 5"], celex_filter={_AI_ACT_CELEX})
+    added = _merge_unique_provisions(provisions, art5, prepend=True)
+    if added:
+        logger.info(
+            "AI Act prohibited-practices safety net: injected Article 5 "
+            "for prohibition-focused question.",
+        )
+
+
 def _retrieve_route_provisions(
     question: str,
     retriever,
@@ -296,14 +564,19 @@ def _retrieve_route_provisions(
     role_specs: list[tuple[str, str]],
     hyde_builder=_hyde_query,
 ) -> dict[str, Any]:
-    """Execute the retrieval plan selected by the deterministic router."""
+    """Execute the retrieval plan selected by the deterministic router.
+
+    The route is a thin *policy* over the expanders defined above: it selects
+    which seeds and which primary-bag expander run, in four phases —
+    seed (direct + curated channels) → role → primary bag → merge → safety net.
+    """
     direct_provisions: list[dict] = []
-    curated_provisions: list[dict] = []
     role_provisions: list[dict] = []
     provisions: list[dict] = []
     hyde_text: str | None = None
     legal_qualification_targets: list[_ProvisionLookupTarget] = []
 
+    # ── Seed phase: direct refs + curated backbones into the direct channel ──
     if route.id in {"provision_lookup", "cross_regulation", "legal_qualification"}:
         direct_provisions = _retrieve_direct_provisions(
             question,
@@ -315,60 +588,27 @@ def _retrieve_route_provisions(
             provisions = list(direct_provisions)
 
     if route.id == "legal_qualification":
-        mentioned_regs = {
-            reg_name
-            for reg_name, celex in _REG_NAME_TO_CELEX.items()
-            if target_celexes and celex in target_celexes
-        }
-        legal_qualification_targets = _build_legal_qualification_targets(
+        legal_qualification_targets = _expand_legal_qualification_backbone(
             question,
-            mentioned_regs=mentioned_regs,
-            role_specs=role_specs,
-        )
-        curated_provisions = _retrieve_lookup_targets(
             retriever,
-            [
-                target
-                for target in legal_qualification_targets
-                if target.ref not in explicit_refs
-            ],
+            target_celexes=target_celexes,
+            role_specs=role_specs,
+            explicit_refs=explicit_refs,
+            direct_provisions=direct_provisions,
         )
-        _merge_unique_provisions(direct_provisions, curated_provisions)
 
-    # GDPR backbone injection for cross-regulation questions.
-    # The legal_qualification route already force-retrieves GDPR Articles 4, 6,
-    # 9, 35 via _build_legal_qualification_targets, but that route only fires
-    # when medical-device + AI Act overlap is detected.  A GDPR + AI Act or
-    # GDPR + MDR cross-reg question (no medical-device signal) routes here
-    # instead, and without this block the GDPR backbone arrives only by
-    # accident via vector retrieval — missing it caps the answer quality.
-    # Reuses _build_legal_qualification_targets since it already handles GDPR
-    # correctly and is regulation-combination-aware.
     _GDPR_CELEX = "32016R0679"
     if route.id == "cross_regulation" and target_celexes and _GDPR_CELEX in target_celexes:
-        _cross_reg_mentioned = {
-            reg_name
-            for reg_name, celex in _REG_NAME_TO_CELEX.items()
-            if celex in target_celexes
-        }
-        _cross_reg_targets = _build_legal_qualification_targets(
+        _inject_gdpr_cross_reg_backbone(
             question,
-            mentioned_regs=_cross_reg_mentioned,
+            retriever,
+            target_celexes=target_celexes,
             role_specs=role_specs,
+            explicit_refs=explicit_refs,
+            direct_provisions=direct_provisions,
         )
-        if _cross_reg_targets:
-            _cross_reg_backbone = _retrieve_lookup_targets(
-                retriever,
-                [t for t in _cross_reg_targets if t.ref not in explicit_refs],
-            )
-            added = _merge_unique_provisions(direct_provisions, _cross_reg_backbone)
-            if added:
-                logger.info(
-                    "Cross-regulation backbone injection (GDPR in scope): "
-                    "%d provision(s) force-retrieved.",
-                    added,
-                )
 
+    # ── Role channel ─────────────────────────────────────────────────────────
     if route.id in {"role_obligations", "cross_regulation", "legal_qualification"} and role_specs:
         role_provisions = retriever.retrieve_by_roles(
             role_specs, k=max(6, k // 2),
@@ -391,172 +631,53 @@ def _retrieve_route_provisions(
         or route.id == "definition_lookup"
     )
 
+    # ── Primary-bag phase: exactly one expander produces the main bag ────────
     if route.id == "classification_chain":
-        # Determine the classification gate articles for the detected regulations.
-        # Seed the chain from well-known classification gates; fall back to
-        # vector retrieval when no gate can be inferred.
-        from domain.ontology.legal_reasoning_chains import get_obligation_chain
-        chain_provisions: list[dict] = []
-
-        # Map detected regulations to their primary classification gate articles.
-        _GATE_ARTICLES: dict[str, list[str]] = {
-            "32024R1689": ["Article 6", "Article 51", "Article 5"],
-            "32017R0745": ["Article 52", "Article 10"],
-            "32017R0746": ["Article 48", "Article 10"],
-        }
-        for celex, gate_refs in _GATE_ARTICLES.items():
-            if target_celexes and celex not in target_celexes:
-                continue
-            chain_results = retriever.retrieve_by_chain(gate_refs, celex)
-            for p in chain_results:
-                if p.get("article_id") not in {cp.get("article_id") for cp in chain_provisions}:
-                    chain_provisions.append(p)
-
-        # In-scope CELEXes that have no entry in _GATE_ARTICLES (notably MDCG
-        # guidance documents, but also GDPR and implementing regulations) would
-        # otherwise be silently dropped on this route — the gate-article loop
-        # only knows how to traverse MDR/IVDR/AI-Act classification chains.
-        # When the user explicitly scopes the question to such a document (e.g.
-        # "How does MDCG 2019-11 classify standalone software?"), retrieve it via
-        # a scoped vector pass so the named source actually reaches the context.
-        uncovered_celexes = (target_celexes or set()) - set(_GATE_ARTICLES)
-        if uncovered_celexes:
-            if hyde_text is None:
-                hyde_text = hyde_builder(question, client)
-            hyde_vec = retriever.encode_as_passage(hyde_text)
-            uncovered_results = retriever.retrieve(
-                question,
-                k=k,
-                target_celexes=uncovered_celexes,
-                query_vec=hyde_vec,
-            )
-            for p in uncovered_results:
-                if p.get("article_id") not in {cp.get("article_id") for cp in chain_provisions}:
-                    chain_provisions.append(p)
-
-        if chain_provisions:
-            provisions = chain_provisions
-        else:
-            # No graph edges loaded yet — fall back to HyDE
-            logger.debug(
-                "classification_chain: no graph edges found, falling back to HyDE"
-            )
-            if hyde_text is None:
-                hyde_text = hyde_builder(question, client)
-            hyde_vec = retriever.encode_as_passage(hyde_text)
-            provisions = retriever.retrieve(
-                question,
-                k=k,
-                target_celexes=target_celexes,
-                query_vec=hyde_vec,
-            )
-
-    elif route.id == "community_summary_search":
-        # Decompose the question into sub-questions so each obligation tier
-        # gets its own independent retrieval slot.  A broad question like
-        # "all provider obligations" would otherwise compete with itself —
-        # GPAI, Article 5, and high-risk conformity obligations sit at
-        # different angles in embedding space.  Per-sub-question retrieval
-        # guarantees structural coverage of every tier without relying on
-        # a single query vector to capture all of them.
-        _k_comm = 30
-        sub_questions = _decompose_question(question, client)
-        # GPAI articles (53–55) no longer need a forced sub-question: the role
-        # pass below traverses OBLIGATION_OF and pins the provider's complete
-        # obligation set (incl. GPAI + systemic-risk) deterministically,
-        # regardless of how the community embeddings rank.
-        logger.debug(
-            "community_summary_search: decomposed into %d sub-questions: %s",
-            len(sub_questions), sub_questions,
-        )
-        # Distribute k budget across sub-questions; floor at 5 so thin
-        # sub-queries still get meaningful community coverage.
-        per_q_k = max(5, _k_comm // len(sub_questions))
-
-        seen_article_ids: set[str | None] = set()
-        provisions: list[dict] = []
-        for sq in sub_questions:
-            sq_vec = retriever.encode_as_query(sq)
-            sq_provisions = retriever.retrieve_by_communities_hierarchical(
-                sq,
-                k_communities=per_q_k,
-                k_provisions=per_q_k * 3,
-                target_celexes=target_celexes,
-                query_vec=sq_vec,
-            )
-            for p in sq_provisions:
-                aid = p.get("article_id")
-                if aid not in seen_article_ids:
-                    seen_article_ids.add(aid)
-                    provisions.append(p)
-
-        # Pin the detected roles' statutory obligations via the same graph
-        # traversal the role routes use (A2). The summary-first community pass is
-        # breadth-oriented and lets specific obligation articles (e.g. GPAI
-        # Art 53/55) lose the vector contest against denser clusters — yet for a
-        # question like "obligations on providers and deployers" those articles
-        # *are* the answer. Traversing OBLIGATION_OF guarantees them here too,
-        # so the community route no longer depends on the GPAI safety net or the
-        # hardcoded obligation backbone for completeness.
-        if role_specs:
-            # Breadth route: include the role's *complete* article obligation
-            # set, not a relevance-capped top-k. A generic "main categories of
-            # obligations" query ranks niche articles (e.g. GPAI systemic-risk
-            # Art 55) low, so a small cap would drop them — but completeness is
-            # exactly what this route owes. A high k lifts the cap past the
-            # largest role's article count (~26); query_vec only orders the set.
-            comm_role_obligations = retriever.retrieve_by_roles(
-                role_specs,
-                k=40,
-                query_vec=retriever.encode_as_query(question),
-                target_celexes=target_celexes,
-            )
-            for p in comm_role_obligations:
-                aid = p.get("article_id")
-                if aid not in seen_article_ids:
-                    seen_article_ids.add(aid)
-                    provisions.append(p)
-
-    elif should_run_hyde:
-        hyde_text = hyde_builder(question, client)
-        hyde_vec = retriever.encode_as_passage(hyde_text)
-        provisions = retriever.retrieve(
+        provisions, hyde_text = _expand_classification_chain(
             question,
+            retriever,
+            client=client,
             k=k,
             target_celexes=target_celexes,
-            query_vec=hyde_vec,
+            hyde_text=hyde_text,
+            hyde_builder=hyde_builder,
+        )
+    elif route.id == "community_summary_search":
+        provisions = _expand_community_summary(
+            question,
+            retriever,
+            client=client,
+            target_celexes=target_celexes,
+            role_specs=role_specs,
+        )
+    elif should_run_hyde:
+        provisions, hyde_text = _expand_hyde_vector(
+            question,
+            retriever,
+            client=client,
+            k=k,
+            target_celexes=target_celexes,
+            hyde_builder=hyde_builder,
         )
 
+    # ── Merge phase: prepend the curated channels for the merge routes ───────
     if route.id in {"cross_regulation", "legal_qualification"}:
         if role_provisions:
             _merge_unique_provisions(provisions, role_provisions, prepend=True)
         if direct_provisions:
             _merge_unique_provisions(provisions, direct_provisions, prepend=True)
 
-    # ── AI Act prohibited-practices safety net ─────────────────────────────
-    # For prohibition-focused questions (Article 5 family), force-include
-    # Article 5 so quote/citation checks validate against retrieved text.
-    if _is_ai_act_prohibited_practices_question(question, target_celexes):
-        _has_article_5 = any(
-            p.get("celex") == _AI_ACT_CELEX
-            and (p.get("article_ref") or "") == "Article 5"
-            for p in provisions
-        )
-        if not _has_article_5:
-            _art5 = retriever.retrieve_by_refs(
-                ["Article 5"],
-                celex_filter={_AI_ACT_CELEX},
-            )
-            added = _merge_unique_provisions(provisions, _art5, prepend=True)
-            if added:
-                logger.info(
-                    "AI Act prohibited-practices safety net: injected Article 5 "
-                    "for prohibition-focused question.",
-                )
+    # ── Safety-net phase ─────────────────────────────────────────────────────
+    _inject_prohibited_practices_safety_net(
+        question,
+        retriever,
+        target_celexes=target_celexes,
+        provisions=provisions,
+    )
+
     return {
         "provisions": provisions,
         "direct_provisions": direct_provisions,
-        "curated_provisions": curated_provisions,
         "role_provisions": role_provisions,
         "hyde_text": hyde_text,
         "legal_qualification_targets": legal_qualification_targets,
