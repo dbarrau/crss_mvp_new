@@ -608,6 +608,26 @@ def _retrieve_route_provisions(
                     seen_article_ids.add(aid)
                     provisions.append(p)
 
+        # Pin the detected roles' statutory obligations via the same graph
+        # traversal the role routes use (A2). The summary-first community pass is
+        # breadth-oriented and lets specific obligation articles (e.g. GPAI
+        # Art 53/55) lose the vector contest against denser clusters — yet for a
+        # question like "obligations on providers and deployers" those articles
+        # *are* the answer. Traversing OBLIGATION_OF guarantees them here too,
+        # so the community route no longer depends on the GPAI safety net or the
+        # hardcoded obligation backbone for completeness.
+        if role_specs:
+            comm_role_obligations = retriever.retrieve_by_roles(
+                role_specs,
+                query_vec=retriever.encode_as_query(question),
+                target_celexes=target_celexes,
+            )
+            for p in comm_role_obligations:
+                aid = p.get("article_id")
+                if aid not in seen_article_ids:
+                    seen_article_ids.add(aid)
+                    provisions.append(p)
+
     elif should_run_hyde:
         hyde_text = hyde_builder(question, client)
         hyde_vec = retriever.encode_as_passage(hyde_text)
