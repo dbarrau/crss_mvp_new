@@ -116,6 +116,10 @@ from application._postprocessing import (                # noqa: F401
 from application._confidence import (                    # noqa: F401
     compute_confidence,
 )
+from application.verify import (                         # noqa: F401
+    verify_answer as _verify_answer,
+    VerificationResult as _VerificationResult,
+)
 from application._audit import (                          # noqa: F401
     _should_audit,
     _audit_answer,
@@ -780,94 +784,25 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                     logger.warning("Audit revision skipped: %s", _exc)
                     break
 
-        # --- 7c. Citation scope self-check (deterministic) ---
-        # When the question is scoped to a single regulation, verify cited
-        # Article/Annex/Recital refs appear in retrieved context refs.
-        # Set env CRSS_CITATION_SCOPE_CHECK=0 to disable.
-        if (
-            target_celexes
-            and len(target_celexes) == 1
-            and mentioned_regs
-            and len(mentioned_regs) == 1
-            and os.environ.get("CRSS_CITATION_SCOPE_CHECK", "1") != "0"
-            and full_answer
-        ):
-            _scope_reg_name = next(iter(mentioned_regs))
-            try:
-                _out_of_scope_refs = _out_of_scope_citation_refs(full_answer, provisions)
-                if _out_of_scope_refs:
-                    _scope_text = ", ".join(_out_of_scope_refs[:30])
-                    full_answer += (
-                        "\n\n---\n> **\u26a0 Citation scope note:** "
-                        "The following citations are not present in the retrieved "
-                        f"context for this question (scoped to {_scope_reg_name}): "
-                        f"{_scope_text}. Please verify against the source provisions."
-                    )
-                    logger.info("Citation scope deterministic check flagged: %s", _scope_text)
-                else:
-                    logger.debug("Citation scope deterministic check: CLEAN")
-            except Exception as _exc:
-                logger.warning("Citation scope self-check skipped: %s", _exc)
-
-        # --- 7d. Faithfulness verification (deterministic, no LLM call) ---
-        # Verify every verbatim quote in the answer appears in the retrieved
-        # corpus (provisions + definitions + interpretive guidance).  ON by
-        # default: unverified quotes are redacted and a warning block is
-        # prepended.  Disable with CRSS_FAITHFULNESS_CHECK=0; =2 reserved for a
-        # future single re-prompt loop (currently same behaviour as flag mode).
-        _faith_mode = _faithfulness_mode(os.environ.get("CRSS_FAITHFULNESS_CHECK", "1"))
-        if _faith_mode >= 1 and full_answer:
-            try:
-                _faith_report = _check_faithfulness(full_answer, provisions, definitions)
-                if not _faith_report.ok or _faith_report.near_verbatim:
-                    # Redact only genuinely divergent quotes (near-verbatim ones
-                    # are grounded and stay); surface both tiers in the block.
-                    full_answer = _remove_unverified_quotes(full_answer, _faith_report)
-                    _faith_block = _build_faithfulness_warning(_faith_report)
-                    if _faith_block:
-                        full_answer = f"{_faith_block}\n\n{full_answer}"
-                    logger.info(
-                        "Faithfulness check: %d fabricated, %d misattributed, "
-                        "%d near-verbatim, of %d quote(s)",
-                        _faith_report.unverified_count,
-                        _faith_report.misattributed_count,
-                        _faith_report.near_verbatim_count,
-                        _faith_report.total_quotes,
-                    )
-                else:
-                    logger.debug(
-                        "Faithfulness check: all %d quote(s) verified",
-                        _faith_report.total_quotes,
-                    )
-                if _faith_mode == 2:
-                    logger.warning(
-                        "CRSS_FAITHFULNESS_CHECK=2 (strict) is not yet "
-                        "implemented; behaving as flag mode."
-                    )
-            except Exception as _exc:
-                logger.warning("Faithfulness check skipped: %s", _exc)
-
-        # --- 7e. Compute composite confidence score ---
-        _faith_report_for_conf = None
-        if _faith_mode >= 1 and full_answer:
-            try:
-                _faith_report_for_conf = _check_faithfulness(full_answer, provisions, definitions)
-            except Exception:
-                pass
-        _had_pointer_expansion = any(
-            p.get("_pointer_expansion") for p in provisions
-        )
-        confidence = compute_confidence(
-            sufficiency=sufficiency,
+        # --- 7c\u20137e. Post-generation verification (deterministic) ---
+        # One stage over the retrieved evidence: citation-scope note (C4) \u2192
+        # faithfulness/attribution redaction (C1/C2) \u2192 composite confidence (C5).
+        # Env flags (CRSS_CITATION_SCOPE_CHECK, CRSS_FAITHFULNESS_CHECK) are read
+        # inside verify_answer; see application/verify.py.
+        _verification = _verify_answer(
+            full_answer,
             provisions=provisions,
-            faith_report=_faith_report_for_conf,
-            had_corrective_pass=bool(corrective_actions),
-            had_pointer_expansion=_had_pointer_expansion,
-            had_role_provisions=bool(role_provisions),
-            role_specs=role_specs,
-            question=retrieval_question,
+            definitions=definitions,
+            role_provisions=role_provisions,
+            sufficiency=sufficiency,
+            target_celexes=target_celexes,
             mentioned_regs=mentioned_regs,
+            role_specs=role_specs,
+            corrective_actions=corrective_actions,
+            question=retrieval_question,
         )
+        full_answer = _verification.answer
+        confidence = _verification.confidence
         yield {
             "type": "confidence",
             "score": confidence["confidence_score"],
@@ -875,11 +810,6 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
             "breakdown": confidence["breakdown"],
             "legal_force_distribution": confidence["legal_force_distribution"],
         }
-        logger.info(
-            "Confidence: %s (%.1f%%)",
-            confidence["confidence_level"],
-            confidence["confidence_score"] * 100,
-        )
 
         final_answer = _postprocess_answer(
             full_answer,
