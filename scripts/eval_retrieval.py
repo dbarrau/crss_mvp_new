@@ -56,6 +56,9 @@ from application.agent import (
     _detect_defined_terms,
     _REG_NAME_TO_CELEX,
     _retrieve_route_provisions,
+    _expand_definitions_from_provisions,
+    _evaluate_route_sufficiency,
+    _run_corrective_retrieval_pass,
 )
 from retrieval.graph_retriever import GraphRetriever
 
@@ -168,12 +171,60 @@ def _run_case(
         hyde_builder=_stub_hyde,
     )
 
+    # Mirror ask_stream's post-retrieval pipeline: expand definitions, evaluate
+    # route sufficiency, and run the bounded corrective pass when coverage is
+    # insufficient. Every call here is deterministic under the LLM stubs
+    # (sufficiency/definitions use no LLM; the corrective pass's only LLM hook is
+    # HyDE, stubbed via _stub_hyde), so the net stays a deterministic gate while
+    # now covering the sufficiency + corrective stages the agent actually runs.
+    provisions = retrieval_result["provisions"]
+    direct_provisions = retrieval_result["direct_provisions"]
+    role_provisions = retrieval_result["role_provisions"]
+    legal_qualification_targets = retrieval_result["legal_qualification_targets"]
+    definitions = _expand_definitions_from_provisions(
+        provisions, retriever, definitions, target_celexes=target_celexes,
+    )
+    sufficiency = _evaluate_route_sufficiency(
+        route=route,
+        question=question,
+        explicit_refs=explicit_refs,
+        target_celexes=target_celexes,
+        role_specs=role_specs,
+        provisions=provisions,
+        definitions=definitions,
+        direct_provisions=direct_provisions,
+        role_provisions=role_provisions,
+        legal_qualification_targets=legal_qualification_targets,
+    )
+    corrective_actions: list[str] = []
+    if not sufficiency["ok"]:
+        recovery = _run_corrective_retrieval_pass(
+            question,
+            retriever,
+            client=None,
+            k=k,
+            route=route,
+            target_celexes=target_celexes,
+            explicit_refs=explicit_refs,
+            role_specs=role_specs,
+            provisions=provisions,
+            direct_provisions=direct_provisions,
+            role_provisions=role_provisions,
+            definitions=definitions,
+            sufficiency=sufficiency,
+            hyde_text=retrieval_result["hyde_text"],
+            legal_qualification_targets=legal_qualification_targets,
+            hyde_builder=_stub_hyde,
+        )
+        corrective_actions = recovery["actions"]
+
     elapsed = time.perf_counter() - t0
 
-    # Collect all retrieved provisions from every bucket
+    # Collect all retrieved provisions from every bucket (post-corrective: the
+    # corrective pass mutates these lists in place)
     all_provisions: list[dict] = []
-    for bucket in ("provisions", "direct_provisions", "role_provisions"):
-        all_provisions.extend(retrieval_result.get(bucket) or [])
+    for bucket in (provisions, direct_provisions, role_provisions):
+        all_provisions.extend(bucket or [])
 
     retrieved_celexes: set[str] = {
         p.get("celex", "") for p in all_provisions if p.get("celex")
@@ -208,6 +259,7 @@ def _run_case(
         "retrieved_refs": list(dict.fromkeys(retrieved_refs)),  # deduped, ordered
         "retrieved_ids": retrieved_ids,
         "n_provisions": len(all_provisions),
+        "corrective_actions": corrective_actions,
         "elapsed_s": elapsed,
     }
 
@@ -228,6 +280,9 @@ def _print_result(result: dict, verbose: bool) -> None:
             print(f"        {_RED}Missing CELEX:{_RESET} {result['missing_celexes']}")
         if result["missing_refs"]:
             print(f"        {_RED}Missing refs:{_RESET}  {result['missing_refs']}")
+
+    if result.get("corrective_actions"):
+        print(f"        {_YELLOW}Corrective:{_RESET}    {'; '.join(result['corrective_actions'])}")
 
     if verbose:
         regs = ", ".join(result["retrieved_celexes"]) or "(none)"
