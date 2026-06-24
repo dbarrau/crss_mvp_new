@@ -164,42 +164,6 @@ def _build_route_answer_guidance(
 ) -> str | None:
     """Return route-specific answer discipline for the final LLM prompt."""
 
-    # ── Obligation-breadth questions (community summary + role obligations) ──
-    # When a backbone master article was force-retrieved, instruct the LLM to
-    # use it as a structural skeleton rather than free-forming the answer.
-    if route.id in {"community_summary_search", "role_obligations"} and sufficiency.get("has_backbone"):
-        backbone_label = sufficiency.get("backbone_label", "the obligations master list article")
-        lines: list[str] = []
-        lines.append("ANSWER DISCIPLINE — OBLIGATION COMPLETENESS:")
-        lines.append(
-            f"The REGULATORY CONTEXT begins with [{backbone_label}] marked as the "
-            "OBLIGATIONS MASTER LIST. This is the authoritative statutory checklist for "
-            "the actor in question — it was written specifically to enumerate all of that "
-            "actor's obligations in one place."
-        )
-        lines.append(
-            "Structure your answer by addressing each item on that master list in order. "
-            "For each item, state the obligation and cite the specific article/paragraph "
-            "it cross-references. If an item falls outside the question's scope, note it "
-            "in one sentence and skip the detail."
-        )
-        lines.append(
-            "After covering the master list, add any obligations from other parts of "
-            "the regulation not captured in the master list (e.g. GPAI-specific tiers "
-            "under Articles 51-56, prohibited-practice gates under Article 5). Label "
-            "this section 'Additional obligations beyond the master list'."
-        )
-        lines.append(
-            "Use precise article-level citations. Do NOT reorganise or omit items "
-            "from the master list without explicit acknowledgment."
-        )
-        if not sufficiency.get("ok", True):
-            lines.append(
-                "Retrieval sufficiency is partial. Flag remaining uncertainty and "
-                "avoid a definitive bottom-line conclusion."
-            )
-        return "\n".join(lines)
-
     if route.id == "classification_chain":
         lines: list[str] = []
         lines.append("ANSWER DISCIPLINE — AI ACT CLASSIFICATION SEQUENCE:")

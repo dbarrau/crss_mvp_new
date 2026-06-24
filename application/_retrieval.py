@@ -14,7 +14,7 @@ import os
 import re
 from typing import Any
 
-from application._config import _OBLIGATION_MASTER_ARTICLES, _REG_NAME_TO_CELEX
+from application._config import _REG_NAME_TO_CELEX
 from application._routing import (
     _QuestionRoute,
     _ProvisionLookupTarget,
@@ -180,33 +180,6 @@ def _merge_unique_provisions(
 # ---------------------------------------------------------------------------
 
 
-def _is_obligation_breadth_question(
-    question: str,
-    route: _QuestionRoute,
-    role_specs: list[tuple[str, str]],
-) -> bool:
-    """Return True when the question asks broadly about an actor's obligations
-    and a master article is known for at least one detected role.
-
-    Requires explicit breadth language (all/every/comprehensive/...) so that
-    specific obligation questions ("what does Article 26 require?") are NOT
-    treated as backbone-breadth questions and continue to route normally.
-    Triggers statutory backbone injection: the master list article is
-    force-retrieved and prepended to context so the LLM uses it as a
-    structural skeleton rather than reconstructing the list bottom-up.
-    """
-    if route.id not in {"community_summary_search", "role_obligations"}:
-        return False
-    if not role_specs or not _has_obligation_focus(question):
-        return False
-    if not _COMMUNITY_SUMMARY_Q_RE.search(question):
-        return False
-    return any(
-        (role_term, celex) in _OBLIGATION_MASTER_ARTICLES
-        for role_term, celex in role_specs
-    )
-
-
 def _is_ai_act_prohibited_practices_question(
     question: str,
     target_celexes: set[str] | None,
@@ -219,34 +192,6 @@ def _is_ai_act_prohibited_practices_question(
     if target_celexes and _AI_ACT_CELEX not in target_celexes:
         return False
     return bool(_AI_ACT_PROHIBITED_PRACTICES_RE.search(question))
-
-
-def _get_obligation_backbone_refs(
-    role_specs: list[tuple[str, str]],
-    target_celexes: set[str] | None = None,
-) -> list[_ProvisionLookupTarget]:
-    """Return force-retrieval targets for obligation master articles.
-
-    One target per (role, celex, ref) triple that has a known master article.
-    A single actor may have multiple backbone articles (e.g. AI Act providers
-    have Article 16 for High-Risk AI and Article 53 for GPAI models).
-    CELEX is scoped so the retriever returns only the correct regulation.
-    """
-    targets: list[_ProvisionLookupTarget] = []
-    seen: set[tuple[str, str]] = set()
-    for role_term, celex in role_specs:
-        if target_celexes and celex not in target_celexes:
-            continue
-        master_refs = _OBLIGATION_MASTER_ARTICLES.get((role_term, celex))
-        if not master_refs:
-            continue
-        for master_ref in master_refs:
-            if (master_ref, celex) not in seen:
-                seen.add((master_ref, celex))
-                targets.append(
-                    _ProvisionLookupTarget(ref=master_ref, celexes=frozenset({celex}))
-                )
-    return targets
 
 
 def _retrieve_lookup_targets(
@@ -648,27 +593,6 @@ def _retrieve_route_provisions(
                     "AI Act prohibited-practices safety net: injected Article 5 "
                     "for prohibition-focused question.",
                 )
-
-
-    # Force-retrieve the master list article (e.g. Article 16 for providers)
-    # and expose it separately so agent.py can render it as a completeness
-    # anchor BEFORE the main provisions block.  Not merged into provisions so
-    # it does not appear twice in context.
-    has_backbone = False
-    backbone_provisions: list[dict] = []
-    backbone_label: str | None = None
-    if _is_obligation_breadth_question(question, route, role_specs):
-        backbone_targets = _get_obligation_backbone_refs(role_specs, target_celexes)
-        if backbone_targets:
-            backbone_provisions = _retrieve_lookup_targets(retriever, backbone_targets)
-            if backbone_provisions:
-                has_backbone = True
-                backbone_label = ", ".join(t.ref for t in backbone_targets)
-                logger.debug(
-                    "Backbone injection: %s for roles %s",
-                    backbone_label, role_specs,
-                )
-
     return {
         "provisions": provisions,
         "direct_provisions": direct_provisions,
@@ -676,9 +600,6 @@ def _retrieve_route_provisions(
         "role_provisions": role_provisions,
         "hyde_text": hyde_text,
         "legal_qualification_targets": legal_qualification_targets,
-        "has_backbone": has_backbone,
-        "backbone_provisions": backbone_provisions,
-        "backbone_label": backbone_label,
     }
 
 

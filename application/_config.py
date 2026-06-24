@@ -190,39 +190,6 @@ def _detect_mentioned_regulations(question: str) -> set[str]:
     return found
 
 
-# ---------------------------------------------------------------------------
-# Obligation master articles — authoritative statutory checklists per actor
-#
-# Values are lists so multiple anchor articles can be force-retrieved for a
-# single actor (e.g. AI Act providers span two separate obligation regimes:
-# Article 16 covers High-Risk AI systems, Article 53 covers GPAI models).
-# Force-retrieving all anchors for obligation-breadth questions gives the LLM
-# a complete statutory skeleton across every tier, not just the densest one.
-# ---------------------------------------------------------------------------
-
-_OBLIGATION_MASTER_ARTICLES: dict[tuple[str, str], list[str]] = {
-    # AI Act providers span two obligation regimes: High-Risk (Art. 16) and
-    # GPAI model providers (Art. 53).  Both are needed for full coverage.
-    ("provider", "32024R1689"):                     ["Article 16", "Article 53"],
-    ("deployer", "32024R1689"):                     ["Article 26"],
-    ("importer", "32024R1689"):                     ["Article 23"],
-    ("distributor", "32024R1689"):                  ["Article 24"],
-    ("manufacturer", "32017R0745"):                 ["Article 10"],
-    ("manufacturer", "32017R0746"):                 ["Article 10"],
-    ("authorised representative", "32017R0745"):    ["Article 11"],
-    ("authorised representative", "32017R0746"):    ["Article 11"],
-    ("importer", "32017R0745"):                     ["Article 13"],
-    ("importer", "32017R0746"):                     ["Article 13"],
-    ("distributor", "32017R0745"):                  ["Article 14"],
-    ("distributor", "32017R0746"):                  ["Article 14"],
-    # GDPR obligation master articles.  Article 24 enumerates the controller's
-    # general accountability obligations; Article 32 covers security measures
-    # (shared between controller and processor).  Article 28 governs processor
-    # obligations and the mandatory data processing agreement.
-    ("controller", "32016R0679"):                   ["Article 24", "Article 32"],
-    ("processor", "32016R0679"):                    ["Article 28", "Article 32"],
-}
-
 
 # ---------------------------------------------------------------------------
 # Implicit provision reference inference

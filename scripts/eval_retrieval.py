@@ -172,8 +172,7 @@ def _run_case(
 
     # Collect all retrieved provisions from every bucket
     all_provisions: list[dict] = []
-    for bucket in ("provisions", "direct_provisions", "role_provisions",
-                   "backbone_provisions"):
+    for bucket in ("provisions", "direct_provisions", "role_provisions"):
         all_provisions.extend(retrieval_result.get(bucket) or [])
 
     retrieved_celexes: set[str] = {

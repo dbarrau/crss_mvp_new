@@ -388,9 +388,6 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
         role_provisions = retrieval_result["role_provisions"]
         hyde_text = retrieval_result["hyde_text"]
         provisions = retrieval_result["provisions"]
-        has_backbone: bool = retrieval_result.get("has_backbone", False)
-        backbone_provisions: list[dict] = retrieval_result.get("backbone_provisions") or []
-        backbone_label: str | None = retrieval_result.get("backbone_label")
 
         if explicit_refs and direct_provisions:
             logger.info("Direct lookup: %s → %d provision(s)", explicit_refs, len(direct_provisions))
@@ -443,10 +440,6 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
             role_provisions=role_provisions,
             legal_qualification_targets=legal_qualification_targets,
         )
-        # Inject backbone metadata so prompts and self-check can consume it.
-        sufficiency["has_backbone"] = has_backbone
-        if backbone_label:
-            sufficiency["backbone_label"] = backbone_label
         corrective_actions: list[str] = []
         if not sufficiency["ok"]:
             recovery = _run_corrective_retrieval_pass(
@@ -597,16 +590,6 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                 header = _community_summary_header(provisions)
                 if header:
                     context_parts.append(header)
-
-            # Backbone block: force-retrieved master list article rendered
-            # before the main provisions so it anchors the LLM's structure.
-            if has_backbone and backbone_provisions:
-                backbone_header = (
-                    f"[OBLIGATIONS MASTER LIST — {backbone_label} — "
-                    "Authoritative statutory checklist for this actor. "
-                    "Address each item in order.]\n"
-                )
-                context_parts.append(backbone_header + _format_context(backbone_provisions))
 
             # Bound the prompt size: broad routes can retrieve 40+ provisions
             # (~220 KB / ~56 K tokens), which inflates the large model's
@@ -796,51 +779,6 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                 except Exception as _exc:
                     logger.warning("Audit revision skipped: %s", _exc)
                     break
-
-        # --- 7b. Backbone self-check (bounded, 1 call) ---
-        # When a master-list article was injected, verify the answer covers all
-        # its items.  Uses the actual retrieved text — no training-memory risk.
-        # Set env CRSS_BACKBONE_SELFCHECK=0 to disable.
-        if (
-            has_backbone
-            and backbone_provisions
-            and os.environ.get("CRSS_BACKBONE_SELFCHECK", "1") != "0"
-            and full_answer
-        ):
-            try:
-                _backbone_text = _format_context(backbone_provisions[:1])[:2000]
-                _check_resp = client.chat.complete(
-                    model=os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
-                    messages=[{
-                        "role": "user",
-                        "content": (
-                            "BACKBONE ARTICLE (authoritative master list):\n"
-                            f"{_backbone_text}\n\n"
-                            "GENERATED ANSWER:\n"
-                            f"{full_answer[:3000]}\n\n"
-                            "Does the generated answer address each of the obligation "
-                            "categories listed in the BACKBONE ARTICLE?\n"
-                            "Output exactly COMPLETE if yes.\n"
-                            "If no, output only the missing article numbers or "
-                            "obligation headings, one per line. Max 30 words total."
-                        ),
-                    }],
-                    temperature=0.0,
-                    max_tokens=80,
-                )
-                _check_text = _check_resp.choices[0].message.content.strip()
-                if not _check_text.upper().startswith("COMPLETE"):
-                    full_answer += (
-                        "\n\n---\n> **⚠ Completeness note:** "
-                        "The following obligations from the statutory master list "
-                        f"({backbone_label}) may not be fully addressed above: "
-                        f"{_check_text}. Independent legal review recommended."
-                    )
-                    logger.info("Backbone self-check flagged gaps: %s", _check_text)
-                else:
-                    logger.debug("Backbone self-check: COMPLETE")
-            except Exception as _exc:
-                logger.warning("Backbone self-check skipped: %s", _exc)
 
         # --- 7c. Citation scope self-check (deterministic) ---
         # When the question is scoped to a single regulation, verify cited
