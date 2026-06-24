@@ -993,7 +993,17 @@ def _run_corrective_retrieval_pass(
     legal_qualification_targets: list[_ProvisionLookupTarget],
     hyde_builder=_hyde_query,
 ) -> dict[str, Any]:
-    """Run a single bounded recovery pass when route coverage is insufficient."""
+    """Run a single bounded recovery pass when route coverage is insufficient.
+
+    Each recovery re-runs one of the retrieval expanders/primitives with seeds
+    derived from the sufficiency gap (missing curated targets, status anchors,
+    explicit refs, role obligations, regulation coverage, the Article 5 anchor)
+    and merges the result through one channel-aware helper that logs the action
+    and recomputes sufficiency only when something new actually lands. It is not
+    a parallel retrieval codepath — it reuses the same primitives the initial
+    plan does, in priority order, with the running ``sufficiency`` shared so each
+    later check sees what the earlier recoveries already filled.
+    """
     actions: list[str] = []
 
     def recompute() -> dict[str, Any]:
@@ -1010,121 +1020,105 @@ def _run_corrective_retrieval_pass(
             legal_qualification_targets=legal_qualification_targets,
         )
 
-    if sufficiency["missing_qualification_targets"]:
-        missing_targets = [
+    def _recover(
+        recovered: list[dict],
+        action: str,
+        *,
+        channel: list[dict] | None = None,
+        prepend: bool = True,
+    ) -> None:
+        """Merge a recovery into the main bag (and, optionally, the source
+        channel it belongs to), then log + recompute only if anything landed."""
+        nonlocal sufficiency
+        added = 0
+        if channel is not None:
+            added += _merge_unique_provisions(channel, recovered)
+        added += _merge_unique_provisions(provisions, recovered, prepend=prepend)
+        if added:
+            actions.append(action)
+            sufficiency = recompute()
+
+    def _targets(items: list[dict]) -> list[_ProvisionLookupTarget]:
+        return [
             _ProvisionLookupTarget(
                 ref=item["ref"],
                 celexes=frozenset(item["celexes"]) if item["celexes"] else None,
             )
-            for item in sufficiency["missing_qualification_targets"]
+            for item in items
         ]
-        recovered_curated = _retrieve_lookup_targets(retriever, missing_targets)
-        added = _merge_unique_provisions(direct_provisions, recovered_curated)
-        added += _merge_unique_provisions(provisions, recovered_curated, prepend=True)
-        if added:
-            actions.append("recovered qualification backbone provisions")
-            sufficiency = recompute()
+
+    if sufficiency["missing_qualification_targets"]:
+        _recover(
+            _retrieve_lookup_targets(
+                retriever, _targets(sufficiency["missing_qualification_targets"])
+            ),
+            "recovered qualification backbone provisions",
+            channel=direct_provisions,
+        )
 
     if sufficiency.get("missing_status_anchors"):
-        anchor_targets = [
-            _ProvisionLookupTarget(
-                ref=item["ref"],
-                celexes=frozenset(item["celexes"]) if item["celexes"] else None,
-            )
-            for item in sufficiency["missing_status_anchors"]
-        ]
-        recovered_anchors = _retrieve_lookup_targets(retriever, anchor_targets)
-        added = _merge_unique_provisions(direct_provisions, recovered_anchors)
-        added += _merge_unique_provisions(provisions, recovered_anchors, prepend=True)
-        if added:
-            actions.append(
-                "recovered status-anchor (DEFINES) provisions for "
-                + ", ".join(
-                    sorted(
-                        c
-                        for item in sufficiency["missing_status_anchors"]
-                        for c in item["celexes"]
-                    )
-                )
-            )
-            sufficiency = recompute()
+        anchor_celexes = sorted(
+            c for item in sufficiency["missing_status_anchors"] for c in item["celexes"]
+        )
+        _recover(
+            _retrieve_lookup_targets(
+                retriever, _targets(sufficiency["missing_status_anchors"])
+            ),
+            "recovered status-anchor (DEFINES) provisions for " + ", ".join(anchor_celexes),
+            channel=direct_provisions,
+        )
 
     if sufficiency["missing_refs"]:
-        recovered_direct = _retrieve_direct_provisions(
-            question,
-            retriever,
-            explicit_refs=sufficiency["missing_refs"],
-            target_celexes=target_celexes,
+        _recover(
+            _retrieve_direct_provisions(
+                question,
+                retriever,
+                explicit_refs=sufficiency["missing_refs"],
+                target_celexes=target_celexes,
+            ),
+            f"recovered {len(sufficiency['missing_refs'])} explicit ref target(s)",
+            channel=direct_provisions,
         )
-        added = _merge_unique_provisions(direct_provisions, recovered_direct)
-        added += _merge_unique_provisions(provisions, recovered_direct, prepend=True)
-        if added:
-            actions.append(
-                f"recovered {len(sufficiency['missing_refs'])} explicit ref target(s)"
-            )
-            sufficiency = recompute()
 
     if sufficiency["needs_role_recovery"] and role_specs:
-        recovered_roles = retriever.retrieve_by_roles(
-            role_specs, k=max(6, k // 2),
-            query_vec=retriever.encode_as_query(question),
-            target_celexes=target_celexes,
+        _recover(
+            retriever.retrieve_by_roles(
+                role_specs, k=max(6, k // 2),
+                query_vec=retriever.encode_as_query(question),
+                target_celexes=target_celexes,
+            ),
+            "recovered role-linked provisions",
+            channel=role_provisions,
         )
-        added = _merge_unique_provisions(role_provisions, recovered_roles)
-        added += _merge_unique_provisions(provisions, recovered_roles, prepend=True)
-        if added:
-            actions.append("recovered role-linked provisions")
-            sufficiency = recompute()
 
-    if route.id == "cross_regulation" and sufficiency["missing_celexes"]:
+    # cross_regulation and legal_qualification recover missing-CELEX coverage
+    # identically (the routes are mutually exclusive, so this fires for at most
+    # one of them) via a HyDE-scoped vector pass over the missing regulations.
+    if route.id in {"cross_regulation", "legal_qualification"} and sufficiency["missing_celexes"]:
         if not hyde_text:
             hyde_text = hyde_builder(question, client)
         hyde_vec = retriever.encode_as_passage(hyde_text)
-        recovered_provisions = retriever.retrieve(
-            question,
-            k=max(k, len(sufficiency["missing_celexes"]) * 3),
-            target_celexes=set(sufficiency["missing_celexes"]),
-            query_vec=hyde_vec,
+        _recover(
+            retriever.retrieve(
+                question,
+                k=max(k, len(sufficiency["missing_celexes"]) * 3),
+                target_celexes=set(sufficiency["missing_celexes"]),
+                query_vec=hyde_vec,
+            ),
+            "recovered missing regulation coverage for "
+            + ", ".join(sufficiency["missing_celexes"]),
+            prepend=False,
         )
-        added = _merge_unique_provisions(provisions, recovered_provisions)
-        if added:
-            actions.append(
-                "recovered missing regulation coverage for "
-                + ", ".join(sufficiency["missing_celexes"])
-            )
-            sufficiency = recompute()
-
-    if route.id == "legal_qualification" and sufficiency["missing_celexes"]:
-        if not hyde_text:
-            hyde_text = hyde_builder(question, client)
-        hyde_vec = retriever.encode_as_passage(hyde_text)
-        recovered_provisions = retriever.retrieve(
-            question,
-            k=max(k, len(sufficiency["missing_celexes"]) * 3),
-            target_celexes=set(sufficiency["missing_celexes"]),
-            query_vec=hyde_vec,
-        )
-        added = _merge_unique_provisions(provisions, recovered_provisions)
-        if added:
-            actions.append(
-                "recovered missing regulation coverage for "
-                + ", ".join(sufficiency["missing_celexes"])
-            )
-            sufficiency = recompute()
 
     needs_article5_anchor = any(
         check["name"] == "ai_act_article5_anchor" and not check["passed"]
         for check in sufficiency["checks"]
     )
     if route.id == "community_summary_search" and needs_article5_anchor:
-        recovered_article_5 = retriever.retrieve_by_refs(
-            ["Article 5"],
-            celex_filter={_AI_ACT_CELEX},
+        _recover(
+            retriever.retrieve_by_refs(["Article 5"], celex_filter={_AI_ACT_CELEX}),
+            "recovered AI Act Article 5 anchor",
         )
-        added = _merge_unique_provisions(provisions, recovered_article_5, prepend=True)
-        if added:
-            actions.append("recovered AI Act Article 5 anchor")
-            sufficiency = recompute()
 
     return {
         "actions": actions,
