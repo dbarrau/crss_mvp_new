@@ -39,6 +39,22 @@ of idempotent expanders under one budget and one dedup.
 > Class-IIb-SaMD case must retrieve the same obligation cluster via A2/A3's
 > graph-derived expanders as the hardcoded lists do today.
 
+> **A2 — empirical proof (TC_011, post-reset baseline).** Question: *"baseline
+> obligations for providers of general-purpose AI models"* (GPAI = Art 3(63)).
+> The graph is complete: `provider` role `OBLIGATION_OF` → {Art 4, 16, 50, 51,
+> **53**, 54, **55**, 88, 94}, and Art 3(63) exists as both Provision and
+> DefinedTerm. Yet the captured retrieval bag is {50, 51, 54, 88, 94, Annex XI}
+> — **Art 53 (the centerpiece GPAI-provider obligation) and Art 55 (systemic
+> risk) are dropped**, and the Art 3(63) definition anchor is absent. The role
+> traversal runs (50/51/54 are role obligations) but lets its `OBLIGATION_OF`
+> targets compete in the k=8 vector bag, so 53/55 truncate out. This regressed
+> from the pre-reset baseline (which had Art 53) purely because the richer
+> rebuild — 813→1164 `OBLIGATION_OF` — surfaced more competitors at the k
+> boundary. **Conclusion: TC_011 is a retrieval-path truncation, not a graph
+> gap.** The A2 RoleExpander (role obligations are *guaranteed seeds*, never
+> vector-truncated) + A6 DefinitionExpander (pin the in-scope defined term) fix
+> it directly; the old hardcoded backbone was masking it by force-injecting 53.
+
 ---
 
 ## B. Hardcoded knowledge that the graph already holds
@@ -49,6 +65,18 @@ table duplicating graph edges.
 | # | Patch | Location | What it really is | Disposition |
 |---|---|---|---|---|
 | B1 | `_OBLIGATION_MASTER_ARTICLES` `(role,celex)→[articles]` | `_config.py:203` | `OBLIGATION_OF` edge data, hand-transcribed | **DERIVE** from `ActorRole` → `OBLIGATION_OF` |
+
+> **B1 — empirical verdict (graph diff, captured run).** `OBLIGATION_OF`
+> traversal reproduces *or exceeds* the hardcode for **9 of 13** `(role,celex)`
+> pairs (provider → 9 articles incl. 16+53; MDR manufacturer → 26). It does **not**
+> for 4 — these are genuine canonicalization gaps the table was masking:
+> - GDPR `controller` / `processor`: the `ActorRole` nodes **don't exist** →
+>   zero `OBLIGATION_OF` edges (`role_linker` never created GDPR roles).
+> - MDR & IVDR `authorised representative`: node exists but `Article 11` (its
+>   core duties) is unlinked.
+> So B1 is ~70% scar tissue, ~30% band-aid. The correct fix is to **complete the
+> graph** (create the GDPR roles + link AR Art 11 in `role_linker`), then delete
+> the table — not to delete the table over a still-incomplete graph.
 | B2 | `_AI_ACT_HIGH_RISK_BACKBONE_REFS` flat article list | `_retrieval.py:69` | The high-risk obligation cluster | **DERIVE** from reasoning-chain edges (`TRIGGERS_OBLIGATION_CLUSTER`) |
 | B3 | `_GATE_ARTICLES` (classification-chain gate refs) | `_retrieval.py:481` | Entry seeds for the classification traversal | **DERIVE / KEEP-as-seed-config** — small, may stay as a seed policy if not edge-backed |
 | B4 | `_IMPLICIT_PROVISION_REFS` (keyword→canonical ref) | `_config.py:238` | Topic→provision shortcuts (lawful basis→Art 6, etc.) | **KEEP** (relocate) — genuine lexical shortcuts, not graph-derivable; small + tested |
