@@ -7,8 +7,6 @@ any other application submodule.
 """
 from __future__ import annotations
 
-from collections import Counter
-
 import logging
 import os
 import re
@@ -19,9 +17,6 @@ from application._routing import (
     _QuestionRoute,
     _ProvisionLookupTarget,
     _build_legal_qualification_targets,
-    _has_obligation_focus,
-    _COMMUNITY_SUMMARY_Q_RE,
-    _is_classification_chain_question,
 )
 
 logger = logging.getLogger(__name__)
