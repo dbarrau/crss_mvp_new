@@ -2,11 +2,193 @@
   {
     "id": "HQ_001",
     "label": "German hospital — multi-stage actor status transition (MDR 5(5) + AI Act provider/deployer)",
+    "tests": "actor-status transition; in-house exemption; cross-reg; calibration",
     "question": "A university hospital in Germany develops an in-house AI-assisted pathology system that analyzes Raman spectroscopy data to classify tumor margins during surgery. The system is initially trained internally using retrospective patient datasets and is used only within the hospital under the MDR Article 5(5) health institution exemption. After deployment, the hospital introduces a continuous learning pipeline that automatically retrains the model weekly using newly generated patient spectra from its oncology department. The retraining logic, validation thresholds, and permitted spectral domains were pre-defined in the initial technical documentation and quality management procedures. Two years later, the hospital enters a collaboration agreement with a second university hospital in France. The updated model weights are periodically shared with the French hospital, but the source code and intended purpose remain unchanged. Under the EU AI Act, MDR 2017/745, and the MDR Article 5(5) exemption framework: 1. At which stage(s), if any, could the German hospital transition from: user -> manufacturer under MDR, deployer -> provider under the AI Act?"
   },
   {
     "id": "HQ_002",
     "label": "Cross-regulation — data protection obligations for connected medical device manufacturers (MDR + GDPR)",
+    "tests": "cross_regulation; MDR+GDPR; manufacturer role",
     "question": "What data protection obligations apply to manufacturers of connected medical devices under MDR and GDPR?"
+  },
+  {
+    "id": "HQ_003",
+    "label": "Benchmark — Class IIb SaMD with continuous learning, PROVIDER obligations (AI Act + MDR)",
+    "tests": "classification_chain; provider; Art 43(4); lex specialis; recurring benchmark",
+    "question": "We are the provider of a Class IIb software-as-a-medical-device that uses a continuous-learning model. What obligations apply to us under the EU AI Act and MDR 2017/745, including for the continuous-learning behaviour?"
+  },
+  {
+    "id": "HQ_004",
+    "label": "AI Act high-risk qualification — triage chatbot (Annex III vs Article 6(1))",
+    "tests": "legal_qualification; high-risk routing; calibration",
+    "question": "A company markets an AI chatbot that triages patient symptoms and recommends whether to seek emergency care. Is this a high-risk AI system under the EU AI Act, and on what legal basis - Article 6(1) with Annex I, or Annex III?"
+  },
+  {
+    "id": "HQ_005",
+    "label": "AI Act GPAI model provider — systemic-risk obligations (Article 53 + 55)",
+    "tests": "role_obligations; GPAI; systemic risk",
+    "question": "What obligations does a provider of a general-purpose AI model with systemic risk have under the EU AI Act?"
+  },
+  {
+    "id": "HQ_006",
+    "label": "AI Act prohibited practices — workplace emotion recognition (Article 5)",
+    "tests": "provision_lookup; prohibition; calibration",
+    "question": "Is it lawful under the EU AI Act to deploy an AI system that infers employees' emotions from webcam feeds during work, and which provision governs this?"
+  },
+  {
+    "id": "HQ_007",
+    "label": "AI Act substantial modification — re-conformity of a high-risk system (Article 43(4))",
+    "tests": "classification_chain; substantial modification; hard",
+    "question": "When does a change to an already-deployed high-risk AI system count as a substantial modification requiring a new conformity assessment under the EU AI Act, and how are pre-determined changes treated?"
+  },
+  {
+    "id": "HQ_008",
+    "label": "AI Act deployer obligations — distinguish from provider (Article 26)",
+    "tests": "role_obligations; deployer; actor distinction",
+    "question": "We deploy a third-party high-risk AI system for CV screening in recruitment. What are our obligations as a deployer under the EU AI Act, and how do they differ from the provider's?"
+  },
+  {
+    "id": "HQ_009",
+    "label": "AI Act / MDR lex specialis — serious incident reporting overlap (Article 73(10))",
+    "tests": "cross_regulation; lex specialis; hard",
+    "question": "For a high-risk AI system that is also a medical device under MDR, how do the serious-incident reporting duties of the EU AI Act and MDR interact, and which prevails?"
+  },
+  {
+    "id": "HQ_010",
+    "label": "AI Act importer — verification duties for a high-risk system (Article 23)",
+    "tests": "role_obligations; importer",
+    "question": "What must an importer verify before placing a high-risk AI system from a non-EU provider on the EU market?"
+  },
+  {
+    "id": "HQ_011",
+    "label": "Definition precision — 'AI system' under Article 3(1)",
+    "tests": "definition_lookup; scope precision",
+    "question": "What is the legal definition of an 'AI system' under the EU AI Act, and what distinguishes it from ordinary software?"
+  },
+  {
+    "id": "HQ_012",
+    "label": "MDR manufacturer obligations — Article 10",
+    "tests": "role_obligations; manufacturer; MDR",
+    "question": "What are the core obligations of a medical device manufacturer under MDR 2017/745?"
+  },
+  {
+    "id": "HQ_013",
+    "label": "MDR Class IIb conformity assessment route (Annex IX vs Annex X)",
+    "tests": "classification_chain; conformity route; MDR",
+    "question": "Which conformity assessment routes are available for a Class IIb medical device under MDR 2017/745, and what role does the notified body play?"
+  },
+  {
+    "id": "HQ_014",
+    "label": "IVDR classification — Class B vs C (notified body involvement)",
+    "tests": "classification_chain; IVDR; notified body",
+    "question": "How is an in vitro diagnostic classified as Class B versus Class C under IVDR 2017/746, and when must a notified body be involved?"
+  },
+  {
+    "id": "HQ_015",
+    "label": "MDR Article 5(5) health institution exemption — conditions and limits",
+    "tests": "provision_lookup; exemption; calibration",
+    "question": "Under what conditions can a hospital manufacture and use a device in-house under the MDR Article 5(5) health institution exemption, and what obligations still apply?"
+  },
+  {
+    "id": "HQ_016",
+    "label": "MDR transitional provisions — significant change to a legacy device (Article 120)",
+    "tests": "provision_lookup; transitional; temporal; hard",
+    "question": "A device was CE-marked under the old MDD and is still on the market under MDR transitional provisions. What counts as a 'significant change' that ends the transitional benefit under MDR Article 120?"
+  },
+  {
+    "id": "HQ_017",
+    "label": "MDR post-market surveillance and PMCF (Articles 83-86)",
+    "tests": "role_obligations; PMS; MDR",
+    "question": "What post-market surveillance and post-market clinical follow-up obligations does a manufacturer have under MDR 2017/745?"
+  },
+  {
+    "id": "HQ_018",
+    "label": "MDR importer vs distributor obligations (Article 13 vs 14)",
+    "tests": "role_obligations; importer/distributor distinction",
+    "question": "How do the obligations of an importer differ from those of a distributor of medical devices under MDR 2017/745?"
+  },
+  {
+    "id": "HQ_019",
+    "label": "MDR authorised representative mandate for a non-EU manufacturer (Article 11)",
+    "tests": "role_obligations; authorised representative",
+    "question": "A manufacturer established outside the EU wants to place a device on the EU market. What is the role and what are the obligations of its authorised representative under MDR Article 11?"
+  },
+  {
+    "id": "HQ_020",
+    "label": "SaMD qualification — clinical decision support as a medical device (MDCG 2019-11)",
+    "tests": "legal_qualification; guidance; MDR",
+    "question": "Is standalone clinical decision-support software a medical device under MDR 2017/745, and how does MDCG 2019-11 guidance inform the qualification?"
+  },
+  {
+    "id": "HQ_021",
+    "label": "MDR vigilance — serious incident vs FSCA reporting (Article 87)",
+    "tests": "provision_lookup; vigilance; MDR",
+    "question": "What are a manufacturer's vigilance reporting obligations under MDR - the distinction and timelines between serious incidents and field safety corrective actions?"
+  },
+  {
+    "id": "HQ_022",
+    "label": "GDPR controller vs processor — SaMD cloud vendor (Articles 4, 24, 28)",
+    "tests": "role_obligations; GDPR; controller/processor distinction",
+    "question": "A cloud vendor hosts and runs inference for a hospital's diagnostic AI on patient data. Is the vendor a controller or a processor under the GDPR, and what determines that?"
+  },
+  {
+    "id": "HQ_023",
+    "label": "GDPR Article 28 — mandatory content of a data processing agreement",
+    "tests": "provision_lookup; GDPR; processor",
+    "question": "What must a data processing agreement contain under GDPR Article 28 when a medical device manufacturer engages a processor?"
+  },
+  {
+    "id": "HQ_024",
+    "label": "GDPR lawful basis for health data in clinical AI (Articles 6 + 9)",
+    "tests": "provision_lookup; GDPR; special category data",
+    "question": "What lawful basis is required to process patients' health data to train and run a clinical AI system under the GDPR, considering Articles 6 and 9?"
+  },
+  {
+    "id": "HQ_025",
+    "label": "DPIA + AI Act interplay for high-risk patient-data processing (GDPR Article 35)",
+    "tests": "cross_regulation; GDPR+AI Act; DPIA",
+    "question": "When is a data protection impact assessment required under GDPR Article 35 for a high-risk AI system processing patient data, and how does it relate to the EU AI Act's fundamental-rights impact assessment?"
+  },
+  {
+    "id": "HQ_026",
+    "label": "Automated decision-making rights — high-risk AI + GDPR Article 22",
+    "tests": "cross_regulation; GDPR+AI Act; automated decision-making",
+    "question": "A high-risk AI system makes automated eligibility decisions affecting individuals. What rights and safeguards does GDPR Article 22 impose, and how does this interact with the EU AI Act?"
+  },
+  {
+    "id": "HQ_027",
+    "label": "Wrong-premise trap — 'we only deploy, so we're not a provider' (fine-tune + market)",
+    "tests": "actor-status correction; audit-loop calibration",
+    "question": "We take an open-source foundation model, fine-tune it on our data, and put it on the market under our own brand for medical triage. Since we did not build the original model and only deploy it, we are just a deployer and not a provider under the EU AI Act, correct?"
+  },
+  {
+    "id": "HQ_028",
+    "label": "Genuine ambiguity — wellness app borderline MDR qualification",
+    "tests": "calibration; should hedge; intended purpose",
+    "question": "Our app tracks heart-rate variability and 'suggests when the user might be stressed' for general wellbeing, with a disclaimer that it is not for medical use. Does it fall under MDR 2017/745?"
+  },
+  {
+    "id": "HQ_029",
+    "label": "Category-confusion trap — 'does GDPR require a notified body?'",
+    "tests": "framework correction; calibration",
+    "question": "For our patient-data analytics platform, does the GDPR require us to use a notified body for conformity assessment?"
+  },
+  {
+    "id": "HQ_030",
+    "label": "Landscape breadth — diagnostic-AI startup launching in the EU",
+    "tests": "community_summary; multi-reg breadth",
+    "question": "We are a startup launching an AI diagnostic tool for radiology in the EU. Give an overview of the full regulatory compliance landscape we need to address."
+  },
+  {
+    "id": "HQ_031",
+    "label": "Temporal interplay — AI Act + MDR entry-into-force for a 2025 device",
+    "tests": "cross_regulation; temporal; transitional; hard",
+    "question": "A medical device with an AI component is placed on the EU market in 2025. How do the application timelines and transitional provisions of the EU AI Act and MDR 2017/745 interact for our compliance obligations?"
+  },
+  {
+    "id": "HQ_032",
+    "label": "MDR notified body role and obligations (Articles 35-50, Annex VII)",
+    "tests": "role_obligations; notified body; MDR",
+    "question": "What is the role of a notified body under MDR 2017/745, and what obligations and oversight apply to it?"
   }
 ]

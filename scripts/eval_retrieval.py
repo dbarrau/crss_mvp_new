@@ -11,8 +11,14 @@ Usage
     python scripts/eval_retrieval.py --case TC_001 TC_009 TC_012
     python scripts/eval_retrieval.py --k 10            # wider retrieval budget
     python scripts/eval_retrieval.py --verbose          # show retrieved refs
+    python scripts/eval_retrieval.py --snapshot base.json   # freeze a baseline
+    python scripts/eval_retrieval.py --diff base.json       # drift vs baseline
 
 Exit code: 0 if all pass, 1 if any fail.
+
+For the read-path rewrite, capture a baseline on ``main`` with ``--snapshot``,
+then run ``--diff`` on the rewrite branch to see exactly which provisions each
+migration step adds or drops per case (see docs/rewrite/REGRESSION_NET.md).
 
 Notes
 -----
@@ -63,6 +69,22 @@ _RED    = "\033[91m" if _USE_COLOUR else ""
 _YELLOW = "\033[93m" if _USE_COLOUR else ""
 _BOLD   = "\033[1m"  if _USE_COLOUR else ""
 _RESET  = "\033[0m"  if _USE_COLOUR else ""
+
+
+def _provision_identity(p: dict) -> str:
+    """Stable identity for a retrieved provision, for baseline/diff comparison.
+
+    Prefers the canonical node id (``<celex>_<kind>_<ref>``); falls back to
+    ``celex|article_ref`` only when no id is present.  ``article_ref`` /
+    ``display_ref`` alone is *not* used as identity — annex sub-node
+    display_refs are non-unique, which would corrupt a diff.
+    """
+    pid = p.get("article_id") or p.get("id")
+    if pid:
+        return str(pid)
+    celex = p.get("celex", "?")
+    ref = p.get("article_ref") or p.get("ref") or "?"
+    return f"{celex}|{ref}"
 
 
 def _stub_hyde(question: str, _client: Any) -> str:
@@ -160,6 +182,7 @@ def _run_case(
     retrieved_refs: list[str] = [
         p.get("article_ref", "") for p in all_provisions if p.get("article_ref")
     ]
+    retrieved_ids: list[str] = sorted({_provision_identity(p) for p in all_provisions})
 
     # --- Checks ---
     missing_celexes = [c for c in expected_celexes if c not in retrieved_celexes]
@@ -184,6 +207,7 @@ def _run_case(
         "missing_refs": missing_refs,
         "retrieved_celexes": sorted(retrieved_celexes),
         "retrieved_refs": list(dict.fromkeys(retrieved_refs)),  # deduped, ordered
+        "retrieved_ids": retrieved_ids,
         "n_provisions": len(all_provisions),
         "elapsed_s": elapsed,
     }
@@ -213,6 +237,66 @@ def _print_result(result: dict, verbose: bool) -> None:
         print(f"        Retrieved refs:  {refs}")
 
 
+def _write_snapshot(results: list[dict], path: str) -> None:
+    """Persist per-case retrieval as a baseline for later --diff comparisons."""
+    snapshot = {
+        r["id"]: {
+            "route": r["actual_route"],
+            "celexes": r["retrieved_celexes"],
+            "retrieved_ids": r["retrieved_ids"],
+        }
+        for r in results
+    }
+    Path(path).write_text(json.dumps(snapshot, indent=2, sort_keys=True))
+    print(f"\n{_BOLD}Snapshot written:{_RESET} {path} ({len(snapshot)} case(s))")
+
+
+def _print_diff(results: list[dict], baseline_path: str) -> int:
+    """Report per-case retrieval drift vs a baseline snapshot.
+
+    Returns the number of cases that *dropped* a previously-retrieved provision
+    or changed route — the signals that must be reviewed before flipping a
+    migration step from old to new path.
+    """
+    baseline: dict[str, Any] = json.loads(Path(baseline_path).read_text())
+    print(f"\n{_BOLD}Retrieval diff vs {baseline_path}{_RESET}\n")
+
+    total_added = total_dropped = 0
+    regressed: list[str] = []
+    for r in results:
+        base = baseline.get(r["id"])
+        if base is None:
+            print(f"  {_YELLOW}NEW{_RESET}   {_BOLD}{r['id']}{_RESET}  (not in baseline)")
+            continue
+        cur_ids = set(r["retrieved_ids"])
+        base_ids = set(base.get("retrieved_ids", []))
+        added = sorted(cur_ids - base_ids)
+        dropped = sorted(base_ids - cur_ids)
+        route_changed = base.get("route") != r["actual_route"]
+        total_added += len(added)
+        total_dropped += len(dropped)
+        if dropped or route_changed:
+            regressed.append(r["id"])
+        if not (added or dropped or route_changed):
+            continue
+        marker = f"{_RED}±{_RESET}" if (dropped or route_changed) else f"{_GREEN}+{_RESET}"
+        print(f"  {marker}  {_BOLD}{r['id']}{_RESET}  {r['label']}")
+        if route_changed:
+            print(f"        {_YELLOW}route:{_RESET} {base.get('route')} → {r['actual_route']}")
+        if dropped:
+            print(f"        {_RED}dropped ({len(dropped)}):{_RESET} {dropped[:10]}")
+        if added:
+            print(f"        {_GREEN}added   ({len(added)}):{_RESET} {added[:10]}")
+
+    print(f"\n{'─' * 60}")
+    print(f"  Added provisions:   {_GREEN}+{total_added}{_RESET}")
+    print(f"  Dropped provisions: {_RED}-{total_dropped}{_RESET}")
+    print(f"  Cases regressed:    {_RED if regressed else _GREEN}{len(regressed)}{_RESET}"
+          + (f"  {regressed}" if regressed else ""))
+    print(f"{'─' * 60}\n")
+    return len(regressed)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="CRSS retrieval eval harness")
     parser.add_argument(
@@ -221,6 +305,14 @@ def main() -> int:
     )
     parser.add_argument("--k", type=int, default=8, help="Retrieval budget k (default: 8)")
     parser.add_argument("--verbose", action="store_true", help="Show retrieved refs per case")
+    parser.add_argument(
+        "--snapshot", metavar="PATH",
+        help="Write per-case retrieved provision IDs to PATH as a baseline",
+    )
+    parser.add_argument(
+        "--diff", metavar="PATH",
+        help="Compare this run's retrieval against a baseline snapshot at PATH",
+    )
     args = parser.parse_args()
 
     golden: list[dict] = json.loads(GOLDEN_SET_PATH.read_text())
@@ -256,6 +348,11 @@ def main() -> int:
     print(f"  Route accuracy:       {route_match}/{total} correct")
     print(f"  Avg retrieval time:   {avg_t:.2f}s")
     print(f"{'─' * 60}\n")
+
+    if args.snapshot:
+        _write_snapshot(results, args.snapshot)
+    if args.diff:
+        _print_diff(results, args.diff)
 
     return 0 if passed == total else 1
 

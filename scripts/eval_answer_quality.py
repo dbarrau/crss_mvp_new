@@ -76,6 +76,35 @@ def _parse_reliance(text: str) -> str:
     return "(unparsed)"
 
 
+# Faithfulness / attribution flag blocks are prepended to the answer by the
+# agent (see application/_faithfulness.build_warning_block). Parsing them counts
+# how much unfaithful content this run produced and had to strip — a first-class
+# regression signal: a migration that raises fabricated/misattributed counts
+# must fail the net even if the rubric score holds. Requires the faithfulness
+# check enabled (CRSS_FAITHFULNESS_CHECK != 0, the default).
+_FABRICATED_RE = re.compile(r"FAITHFULNESS FLAG\*\*\s*[—\-]\s*(\d+)\s+of\s+(\d+)", re.I)
+_MISATTRIBUTED_RE = re.compile(r"ATTRIBUTION FLAG\*\*\s*[—\-]\s*(\d+)\s+of\s+(\d+)", re.I)
+_NEAR_RE = re.compile(r"Wording check\*\*\s*[—\-]\s*(\d+)\s+quote", re.I)
+
+
+def _parse_faithfulness(answer: str) -> dict[str, int]:
+    """Extract fabricated / misattributed / near-verbatim quote counts."""
+    fab = _FABRICATED_RE.search(answer)
+    mis = _MISATTRIBUTED_RE.search(answer)
+    near = _NEAR_RE.search(answer)
+    total = 0
+    if fab:
+        total = max(total, int(fab.group(2)))
+    if mis:
+        total = max(total, int(mis.group(2)))
+    return {
+        "fabricated": int(fab.group(1)) if fab else 0,
+        "misattributed": int(mis.group(1)) if mis else 0,
+        "near_verbatim": int(near.group(1)) if near else 0,
+        "total_quotes": total,
+    }
+
+
 def _judge(prompt: str, model: str, runs: int) -> tuple[float | None, list[float], str]:
     """Run the judge `runs` times; return (mean_score, all_scores, last_text)."""
     from mistralai.client import Mistral
@@ -131,6 +160,7 @@ def _run_case(
         "score": mean,
         "scores": scores,
         "reliance": _parse_reliance(judge_text),
+        "faithfulness": _parse_faithfulness(answer),
         "gen_s": round(gen_s, 1),
         "judge_s": round(judge_s, 1),
         "answer_chars": len(answer),
@@ -182,7 +212,12 @@ def main() -> int:
         )
         results.append(r)
         score_str = f"{r['score']}" if r["score"] is not None else "PARSE_FAIL"
-        print(f"  {r['id']}  score={score_str}/10  [{r['reliance']}]  "
+        fc = r["faithfulness"]
+        faith_str = (
+            f"fab={fc['fabricated']} mis={fc['misattributed']} "
+            f"near={fc['near_verbatim']}/{fc['total_quotes']}"
+        )
+        print(f"  {r['id']}  score={score_str}/10  [{r['reliance']}]  {faith_str}  "
               f"(gen {r['gen_s']}s, judge {r['judge_s']}s)")
         if not args.quiet:
             print("\n" + "─" * 70)
@@ -191,7 +226,31 @@ def main() -> int:
 
     retriever.close()
 
-    out = {"label": args.label, "judge_model": args.judge_model, "results": results}
+    graded = [r for r in results if r["score"] is not None]
+    mean_score = round(sum(r["score"] for r in graded) / len(graded), 2) if graded else None
+    tot_fab = sum(r["faithfulness"]["fabricated"] for r in results)
+    tot_mis = sum(r["faithfulness"]["misattributed"] for r in results)
+    tot_near = sum(r["faithfulness"]["near_verbatim"] for r in results)
+    summary = {
+        "n_cases": len(results),
+        "mean_score": mean_score,
+        "fabricated_total": tot_fab,
+        "misattributed_total": tot_mis,
+        "near_verbatim_total": tot_near,
+    }
+    print(f"\n{'─' * 60}")
+    print(f"  Mean rubric score:   {mean_score}/10  ({len(graded)}/{len(results)} graded)")
+    print(f"  Fabricated quotes:   {tot_fab}  (must be ≤ baseline)")
+    print(f"  Misattributed quotes:{tot_mis}  (must be ≤ baseline)")
+    print(f"  Near-verbatim quotes:{tot_near}")
+    print(f"{'─' * 60}\n")
+
+    out = {
+        "label": args.label,
+        "judge_model": args.judge_model,
+        "summary": summary,
+        "results": results,
+    }
     if args.out:
         Path(args.out).write_text(json.dumps(out, indent=2))
         if not args.quiet:
