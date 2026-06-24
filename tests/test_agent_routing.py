@@ -44,13 +44,17 @@ class _FakeRetriever:
         self.calls.append("direct")
         return self._take(self.direct)
 
-    def retrieve_by_roles(self, role_specs, k=8):
+    def retrieve_by_roles(self, role_specs, k=8, query_vec=None, target_celexes=None):
         self.calls.append("roles")
         return self._take(self.role)
 
     def encode_as_passage(self, text):
         self.calls.append("encode")
         return f"encoded:{text}"
+
+    def encode_as_query(self, text):
+        self.calls.append("encode_query")
+        return f"qencoded:{text}"
 
     def retrieve(self, question, k=20, target_celexes=None, query_vec=None):
         self.calls.append("retrieve")
@@ -231,7 +235,7 @@ def test_retrieve_route_provisions_skips_hyde_for_role_lookup():
 
     # The GPAI safety net fires an additional retrieve_by_refs call because
     # the mock provision has no article_ref matching Articles 51-55.
-    assert retriever.calls == ["roles", "direct"]
+    assert retriever.calls == ["encode_query", "roles", "direct"]
     assert [p["article_id"] for p in result["provisions"]] == ["art-provider"]
 
 
@@ -263,7 +267,7 @@ def test_retrieve_route_provisions_cross_regulation_combines_all_paths():
 
     # The GPAI safety net fires an additional retrieve_by_refs call because
     # none of the mock provisions carry a GPAI article_ref (51-55).
-    assert retriever.calls == ["direct", "roles", "encode", "retrieve", "direct"]
+    assert retriever.calls == ["direct", "encode_query", "roles", "encode", "retrieve", "direct"]
     assert result["hyde_text"] == "synthetic hyde text"
     assert [p["article_id"] for p in result["provisions"]] == [
         "art-43",
@@ -325,6 +329,7 @@ def test_retrieve_route_provisions_legal_qualification_forces_backbone_refs():
         "direct",
         "direct",
         "direct",
+        "encode_query",
         "roles",
         "encode",
         "retrieve",

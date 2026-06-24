@@ -453,7 +453,11 @@ def _retrieve_route_provisions(
                 )
 
     if route.id in {"role_obligations", "cross_regulation", "legal_qualification"} and role_specs:
-        role_provisions = retriever.retrieve_by_roles(role_specs, k=max(6, k // 2))
+        role_provisions = retriever.retrieve_by_roles(
+            role_specs, k=max(6, k // 2),
+            query_vec=retriever.encode_as_query(question),
+            target_celexes=target_celexes,
+        )
         if route.id == "role_obligations":
             provisions = list(role_provisions)
 
@@ -1094,7 +1098,11 @@ def _run_corrective_retrieval_pass(
             sufficiency = recompute()
 
     if sufficiency["needs_role_recovery"] and role_specs:
-        recovered_roles = retriever.retrieve_by_roles(role_specs, k=max(6, k // 2))
+        recovered_roles = retriever.retrieve_by_roles(
+            role_specs, k=max(6, k // 2),
+            query_vec=retriever.encode_as_query(question),
+            target_celexes=target_celexes,
+        )
         added = _merge_unique_provisions(role_provisions, recovered_roles)
         added += _merge_unique_provisions(provisions, recovered_roles, prepend=True)
         if added:

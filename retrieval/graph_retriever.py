@@ -312,6 +312,12 @@ LIMIT 20
 # Role-aware provision lookup. Starts from one or more ActorRole nodes,
 # expands through composite-role and curated equivalence edges, then returns
 # obligation-bearing provisions linked to any reachable role.
+# Upper bound on obligations returned per role-obligation query. Generous
+# enough to carry a role's full statutory article set (the largest, MDR
+# manufacturer, has ~26) without dumping every annex fragment; the context
+# budget trims any low-relevance tail downstream.
+_ROLE_OBLIGATION_CAP = 14
+
 _ROLE_OBLIGATIONS_CYPHER = """\
 UNWIND $role_ids AS rid
 MATCH (seed:ActorRole {id: rid})
@@ -324,6 +330,7 @@ MATCH (p:Provision)-[:OBLIGATION_OF]->(role)
 WHERE p.kind IN ['article', 'annex', 'annex_section', 'annex_subsection', 'annex_point', 'annex_part', 'recital', 'section']
 RETURN DISTINCT
     p.id AS article_id,
+    p.kind AS kind,
     p.celex AS celex,
     p.regulation_id AS regulation,
     p.display_ref AS article_ref,
@@ -332,7 +339,8 @@ RETURN DISTINCT
     p.binding_force AS binding_force,
     role.id AS matched_role_id,
     role.term_normalized AS matched_role
-LIMIT 40
+ORDER BY (CASE WHEN kind = 'article' THEN 0 ELSE 1 END), article_id
+LIMIT 60
 """
 
 
@@ -428,6 +436,7 @@ class GraphRetriever:
         self._path_strings = [r["path_string"] or "" for r in rows]
         self._celexes = [r["celex"] or "" for r in rows]
         self._id_to_kind = dict(zip(self._ids, self._kinds))
+        self._id_index = {pid: i for i, pid in enumerate(self._ids)}
         self._matrix = np.array([r["emb"] for r in rows], dtype=np.float32)
         logger.info(
             "Loaded %d provision embeddings (%d dims) into memory.",
@@ -1005,15 +1014,38 @@ ORDER BY d.celex, d.term_normalized
         role_specs: list[tuple[str, str]],
         *,
         k: int = 8,
+        query_vec: np.ndarray | None = None,
+        target_celexes: set[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """Return provisions linked to one or more resolved actor roles.
+        """Return the obligations of one or more resolved actor roles.
+
+        The role's ``OBLIGATION_OF`` set *is* the statutory answer to a
+        role-obligation question, so it is treated as a guaranteed candidate set
+        rather than a vector top-k: article-grained obligations are preferred
+        over annex/recital fragments, and — when ``query_vec`` is supplied — the
+        set is ranked by cosine relevance to the question so the on-point
+        articles (e.g. Article 53 for "GPAI provider obligations") lead and
+        survive trimming. This replaces the previous "first ``k`` in arbitrary
+        Neo4j order" selection, which silently dropped relevant obligations.
 
         Parameters
         ----------
         role_specs:
             ``[(term_normalized, celex), ...]`` pairs resolved by the agent.
         k:
-            Maximum number of expanded parent provisions to return.
+            Lower bound on the obligation budget. The effective cap is
+            ``max(k, _ROLE_OBLIGATION_CAP)`` so a small caller ``k`` (e.g. the
+            eval's k=8) never truncates a role's complete article set.
+        query_vec:
+            Optional query embedding (``encode_as_query``). When given, ranks
+            obligations by cosine relevance; otherwise falls back to the
+            Cypher's article-first ordering.
+        target_celexes:
+            When provided, drops obligations outside these regulations. The
+            Cypher expands ``EQUIVALENT_ROLE`` / ``INCLUDES_ROLE`` across
+            regulations (e.g. AI-Act ``provider`` ≡ MDR ``manufacturer``), which
+            is wanted only when the question actually spans them; scoping keeps a
+            single-regulation question from inheriting another reg's obligations.
         """
         if not role_specs:
             return []
@@ -1025,15 +1057,42 @@ ORDER BY d.celex, d.term_normalized
         if not rows:
             return []
 
-        top_ids: list[str] = []
+        # Dedup by provision id, first occurrence wins (preserves the Cypher's
+        # article-first ordering as the no-query fallback). Cross-regulation
+        # obligations reached via role equivalence are dropped unless in scope.
         role_hits: dict[str, tuple[str | None, str | None]] = {}
+        uniq: list[dict[str, Any]] = []
         for row in rows:
+            if target_celexes and row.get("celex") not in target_celexes:
+                continue
             art_id = row["article_id"]
             if art_id not in role_hits:
                 role_hits[art_id] = (row.get("matched_role_id"), row.get("matched_role"))
-                top_ids.append(art_id)
-            if len(top_ids) >= k:
-                break
+                uniq.append(row)
+
+        def _relevance(row: dict[str, Any]) -> float:
+            if query_vec is None:
+                return 0.0
+            idx = self._id_index.get(row["article_id"])
+            if idx is None or self._matrix is None:
+                return -1.0  # no embedding: keep, but rank last
+            return float(self._matrix[idx] @ query_vec)
+
+        articles = sorted(
+            (r for r in uniq if r.get("kind") == "article"),
+            key=_relevance, reverse=True,
+        )
+        others = sorted(
+            (r for r in uniq if r.get("kind") != "article"),
+            key=_relevance, reverse=True,
+        )
+
+        # Article-grained obligations lead; annex/recital fragments fill the
+        # remaining budget. The cap is generous and floored so a role's full
+        # article set is never crowded out by a small caller k.
+        cap = max(k, _ROLE_OBLIGATION_CAP)
+        top_rows = (articles + others)[:cap]
+        top_ids = [r["article_id"] for r in top_rows]
 
         with self._driver.session(database=self._db) as s:
             results = s.run(_EXPAND_CYPHER, ids=top_ids).data()
