@@ -259,7 +259,6 @@ def _gap_retrieve(
             if not aid or aid in seen:
                 continue
             seen.add(aid)
-            p["_audit_gap"] = True
             new.append(p)
             if len(new) >= max_add:
                 return

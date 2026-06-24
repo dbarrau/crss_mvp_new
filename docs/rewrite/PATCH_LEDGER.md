@@ -31,7 +31,7 @@ of idempotent expanders under one budget and one dedup.
 | A2 | Obligation-backbone force-retrieval (`_get_obligation_backbone_refs`) | `_retrieval.py:231` + `_OBLIGATION_MASTER_ARTICLES` `_config.py:203` | Role obligation questions missed the statutory anchor articles | **DERIVE** → `RoleExpander` traverses `OBLIGATION_OF` from the role node |
 | A3 | AI-Act high-risk backbone (`_AI_ACT_HIGH_RISK_BACKBONE_REFS`) | `_retrieval.py:69` | Class-IIb-SaMD benchmark: obligation cluster not retrieved when `role_specs` empty | **DERIVED & DELETED** (`8213f88`) → completed Article 6's `TRIGGERS_OBLIGATION_CLUSTER` (added Art 17-21 + Annex IV/VI/VII to the curated chain); `retrieve_by_chain` now reproduces the full list, hardcode gone |
 | A4 | Corrective retrieval pass (`_run_corrective_retrieval_pass`) | `_retrieval.py` | Selected route retrieved insufficient evidence | **FOLDED** (`8652328`) → each recovery re-runs a retrieval primitive/expander with sufficiency-gap seeds through one channel-aware `_recover`; duplicate cross_reg/legal_qual missing-CELEX branches collapsed; behaviour-exact on the extended net |
-| A5 | Audit gap-retrieve (`_gap_retrieve`) | `_audit.py:244` | Auditor names a missing provision/topic to close a backbone gap | **FOLD (pending)** → same pattern as A4: auditor supplies seeds, re-run the expanders. Gate on the extended net (now drives sufficiency + corrective) before touching |
+| A5 | Audit gap-retrieve (`_gap_retrieve`) | `_audit.py:244` | Auditor names a missing provision/topic to close a backbone gap | **KEEP** (was FOLD) — already seed-driven over the retriever's *public* primitives, not a private retriever path; its dedup/budget/tag concerns are audit-specific and don't belong in the general expanders (see verdict). Removed only a dead `_audit_gap` tag |
 | A6 | Definition anchor force-injection (`_ANCHOR_DEFINITION_TERMS`) | `_definitions.py:28` | Short foundational terms ("ai system") lost the 15-term cap race → training-memory fallback | **KEEP** (was FOLD) — genuine curation, *not* edge-derivable (see verdict); relocate into a `DefinitionExpander` in Phase 3, don't delete |
 
 > **A6 — empirical verdict (KEEP, not a delete target).** `_ANCHOR_DEFINITION_TERMS`
@@ -92,6 +92,25 @@ of idempotent expanders under one budget and one dedup.
 > duplicated corrective branches, dead channel/import — went down; raw LOC ticked
 > up on boilerplate, which an extraction refactor cannot avoid. The campaign's
 > raw-LOC reductions come from the deletions (B1 −211, B2, GPAI), not A1.
+
+> **A5 — empirical verdict (KEEP, not a fold target).** The FOLD hypothesis
+> assumed `_gap_retrieve` was a *private retriever path* duplicating the route
+> retrieval. It is not: it already calls the retriever's public primitives
+> (`retrieve_by_refs` for the auditor's `missing_provision_refs`, `retrieve(topic,
+> k=3)` for `missing_topics`) and is the cleanest existing expression of the
+> ledger's own principle — *the auditor supplies seeds; retrieval is a request,
+> not an asserted fact, so a hallucinated ref simply returns nothing.* What it
+> adds over the expanders is audit-specific and correct where it is: dedup
+> against the post-generation `existing_ids` (not the route channels), a
+> `max_add` budget spanning the ref + topic sources, per-topic `k=3`, and
+> best-effort error handling. Folding it would parameterise the general expanders
+> across four axes (dedup-set, tag, cap, recompute-vs-extend) for two call sites
+> — premature abstraction, net-additive, the same over-engineering declined for
+> the A1.2 table. It is also **not deterministically gateable** (the auditor is
+> an LLM downstream of generation; the retrieval net stops before generation), so
+> a fold could only be validated on the noisy quality net — a poor trade for an
+> already-clean 39-LOC helper. Only genuine subtraction taken: the dead
+> `_audit_gap` tag (set, never read).
 
 > **A2 — empirical proof (TC_011, post-reset baseline).** Question: *"baseline
 > obligations for providers of general-purpose AI models"* (GPAI = Art 3(63)).

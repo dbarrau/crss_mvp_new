@@ -65,8 +65,13 @@ net says new ≥ old.
         via one channel-aware `_recover`, collapsing the duplicate missing-CELEX
         branches (`9e09e0c`, `8652328`, behaviour-exact). The rigid route→expander
         *table* (A1.2) was intentionally not built — the phase structure already
-        is the "thin policy" end state. A5 (audit gap-retrieve) folds next on the
-        same pattern, now gateable.
+        is the "thin policy" end state.
+  - [x] **A5** — assessed and **kept**: `_gap_retrieve` already drives retrieval
+        from the auditor's seeds via the retriever's *public* primitives (not a
+        private path), with audit-specific dedup/budget/tag that don't belong in
+        the general expanders; folding it would be net-additive over-engineering
+        and isn't deterministically gateable (auditor is an LLM). Removed only a
+        dead `_audit_gap` tag.
   - [x] **A2** — `retrieve_by_roles` relevance-ranks the role's `OBLIGATION_OF`
         set (article-preferred, celex-scoped, guaranteed cap) instead of an
         arbitrary first-k; celex filter pushed into the Cypher before its LIMIT
