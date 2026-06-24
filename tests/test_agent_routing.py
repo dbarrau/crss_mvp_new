@@ -233,9 +233,10 @@ def test_retrieve_route_provisions_skips_hyde_for_role_lookup():
         hyde_builder=lambda *_args, **_kwargs: pytest.fail("HyDE should not run"),
     )
 
-    # The GPAI safety net fires an additional retrieve_by_refs call because
-    # the mock provision has no article_ref matching Articles 51-55.
-    assert retriever.calls == ["encode_query", "roles", "direct"]
+    # Role lookup encodes the query for relevance ranking and runs the role
+    # traversal — no HyDE, and (since A2 subsumed it) no GPAI safety-net
+    # retrieve_by_refs. With no explicit refs there is no direct pass.
+    assert retriever.calls == ["encode_query", "roles"]
     assert [p["article_id"] for p in result["provisions"]] == ["art-provider"]
 
 
@@ -265,9 +266,9 @@ def test_retrieve_route_provisions_cross_regulation_combines_all_paths():
         hyde_builder=lambda *_args, **_kwargs: "synthetic hyde text",
     )
 
-    # The GPAI safety net fires an additional retrieve_by_refs call because
-    # none of the mock provisions carry a GPAI article_ref (51-55).
-    assert retriever.calls == ["direct", "encode_query", "roles", "encode", "retrieve", "direct"]
+    # Explicit-ref direct pass, then role traversal (query-encoded), then HyDE.
+    # The trailing GPAI safety-net retrieve_by_refs is gone — A2 subsumed it.
+    assert retriever.calls == ["direct", "encode_query", "roles", "encode", "retrieve"]
     assert result["hyde_text"] == "synthetic hyde text"
     assert [p["article_id"] for p in result["provisions"]] == [
         "art-43",

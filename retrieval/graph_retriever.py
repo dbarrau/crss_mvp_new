@@ -328,6 +328,7 @@ UNWIND roles AS role
 WITH DISTINCT role
 MATCH (p:Provision)-[:OBLIGATION_OF]->(role)
 WHERE p.kind IN ['article', 'annex', 'annex_section', 'annex_subsection', 'annex_point', 'annex_part', 'recital', 'section']
+  AND ($target_celexes IS NULL OR p.celex IN $target_celexes)
 RETURN DISTINCT
     p.id AS article_id,
     p.kind AS kind,
@@ -1046,25 +1047,29 @@ ORDER BY d.celex, d.term_normalized
             regulations (e.g. AI-Act ``provider`` ≡ MDR ``manufacturer``), which
             is wanted only when the question actually spans them; scoping keeps a
             single-regulation question from inheriting another reg's obligations.
+            The filter is applied *inside* the Cypher (before its ``LIMIT``) so
+            in-scope obligations are never crowded out of the row cap by
+            cross-regulation ones (MDR ids sort ahead of AI-Act ids).
         """
         if not role_specs:
             return []
 
         role_ids = [f"{celex}::role::{term_normalized}" for term_normalized, celex in role_specs]
+        celex_param = sorted(target_celexes) if target_celexes else None
         with self._driver.session(database=self._db) as s:
-            rows = s.run(_ROLE_OBLIGATIONS_CYPHER, role_ids=role_ids).data()
+            rows = s.run(
+                _ROLE_OBLIGATIONS_CYPHER, role_ids=role_ids, target_celexes=celex_param,
+            ).data()
 
         if not rows:
             return []
 
         # Dedup by provision id, first occurrence wins (preserves the Cypher's
         # article-first ordering as the no-query fallback). Cross-regulation
-        # obligations reached via role equivalence are dropped unless in scope.
+        # scoping already happened in the Cypher.
         role_hits: dict[str, tuple[str | None, str | None]] = {}
         uniq: list[dict[str, Any]] = []
         for row in rows:
-            if target_celexes and row.get("celex") not in target_celexes:
-                continue
             art_id = row["article_id"]
             if art_id not in role_hits:
                 role_hits[art_id] = (row.get("matched_role_id"), row.get("matched_role"))

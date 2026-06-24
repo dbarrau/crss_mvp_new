@@ -27,13 +27,6 @@ from application._routing import (
 logger = logging.getLogger(__name__)
 
 _AI_ACT_CELEX = "32024R1689"
-_AI_ACT_GPAI_REFS = frozenset({
-    "Article 51",
-    "Article 52",
-    "Article 53",
-    "Article 54",
-    "Article 55",
-})
 _AI_ACT_PROHIBITED_PRACTICES_RE = re.compile(
     r"\b(prohibit(?:ed|ion|ions)?|ban(?:ned)?|forbidden|not\s+allowed)\b",
     re.IGNORECASE,
@@ -617,8 +610,15 @@ def _retrieve_route_provisions(
         # so the community route no longer depends on the GPAI safety net or the
         # hardcoded obligation backbone for completeness.
         if role_specs:
+            # Breadth route: include the role's *complete* article obligation
+            # set, not a relevance-capped top-k. A generic "main categories of
+            # obligations" query ranks niche articles (e.g. GPAI systemic-risk
+            # Art 55) low, so a small cap would drop them — but completeness is
+            # exactly what this route owes. A high k lifts the cap past the
+            # largest role's article count (~26); query_vec only orders the set.
             comm_role_obligations = retriever.retrieve_by_roles(
                 role_specs,
+                k=40,
                 query_vec=retriever.encode_as_query(question),
                 target_celexes=target_celexes,
             )
@@ -643,45 +643,6 @@ def _retrieve_route_provisions(
             _merge_unique_provisions(provisions, role_provisions, prepend=True)
         if direct_provisions:
             _merge_unique_provisions(provisions, direct_provisions, prepend=True)
-
-    # ── GPAI coverage safety net ─────────────────────────────────────────────
-    # Regardless of route, whenever the detected roles include an AI Act
-    # provider, verify that at least one GPAI article (51–55) is in the result
-    # set.  If not, force-add Articles 53 and 55 via direct lookup.
-    #
-    # Rationale: the GPAI sub-question injection and backbone mechanism both
-    # gate on specific routes and breadth-language keywords.  A question like
-    # "what are the obligations of providers under the AI Act?" (no "all")
-    # hitting role_obligations would only run retrieve_by_roles(), and GPAI
-    # coverage then depends entirely on OBLIGATION_OF edges — which, even
-    # after Fix 1, may still lose the cosine-similarity contest against the
-    # much denser High-Risk AI cluster in community search paths.
-    #
-    # This check is deterministic, route-agnostic, and fires last so it never
-    # duplicates provisions already present.
-    if any(
-        role_term == "provider" and celex == _AI_ACT_CELEX
-        for role_term, celex in role_specs
-    ) and (not target_celexes or _AI_ACT_CELEX in target_celexes):
-        _has_gpai = any(
-            p.get("celex") == _AI_ACT_CELEX
-            and (p.get("article_ref") or "") in _AI_ACT_GPAI_REFS
-            for p in provisions
-        )
-        if not _has_gpai:
-            _gpai_provisions = retriever.retrieve_by_refs(
-                ["Article 53", "Article 55"],
-                celex_filter={_AI_ACT_CELEX},
-            )
-            added = _merge_unique_provisions(provisions, _gpai_provisions)
-            if added:
-                logger.info(
-                    "GPAI safety net: injected %d GPAI provision(s) "
-                    "(Articles 53/55) — none were present after primary retrieval.",
-                    added,
-                )
-            else:
-                logger.debug("GPAI safety net: provisions already present.")
 
     # ── AI Act prohibited-practices safety net ─────────────────────────────
     # For prohibition-focused questions (Article 5 family), force-include
