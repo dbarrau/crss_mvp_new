@@ -31,6 +31,7 @@ TEXTUAL GROUNDING RULES:
 - NEVER supply regulatory details (paragraph numbers, definitions, subparagraph ordinals, recital numbers, annex rule numbers) from your training memory — these are version-sensitive.
 - If the context lacks a specific detail needed to complete your reasoning, state that the context is insufficient rather than guessing.
 - Use ONLY EU regulatory terminology.
+- Write the answer as a self-contained compliance memo to a client. NEVER refer to the retrieval system or its internals — do not mention "the context", "retrieved text", "the provided sources", bracketed index numbers (e.g. [3]), or internal section labels. The reader sees only your analysis, not the machinery that produced it.
 
 REGULATORY REASONING & LEGAL INFERENCE (mandatory for qualification and overlaps):
 - You MUST use your expert understanding of European law to draw logical inferences, bridge multi-step definitions, and resolve cross-regulatory overlaps (e.g., AI Act + MDR).
@@ -122,8 +123,9 @@ quotation from memory — if the exact wording is not in the context, do NOT put
 it in quotation marks: paraphrase the rule and cite the provision instead (e.g. \
 "Article 2 defines a medical device as a device intended for a medical \
 purpose..."). An accurate citation with a faithful paraphrase is far better than \
-an invented quotation. Label each quote with the provision reference shown in \
-the context header (e.g. [1] Article 2)
+an invented quotation. Cite each provision by its own Article/Annex number \
+(e.g. Article 2, Annex IX) — never the bracketed [n] index used in the context \
+headers; that index is internal and must not appear in your answer.
 3. Cross-references that appear explicitly in the context
 
 ECONOMY OF ANALYSIS (mandatory):
@@ -321,7 +323,7 @@ def _build_route_answer_guidance(
         lines.append(
             "  Step 6 — RESIDUAL UNCERTAINTY: State what factual or legal questions "
             "remain unresolved and what would change the conclusion. Explicitly "
-            "distinguish what the retrieved text states from what you are inferring."
+            "distinguish what the provisions state from what you are inferring."
         )
         lines.append(
             "  Step 7 — INTERPRETIVE GUIDANCE (non-binding): If the REGULATORY "
@@ -567,10 +569,10 @@ def _build_route_answer_guidance(
         "before obligations. Use the following logical flow:"
     )
     lines.append(
-        "- Format the answer using these sections in this order: "
-        "(1) Explicitly stated in retrieved text, "
-        "(2) Inference and likely outcome, "
-        "(3) Remaining uncertainty and what would change the conclusion."
+        "- Reason in this order, under natural reader-facing headings — do NOT "
+        "print these labels verbatim: first what the regulations expressly "
+        "establish, then the inference and likely outcome, then the remaining "
+        "uncertainty and what would change the conclusion."
     )
     lines.append(
         "- Resolve initial actor status before any transition analysis: "
@@ -590,7 +592,7 @@ def _build_route_answer_guidance(
     lines.append("- Treat qualification and status-transition questions as case-specific unless the retrieved context makes the conclusion categorical.")
     lines.append("- Establish the legal route in order: Article 6(1) plus Annex I product-route analysis before Article 6(2) or Annex III reasoning; Article 3 provider-definition analysis before Article 25 transition analysis when both are in play.")
     lines.append("- Do not jump straight to an obligation without verifying the definitional prerequisite first.")
-    lines.append("- State clearly what the retrieved text explicitly states versus what you logically infer from it.")
+    lines.append("- State clearly what the provisions expressly state versus what you logically infer from them.")
     lines.append("- If definitions or criteria are missing, flag that the prerequisite cannot be definitively established.")
 
     if not sufficiency.get("ok", True):

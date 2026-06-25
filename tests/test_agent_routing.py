@@ -884,7 +884,7 @@ def test_build_route_answer_guidance_requires_uncertainty_for_qualification_rout
     assert guidance is not None
     assert "LEGAL ANCHORS" in guidance
     assert "case-specific" in guidance
-    assert "Explicitly stated in retrieved text" in guidance
+    assert "what the regulations expressly establish" in guidance
     assert "Resolve initial actor status before any transition analysis" in guidance
     assert "AI Act high-risk classification" in guidance
     assert "Article 6(1) plus Annex I" in guidance
