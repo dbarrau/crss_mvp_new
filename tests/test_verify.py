@@ -8,10 +8,7 @@ so these pin its behaviour against fixed answers + evidence (no LLM, no Neo4j).
 import pytest
 
 from application.verify import verify_answer, VerificationResult
-
-
-_AI_ACT = "32024R1689"
-_GDPR = "32016R0679"
+from domain.legislation_catalog import AI_ACT_CELEX as _AI_ACT, GDPR_CELEX as _GDPR
 
 _GROUNDED = "High-risk AI systems shall be subject to a conformity assessment."
 _FABRICATED = (

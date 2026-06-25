@@ -8,18 +8,19 @@ from __future__ import annotations
 
 from application.contracts import Definition, Evidence, Provision, Scenario
 from application._faithfulness import _provision_text, _definition_text, _build_corpus
+from domain.legislation_catalog import AI_ACT_CELEX as _AI_ACT, MDR_CELEX as _MDR
 
 
 _PROVISION = {
-    "article_id": "32024R1689_article_43",
-    "celex": "32024R1689",
+    "article_id": f"{_AI_ACT}_article_43",
+    "celex": _AI_ACT,
     "article_ref": "Article 43",
     "article_text": "Where a high-risk AI system undergoes a substantial modification …",
     "binding_force": "binding",
     "provision_role": "obligation",
-    "matched_leaf_id": "32024R1689_article_43_para_4",
+    "matched_leaf_id": f"{_AI_ACT}_article_43_para_4",
     "children": [
-        {"id": "32024R1689_article_43_para_4", "ref": "Article 43(4)",
+        {"id": f"{_AI_ACT}_article_43_para_4", "ref": "Article 43(4)",
          "kind": "paragraph", "raw_text": "A new conformity assessment is required."},
         {"id": "x", "ref": "Article 43(1)", "kind": "paragraph", "text": "fallback text"},
     ],
@@ -32,12 +33,12 @@ _PROVISION = {
 _DEFINITION = {
     "term": "ai system",
     "term_normalized": "ai_system",
-    "celex": "32024R1689",
+    "celex": _AI_ACT,
     "article_ref": "Article 3(1)",
     "regulation": "EU AI Act",
     "definition_type": "formal",
     "definition_text": "'AI system' means a machine-based system …",
-    "source_provision_id": "32024R1689_article_3",
+    "source_provision_id": f"{_AI_ACT}_article_3",
 }
 
 
@@ -92,11 +93,11 @@ def test_faithfulness_helpers_delegate_to_the_contract():
 
 
 def test_provision_identity_prefers_node_id_not_display_ref():
-    assert Provision.from_dict({"article_id": "32017R0745_annex_1"}).identity == "32017R0745_annex_1"
+    assert Provision.from_dict({"article_id": f"{_MDR}_annex_1"}).identity == f"{_MDR}_annex_1"
     # No id -> celex|article_ref (never a bare, non-unique display_ref)
     assert Provision.from_dict(
-        {"celex": "32017R0745", "article_ref": "Annex I"}
-    ).identity == "32017R0745|Annex I"
+        {"celex": _MDR, "article_ref": "Annex I"}
+    ).identity == f"{_MDR}|Annex I"
 
 
 # ---------------------------------------------------------------------------
