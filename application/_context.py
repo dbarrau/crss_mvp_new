@@ -16,13 +16,6 @@ from application._config import _BODY_LIMIT, _INLINE_REF_RE
 
 _MAX_POINTER_REFS = 10
 
-# Per-provision rendering budgets.  These bound how much child-paragraph and
-# cross-reference detail each provision contributes to the LLM prompt.  The
-# rolled-up body (capped at _BODY_LIMIT) already carries the provision's
-# substance, so a long tail of children/citations mostly inflated the prompt
-# (a ~27-child article rendered to ~25 KB; a full 40-provision context reached
-# ~313 KB / ~78 K tokens, slowing generation and risking rate-limit stalls).
-# Override via env if a deployment needs more breadth.
 def _int_env(name: str, default: int) -> int:
     try:
         return max(1, int(os.environ.get(name, default)))
@@ -30,16 +23,25 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
-_MAX_CHILD_LINES = _int_env("CRSS_MAX_CHILD_LINES", 12)
-_CHILD_CHARS = _int_env("CRSS_CHILD_CHARS", 700)
-_CHILD_MATCHED_CHARS = _int_env("CRSS_CHILD_MATCHED_CHARS", 1000)
-_MAX_CITE_LINES = _int_env("CRSS_MAX_CITE_LINES", 6)
-_CITE_CHARS = _int_env("CRSS_CITE_CHARS", 700)
+# Per-provision rendering budgets — plain layout constants, deliberately *not*
+# env-tunable.  They bound how much child-paragraph and cross-reference detail
+# each provision contributes to the LLM prompt; the rolled-up body (capped at
+# _BODY_LIMIT) already carries the substance, so a long tail of children /
+# citations mostly inflated the prompt (a ~27-child article → ~25 KB; a full
+# 40-provision context reached ~313 KB / ~78 K tokens, slowing generation).
+# (D1: these were one env knob each — CRSS_CHILD_CHARS, CRSS_CITE_CHARS, … — that
+# no deployment ever set; the single operational lever is the global
+# CRSS_CONTEXT_CHAR_BUDGET below, which subsumes them by bounding the total.)
+_MAX_CHILD_LINES = 12
+_CHILD_CHARS = 700
+_CHILD_MATCHED_CHARS = 1000
+_MAX_CITE_LINES = 6
+_CITE_CHARS = 700
 # Interpretive links (guidance↔legislation INTERPRETS edges).  Kept tight so
 # surfacing MDCG interpretation alongside binding text does not re-inflate the
 # prompt (the bloat lever the context budget guards).
-_MAX_INTERP_LINES = _int_env("CRSS_MAX_INTERP_LINES", 3)
-_INTERP_CHARS = _int_env("CRSS_INTERP_CHARS", 600)
+_MAX_INTERP_LINES = 3
+_INTERP_CHARS = 600
 
 # Global cap on the rendered provision context (chars).  The LLM must prefill
 # every input token before it emits the first output token, so an oversized
@@ -49,17 +51,18 @@ _INTERP_CHARS = _int_env("CRSS_INTERP_CHARS", 600)
 # (the retriever orders direct / role / reranked hits first and appends low-value
 # cross-reference + pointer expansions last) and drop the tail once the budget is
 # hit.  ~140 KB ≈ ~35 K tokens preserves the decisive backbone while roughly
-# halving prefill latency.  Override via CRSS_CONTEXT_CHAR_BUDGET.
+# halving prefill latency.  This is the one context knob a deployment may need to
+# tune, so it stays env-overridable via CRSS_CONTEXT_CHAR_BUDGET.
 _CONTEXT_CHAR_BUDGET = _int_env("CRSS_CONTEXT_CHAR_BUDGET", 140_000)
 
-# Only trim when the provision bag is large enough that bloat is a real risk.
-# Single-regulation queries retrieve at most k=20 provisions; even at max
-# per-provision size (~17 KB) that stays around 340 KB — the trim was designed
-# for the 40+ provision cross-regulation case (40 × 17 KB = 680 KB, compacted
-# to 140 KB ≈ 35 K tokens).  At or below the threshold every provision is
-# preserved so the LLM gets complete coverage (important for "what is X about"
-# overview questions where every article matters).
-_TRIM_PROVISION_THRESHOLD = _int_env("CRSS_TRIM_THRESHOLD", 25)
+# Only trim when the provision bag is large enough that bloat is a real risk
+# (plain constant, not env-tunable).  Single-regulation queries retrieve at most
+# k=20 provisions; even at max per-provision size (~17 KB) that stays around
+# 340 KB — the trim was designed for the 40+ provision cross-regulation case
+# (40 × 17 KB = 680 KB, compacted to 140 KB ≈ 35 K tokens).  At or below the
+# threshold every provision is preserved so the LLM gets complete coverage
+# (important for "what is X about" overview questions where every article matters).
+_TRIM_PROVISION_THRESHOLD = 25
 
 # CELEX prefixes that identify MDCG guidance documents.
 _GUIDANCE_CELEX_PREFIXES = ("MDCG_",)

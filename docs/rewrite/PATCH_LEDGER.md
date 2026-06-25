@@ -265,7 +265,7 @@ over the typed `Evidence` set.
 
 | # | Patch | Location | Disposition |
 |---|---|---|---|
-| D1 | Per-line context-trim knobs (`CRSS_CHILD_CHARS`, `CRSS_CITE_CHARS`, `CRSS_INTERP_CHARS`, `CRSS_*_LINES`, `CRSS_TRIM_THRESHOLD`) | `_context.py` | **DELETE/CONSOLIDATE** → one context-budget policy on the `Evidence` renderer |
+| D1 | Per-line context-trim knobs (`CRSS_CHILD_CHARS`, `CRSS_CITE_CHARS`, `CRSS_INTERP_CHARS`, `CRSS_*_LINES`, `CRSS_TRIM_THRESHOLD`) | `_context.py` | **DONE** — 8 knobs demoted to plain layout constants (none was ever set outside `_context.py`, all read at import time); the global `CRSS_CONTEXT_CHAR_BUDGET` (documented in CLAUDE.md) stays as the single context lever. Env surface 9 → 1, defaults unchanged, net 20/20 |
 | D2 | Model overrides (`CRSS_HYDE_MODEL`, `CRSS_REWRITE_MODEL`, `CRSS_AUDIT_MODEL`, `CRSS_JUDGE_MODEL`) | various | **KEEP** — legitimate operational config |
 | D3 | Channel toggles (`CRSS_LEXICAL`, `CRSS_RERANKER`) | `graph_retriever.py` | **KEEP** — belong on the retrieval core |
 
