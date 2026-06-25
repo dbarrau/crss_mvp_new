@@ -268,6 +268,7 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
         target_celexes = det.target_celexes
         role_specs = det.role_specs
         explicit_refs = det.explicit_refs
+        context_anchor_refs = det.context_anchor_refs
         is_def_q = det.is_def_q
         concept_text = det.concept_text
         route = det.route
@@ -348,6 +349,7 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
             target_celexes=target_celexes,
             explicit_refs=explicit_refs,
             role_specs=role_specs,
+            context_anchor_refs=context_anchor_refs,
         )
         direct_provisions = retrieval_result["direct_provisions"]
         legal_qualification_targets = retrieval_result["legal_qualification_targets"]

@@ -73,3 +73,29 @@ def test_k_is_never_reduced():
     # The per-regulation budget bump can only raise k, never lower the caller's.
     det = _detect("What are the obligations of a provider under the EU AI Act?", k=20)
     assert det.k >= 20
+
+
+def test_context_anchor_rides_separate_channel_not_explicit_refs():
+    # A wellbeing/MDR qualification question yields a decisive context anchor
+    # (MDR Annex XVI) that must NOT land in explicit_refs — doing so would flip
+    # the route to a narrow provision_lookup. It rides context_anchor_refs and the
+    # route stays broad; retrieval merges the anchor regardless of route.
+    det = _detect(
+        "Our wellbeing app is not for medical use — is it a device under MDR 2017/745?"
+    )
+    assert "Annex XVI" in det.context_anchor_refs
+    assert "Annex XVI" not in det.explicit_refs
+    assert det.route.id != "provision_lookup"
+
+
+def test_cdss_question_anchors_classification_annex():
+    det = _detect(
+        "Is standalone clinical decision-support software a medical device under MDR 2017/745?"
+    )
+    assert "Annex VIII" in det.context_anchor_refs
+    assert "Annex VIII" not in det.explicit_refs
+
+
+def test_no_context_anchor_for_unrelated_question():
+    det = _detect("What are the obligations of a provider under the EU AI Act?")
+    assert det.context_anchor_refs == []

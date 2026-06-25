@@ -568,6 +568,7 @@ def _retrieve_route_provisions(
     target_celexes: set[str] | None,
     explicit_refs: list[str],
     role_specs: list[tuple[str, str]],
+    context_anchor_refs: list[str] | None = None,
     hyde_builder=_hyde_query,
 ) -> dict[str, Any]:
     """Execute the retrieval plan selected by the deterministic router.
@@ -672,6 +673,21 @@ def _retrieve_route_provisions(
             _merge_unique_provisions(provisions, role_provisions, prepend=True)
         if direct_provisions:
             _merge_unique_provisions(provisions, direct_provisions, prepend=True)
+
+    # ── Context-anchor phase: force decisive topic anchors into the bag for ANY
+    #    route. The router has already run, so this cannot reclassify the
+    #    question; it reuses the direct-lookup expander and prepends, so the
+    #    anchor (e.g. MDR Annex XVI for a wellbeing-app qualification that routes
+    #    general_compliance) leads the rendered context.
+    if context_anchor_refs:
+        anchors = _retrieve_direct_provisions(
+            question,
+            retriever,
+            explicit_refs=context_anchor_refs,
+            target_celexes=target_celexes,
+        )
+        if anchors:
+            _merge_unique_provisions(provisions, anchors, prepend=True)
 
     # ── Safety-net phase ─────────────────────────────────────────────────────
     _inject_prohibited_practices_safety_net(

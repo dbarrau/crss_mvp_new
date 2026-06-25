@@ -1,20 +1,27 @@
 [
   {
     "id": "TC_001",
-    "label": "MDCG classification route — regression for MDCG refusal bug",
+    "label": "MDCG classification route \u2014 regression for MDCG refusal bug",
     "question": "How does MDCG 2019-11 classify standalone software as a medical device?",
     "expected_route": "classification_chain",
-    "expected_celexes": ["MDCG_2019_11", "32017R0745"],
+    "expected_celexes": [
+      "MDCG_2019_11",
+      "32017R0745"
+    ],
     "must_contain_refs": [],
     "notes": "Regression test: the classification_chain route used to drop MDCG_2019_11 entirely. Both CELEX must appear in the retrieved bag."
   },
   {
     "id": "TC_002",
-    "label": "MDR direct provision lookup — Article 83 PMS",
+    "label": "MDR direct provision lookup \u2014 Article 83 PMS",
     "question": "What does Article 83 of MDR require for post-market surveillance?",
     "expected_route": "provision_lookup",
-    "expected_celexes": ["32017R0745"],
-    "must_contain_refs": ["Article 83"],
+    "expected_celexes": [
+      "32017R0745"
+    ],
+    "must_contain_refs": [
+      "Article 83"
+    ],
     "notes": "Explicit article reference should trigger direct lookup and return the exact article."
   },
   {
@@ -22,35 +29,51 @@
     "label": "AI Act high-risk classification gate",
     "question": "How is an AI system classified as high-risk under the EU AI Act?",
     "expected_route": "classification_chain",
-    "expected_celexes": ["32024R1689"],
-    "must_contain_refs": ["Article 6", "Annex III"],
+    "expected_celexes": [
+      "32024R1689"
+    ],
+    "must_contain_refs": [
+      "Article 6",
+      "Annex III"
+    ],
     "notes": "Article 6 + Annex III are the two decisive anchors. Both must appear."
   },
   {
     "id": "TC_004",
-    "label": "Definition lookup — medical device",
+    "label": "Definition lookup \u2014 medical device",
     "question": "What is the definition of 'medical device' under MDR?",
     "expected_route": "definition_lookup",
-    "expected_celexes": ["32017R0745"],
-    "must_contain_refs": ["Article 2"],
+    "expected_celexes": [
+      "32017R0745"
+    ],
+    "must_contain_refs": [
+      "Article 2"
+    ],
     "notes": "Definitional question; Article 2 MDR is the primary definitions article."
   },
   {
     "id": "TC_005",
-    "label": "Cross-regulation MDR + GDPR — data protection for medical devices",
+    "label": "Cross-regulation MDR + GDPR \u2014 data protection for medical devices",
     "question": "What data protection obligations apply to manufacturers of connected medical devices under MDR and GDPR?",
     "expected_route": "cross_regulation",
-    "expected_celexes": ["32017R0745", "32016R0679"],
+    "expected_celexes": [
+      "32017R0745",
+      "32016R0679"
+    ],
     "must_contain_refs": [],
     "notes": "Both regulations must be retrieved. GDPR Article 35 (DPIA) is a key anchor but is secondary to coverage check."
   },
   {
     "id": "TC_006",
-    "label": "MDR manufacturer obligations — Article 10",
+    "label": "MDR manufacturer obligations \u2014 Article 10",
     "question": "What are the general obligations of a manufacturer under MDR Article 10?",
     "expected_route": "provision_lookup",
-    "expected_celexes": ["32017R0745"],
-    "must_contain_refs": ["Article 10"],
+    "expected_celexes": [
+      "32017R0745"
+    ],
+    "must_contain_refs": [
+      "Article 10"
+    ],
     "notes": "Explicit article reference. Article 10 contains the core manufacturer obligation cluster."
   },
   {
@@ -58,107 +81,149 @@
     "label": "AI Act prohibited practices",
     "question": "What AI practices are prohibited under the EU AI Act?",
     "expected_route": "provision_lookup",
-    "expected_celexes": ["32024R1689"],
-    "must_contain_refs": ["Article 5"],
+    "expected_celexes": [
+      "32024R1689"
+    ],
+    "must_contain_refs": [
+      "Article 5"
+    ],
     "notes": "Article 5 is the sole prohibition article. Should be retrieved directly."
   },
   {
     "id": "TC_008",
-    "label": "MDR Annex I GSPR — structural direct lookup",
+    "label": "MDR Annex I GSPR \u2014 structural direct lookup",
     "question": "What are the general safety and performance requirements in Annex I of the MDR?",
     "expected_route": "provision_lookup",
-    "expected_celexes": ["32017R0745"],
-    "must_contain_refs": ["Annex I"],
+    "expected_celexes": [
+      "32017R0745"
+    ],
+    "must_contain_refs": [
+      "Annex I"
+    ],
     "notes": "Annex I is explicitly named. Direct lookup must surface it."
   },
   {
     "id": "TC_009",
-    "label": "IVDR software branch — tests missing IVDR pathway",
+    "label": "IVDR software branch \u2014 tests missing IVDR pathway",
     "question": "How does MDCG 2019-11 classify software intended for in vitro diagnostic purposes under IVDR?",
     "expected_route": "classification_chain",
-    "expected_celexes": ["MDCG_2019_11", "32017R0746"],
+    "expected_celexes": [
+      "MDCG_2019_11",
+      "32017R0746"
+    ],
     "must_contain_refs": [],
     "notes": "Grader flagged the missing IVDR branch. Both MDCG and IVDR CELEX must appear. IVDR is 32017R0746."
   },
   {
     "id": "TC_010",
-    "label": "MDR clinical evaluation — Article 61",
+    "label": "MDR clinical evaluation \u2014 Article 61",
     "question": "What are the clinical evaluation requirements under Article 61 of the MDR?",
     "expected_route": "provision_lookup",
-    "expected_celexes": ["32017R0745"],
-    "must_contain_refs": ["Article 61"],
+    "expected_celexes": [
+      "32017R0745"
+    ],
+    "must_contain_refs": [
+      "Article 61"
+    ],
     "notes": "Explicit article reference. Article 61 covers clinical evaluation."
   },
   {
     "id": "TC_011",
-    "label": "AI Act GPAI obligations — Article 53",
+    "label": "AI Act GPAI obligations \u2014 Article 53",
     "question": "What are the baseline obligations for providers of general-purpose AI models?",
     "expected_route": "role_obligations",
-    "expected_celexes": ["32024R1689"],
-    "must_contain_refs": ["Article 53"],
+    "expected_celexes": [
+      "32024R1689"
+    ],
+    "must_contain_refs": [
+      "Article 53"
+    ],
     "notes": "GPAI model provider obligations sit in Article 53. Role or provision lookup should surface it."
   },
   {
     "id": "TC_012",
-    "label": "Cross-regulation AI Act + MDR — SaMD dual applicability",
-    "question": "My product is an AI-based diagnostic software — does both the EU AI Act and MDR apply, and how do they interact?",
+    "label": "Cross-regulation AI Act + MDR \u2014 SaMD dual applicability",
+    "question": "My product is an AI-based diagnostic software \u2014 does both the EU AI Act and MDR apply, and how do they interact?",
     "expected_route": "cross_regulation",
-    "expected_celexes": ["32024R1689", "32017R0745"],
+    "expected_celexes": [
+      "32024R1689",
+      "32017R0745"
+    ],
     "must_contain_refs": [],
     "notes": "AI Act Article 6 + Annex I + MDR Rule 11 / Annex VIII are the decisive anchors. With stub HyDE the vector quality is lower; CELEX coverage is the critical check."
   },
   {
     "id": "TC_013",
-    "label": "GDPR legal basis for processing — Article 6 GDPR",
+    "label": "GDPR legal basis for processing \u2014 Article 6 GDPR",
     "question": "What are the lawful bases for processing personal data under GDPR?",
     "expected_route": "provision_lookup",
-    "expected_celexes": ["32016R0679"],
-    "must_contain_refs": ["Article 6"],
+    "expected_celexes": [
+      "32016R0679"
+    ],
+    "must_contain_refs": [
+      "Article 6"
+    ],
     "notes": "GDPR Article 6 lists the six lawful bases. Direct lookup should surface it."
   },
   {
     "id": "TC_014",
-    "label": "MDR technical documentation — Annex II + III",
+    "label": "MDR technical documentation \u2014 Annex II + III",
     "question": "What must be included in the technical documentation for a class IIb medical device under MDR?",
     "expected_route": "provision_lookup",
-    "expected_celexes": ["32017R0745"],
+    "expected_celexes": [
+      "32017R0745"
+    ],
     "must_contain_refs": [],
-    "notes": "Annex II covers technical documentation; Annex III covers post-market. KNOWN LIMITATION: display_ref is ambiguous for annex sub-nodes — 'Annex section 4' / 'Annex point 4.x' appear identically in Annex II, VI, VII, VIII, IX, XV, so a must_contain check on 'Annex II' can only pass if the literal container node surfaces. Under dense+BM25 fusion the lexically-shared Annex IX 'assessment of technical documentation' points compete with it. CELEX coverage is the reliable check until annex display_ref carries its parent annex. See display_ref-ambiguity follow-up."
+    "notes": "Annex II covers technical documentation; Annex III covers post-market. KNOWN LIMITATION: display_ref is ambiguous for annex sub-nodes \u2014 'Annex section 4' / 'Annex point 4.x' appear identically in Annex II, VI, VII, VIII, IX, XV, so a must_contain check on 'Annex II' can only pass if the literal container node surfaces. Under dense+BM25 fusion the lexically-shared Annex IX 'assessment of technical documentation' points compete with it. CELEX coverage is the reliable check until annex display_ref carries its parent annex. See display_ref-ambiguity follow-up."
   },
   {
     "id": "TC_015",
-    "label": "MDR transitional provisions — Article 120",
+    "label": "MDR transitional provisions \u2014 Article 120",
     "question": "What are the transitional arrangements for legacy medical devices under MDR Article 120?",
     "expected_route": "provision_lookup",
-    "expected_celexes": ["32017R0745"],
-    "must_contain_refs": ["Article 120"],
+    "expected_celexes": [
+      "32017R0745"
+    ],
+    "must_contain_refs": [
+      "Article 120"
+    ],
     "notes": "MDCG 2020-3 interprets Article 120. The primary provision must appear; guidance is a bonus."
   },
   {
     "id": "TC_016",
-    "label": "AI Act conformity assessment — Article 43",
+    "label": "AI Act conformity assessment \u2014 Article 43",
     "question": "How must a high-risk AI system undergo conformity assessment under the EU AI Act?",
     "expected_route": "classification_chain",
-    "expected_celexes": ["32024R1689"],
-    "must_contain_refs": ["Article 43"],
+    "expected_celexes": [
+      "32024R1689"
+    ],
+    "must_contain_refs": [
+      "Article 43"
+    ],
     "notes": "Article 43 is the conformity assessment gate for high-risk systems. Classification chain should trigger it."
   },
   {
     "id": "TC_017",
-    "label": "Role obligations — notified body under MDR",
+    "label": "Role obligations \u2014 notified body under MDR",
     "question": "What are the obligations of a notified body when assessing a class III medical device under MDR?",
     "expected_route": "role_obligations",
-    "expected_celexes": ["32017R0745"],
+    "expected_celexes": [
+      "32017R0745"
+    ],
     "must_contain_refs": [],
-    "notes": "Notified body is a recognised actor role. Role-aware retrieval should surface Annex VII / Article 44–51 cluster."
+    "notes": "Notified body is a recognised actor role. Role-aware retrieval should surface Annex VII / Article 44\u201351 cluster."
   },
   {
     "id": "TC_018",
-    "label": "Definition lookup — AI system under AI Act",
+    "label": "Definition lookup \u2014 AI system under AI Act",
     "question": "What is the definition of an AI system under the EU AI Act?",
     "expected_route": "definition_lookup",
-    "expected_celexes": ["32024R1689"],
-    "must_contain_refs": ["Article 3"],
+    "expected_celexes": [
+      "32024R1689"
+    ],
+    "must_contain_refs": [
+      "Article 3"
+    ],
     "notes": "Article 3 is the definitions article. The specific AI system definition is Article 3(1)."
   },
   {
@@ -166,17 +231,47 @@
     "label": "MDR vigilance and serious incident reporting",
     "question": "When must a manufacturer report a serious incident under the MDR vigilance system?",
     "expected_route": "role_obligations",
-    "expected_celexes": ["32017R0745"],
+    "expected_celexes": [
+      "32017R0745"
+    ],
     "must_contain_refs": [],
     "notes": "Article 87 covers serious incident reporting. KNOWN GAP: Article 87 is not yet linked via OBLIGATION_OF role edges for 'manufacturer'. CELEX coverage is the minimum bar until role-graph is complete."
   },
   {
     "id": "TC_020",
-    "label": "Broad landscape — community summary path",
+    "label": "Broad landscape \u2014 community summary path",
     "question": "What are the main categories of obligations that the EU AI Act places on AI providers and deployers?",
     "expected_route": "community_summary_search",
-    "expected_celexes": ["32024R1689"],
+    "expected_celexes": [
+      "32024R1689"
+    ],
     "must_contain_refs": [],
     "notes": "Broad landscape question should route through community summaries. Coverage of the regulation is more important than any single article."
+  },
+  {
+    "id": "TC_021",
+    "label": "Wellbeing app \u2014 non-medical-purpose carve-out (Annex XVI)",
+    "question": "Our app tracks heart-rate variability and suggests when the user might be stressed for general wellbeing, with a disclaimer that it is not for medical use. Does it fall under MDR 2017/745?",
+    "expected_route": "general_compliance",
+    "expected_celexes": [
+      "32017R0745"
+    ],
+    "must_contain_refs": [
+      "Annex XVI"
+    ],
+    "notes": "Annex XVI (products without an intended medical purpose) is the decisive carve-out for wellbeing/non-medical-purpose products. Graph-present but semantically distant from the question's surface terms; anchored via the _IMPLICIT_PROVISION_REFS shortcut. Quality eval HQ_028 scored 5.0 for omitting it."
+  },
+  {
+    "id": "TC_022",
+    "label": "CDSS qualification \u2014 software classification rule (Annex VIII / Rule 11)",
+    "question": "Is standalone clinical decision-support software a medical device under MDR 2017/745, and how does MDCG 2019-11 guidance inform the qualification?",
+    "expected_route": "cross_regulation",
+    "expected_celexes": [
+      "32017R0745"
+    ],
+    "must_contain_refs": [
+      "Annex VIII"
+    ],
+    "notes": "Annex VIII Rule 11 (and 11a-11d) is the primary classification mechanism for standalone medical software; anchored via the _IMPLICIT_PROVISION_REFS shortcut. Quality eval HQ_020 scored 6.0 for omitting it."
   }
 ]

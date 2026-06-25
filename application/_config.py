@@ -216,6 +216,56 @@ _IMPLICIT_PROVISION_REFS: list[tuple[re.Pattern, str, str]] = [
     (re.compile(r"\btechnical\s+documentation\b", re.I), MDR_CELEX, "Annex II"),
 ]
 
+# Context-anchor refs: decisive provisions that must be *retrieved* for certain
+# topics but that should NOT, by themselves, reclassify the question as a direct
+# provision-lookup. They are added to the retrieval ref set *after* route
+# selection (see application/scenario.py), so a broad qualification question
+# keeps its analytical route while still surfacing the decisive annex.
+#
+# These come straight from the quality eval's "fatal omission" findings: the
+# annex exists in the graph but is semantically too distant from the question's
+# surface terms for the dense/lexical channels to retrieve it. Both MDR-scoped.
+_CONTEXT_ANCHOR_REFS: list[tuple[re.Pattern, str, str]] = [
+    # Non-medical-purpose / wellbeing framing → MDR Annex XVI, the regime for
+    # products *without* an intended medical purpose — the carve-out a wellbeing
+    # app must be measured against (decisive in "is my stress-tracking app a
+    # medical device?"; HQ_028 scored 5.0 for omitting it).
+    (re.compile(
+        r"\b(?:well[\s-]?being|wellness|non[\s-]?medical|"
+        r"without\s+(?:an?\s+)?(?:intended\s+)?medical\s+purpose|"
+        r"not\s+(?:intended\s+)?for\s+medical\s+(?:use|purpose|diagnosis))\b", re.I),
+        MDR_CELEX, "Annex XVI"),
+    # Clinical-decision-support / software-qualification framing → MDR Annex VIII,
+    # whose Rule 11 (and sub-rules 11a–11d) is *the* classification mechanism for
+    # standalone medical software (HQ_020 scored 6.0 for omitting it).
+    (re.compile(
+        r"\b(?:clinical\s+decision[\s-]?support|decision[\s-]?support\s+software|"
+        r"cdss)\b", re.I),
+        MDR_CELEX, "Annex VIII"),
+]
+
+
+def _match_ref_table(
+    question: str,
+    target_celexes: set[str] | None,
+    table: list[tuple[re.Pattern, str, str]],
+) -> list[str]:
+    """Return refs from *table* whose pattern matches and whose CELEX is in scope.
+
+    Only fires when the required regulation is already in scope (i.e.
+    *target_celexes* is not None and contains the entry's CELEX), so generic
+    vocabulary shared across regulations does not produce false positives.
+    """
+    if target_celexes is None:
+        return []
+    refs: list[str] = []
+    seen: set[str] = set()
+    for pattern, celex, ref in table:
+        if celex in target_celexes and pattern.search(question) and ref not in seen:
+            seen.add(ref)
+            refs.append(ref)
+    return refs
+
 
 def _extract_implicit_provision_refs(
     question: str,
@@ -224,20 +274,25 @@ def _extract_implicit_provision_refs(
 ) -> list[str]:
     """Return implicit provision refs inferred from well-known topic keywords.
 
-    Only fires when the required regulation is already in scope
-    (i.e. *target_celexes* is not None and contains the entry's CELEX).
-    Returns an empty list when no regulation is in scope so callers never need
-    to guard against None.
+    These *do* participate in routing (a "lawful basis" question is, in effect, a
+    lookup of GDPR Article 6). For decisive provisions that must be retrieved but
+    must NOT reclassify the question, see :func:`_extract_context_anchor_refs`.
     """
-    if target_celexes is None:
-        return []
-    refs: list[str] = []
-    seen: set[str] = set()
-    for pattern, celex, ref in _IMPLICIT_PROVISION_REFS:
-        if celex in target_celexes and pattern.search(question) and ref not in seen:
-            seen.add(ref)
-            refs.append(ref)
-    return refs
+    return _match_ref_table(question, target_celexes, _IMPLICIT_PROVISION_REFS)
+
+
+def _extract_context_anchor_refs(
+    question: str,
+    *,
+    target_celexes: set[str] | None,
+) -> list[str]:
+    """Return decisive context-anchor refs to force-retrieve for a topic.
+
+    Unlike :func:`_extract_implicit_provision_refs`, these are added to the
+    retrieval ref set *after* route selection, so they enrich retrieval without
+    flipping a broad qualification question into a narrow provision-lookup.
+    """
+    return _match_ref_table(question, target_celexes, _CONTEXT_ANCHOR_REFS)
 
 
 def _extract_provision_refs(question: str) -> list[str]:

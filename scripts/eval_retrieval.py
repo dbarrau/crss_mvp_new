@@ -128,6 +128,7 @@ def _run_case(
         target_celexes=target_celexes,
         explicit_refs=explicit_refs,
         role_specs=role_specs,
+        context_anchor_refs=det.context_anchor_refs,
         hyde_builder=_stub_hyde,
     )
 

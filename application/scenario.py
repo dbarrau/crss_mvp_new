@@ -32,6 +32,7 @@ from application._config import (
     _detect_mentioned_regulations,
     _extract_provision_refs,
     _extract_implicit_provision_refs,
+    _extract_context_anchor_refs,
 )
 from application._definitions import _detect_defined_terms
 from application._routing import (
@@ -64,6 +65,7 @@ class Detection:
     target_celexes: set[str] | None
     role_specs: list
     explicit_refs: list[str]
+    context_anchor_refs: list[str]
     is_def_q: bool
     concept_text: str
 
@@ -134,6 +136,15 @@ def detect_scenario(question: str, retriever, k: int) -> Detection:
     )
     logger.info("Question routed to %s: %s", route.id, route.rationale)
 
+    # Context anchors: decisive provisions force-retrieved for a topic that the
+    # dense/lexical channels miss (e.g. MDR Annex XVI for a wellbeing-app
+    # qualification, Annex VIII Rule 11 for CDSS). Kept *separate* from
+    # explicit_refs — they must enrich retrieval for ANY route without (a)
+    # reclassifying a broad question as provision_lookup or (b) being gated out
+    # by the orchestrator's route-specific direct-lookup. The retrieval stage
+    # merges them into the bag regardless of route.
+    context_anchor_refs = _extract_context_anchor_refs(question, target_celexes=target_celexes)
+
     scenario = Scenario(
         question=question,
         mentioned_regs=frozenset(mentioned_regs),
@@ -154,6 +165,7 @@ def detect_scenario(question: str, retriever, k: int) -> Detection:
         target_celexes=target_celexes,
         role_specs=role_specs,
         explicit_refs=explicit_refs,
+        context_anchor_refs=context_anchor_refs,
         is_def_q=is_def_q,
         concept_text=concept_text,
     )
