@@ -47,19 +47,12 @@ logging.basicConfig(
 )
 
 from application.agent import (
-    _detect_mentioned_regulations,
-    _extract_provision_refs,
-    _extract_implicit_provision_refs,
-    _is_definition_question,
-    _select_question_route,
-    _detect_question_roles,
-    _detect_defined_terms,
-    _REG_NAME_TO_CELEX,
     _retrieve_route_provisions,
     _expand_definitions_from_provisions,
     _evaluate_route_sufficiency,
     _run_corrective_retrieval_pass,
 )
+from application.scenario import detect_scenario
 from retrieval.graph_retriever import GraphRetriever
 
 
@@ -115,49 +108,16 @@ def _run_case(
 
     t0 = time.perf_counter()
 
-    # Mirror the pipeline in ask_stream (no LLM involvement)
-    keyword_mentioned_regs = _detect_mentioned_regulations(question)
-    mentioned_regs = set(keyword_mentioned_regs)
-
-    # Run defined-term detection (no LLM) so that implicit regulation links
-    # are captured — e.g. "medical device" in a question implicitly references
-    # MDR even when "MDR" is not spelled out.  Mirrors the step in ask_stream
-    # that adds regs discovered via definitions to mentioned_regs.
-    definitions = _detect_defined_terms(question, retriever)
-    for d in definitions:
-        reg = d.get("regulation", "")
-        if reg and reg not in mentioned_regs and reg in _REG_NAME_TO_CELEX:
-            mentioned_regs.add(reg)
-
-    target_celexes: set[str] | None = None
-    if mentioned_regs:
-        target_celexes = {
-            _REG_NAME_TO_CELEX[r]
-            for r in mentioned_regs
-            if r in _REG_NAME_TO_CELEX
-        }
-        if len(mentioned_regs) > 1:
-            has_guidance = any(
-                _REG_NAME_TO_CELEX.get(r, "").startswith("MDCG_")
-                for r in mentioned_regs
-            )
-            per_reg = 4 if has_guidance else 3
-            k = max(k, len(mentioned_regs) * per_reg)
-
-    role_specs = _detect_question_roles(question, target_celexes=target_celexes)
-    explicit_refs = _extract_provision_refs(question)
-    for _ref in _extract_implicit_provision_refs(question, target_celexes=target_celexes):
-        if _ref not in explicit_refs:
-            explicit_refs.append(_ref)
-    is_def_q, _ = _is_definition_question(question)
-    route = _select_question_route(
-        question,
-        explicit_refs=explicit_refs,
-        mentioned_regs=mentioned_regs,
-        keyword_mentioned_regs=keyword_mentioned_regs,
-        role_specs=role_specs,
-        is_definition_question=is_def_q,
-    )
+    # Detection — the exact deterministic stage the agent runs, driven through
+    # the shared scenario.py entry point so this net gates it (no LLM). The
+    # returned k carries the per-regulation budget bump.
+    det = detect_scenario(question, retriever, k)
+    definitions = det.definitions
+    target_celexes = det.target_celexes
+    role_specs = det.role_specs
+    explicit_refs = det.explicit_refs
+    route = det.route
+    k = det.k
 
     retrieval_result = _retrieve_route_provisions(
         question,

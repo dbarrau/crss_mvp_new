@@ -120,7 +120,7 @@ from application.verify import (                         # noqa: F401
     verify_answer as _verify_answer,
     VerificationResult as _VerificationResult,
 )
-from application.contracts import Scenario as _Scenario   # noqa: F401
+from application.scenario import detect_scenario as _detect_scenario
 from application._audit import (                          # noqa: F401
     _should_audit,
     _audit_answer,
@@ -253,14 +253,27 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                     ),
                 }
 
-        # --- 1. Fetch legal definitions ---
-        definitions = _detect_defined_terms(retrieval_question, retriever)
-        if definitions:
-            logger.info(
-                "Injecting %d definition(s): %s",
-                len(definitions),
-                ", ".join(d.get("term", "?") for d in definitions),
-            )
+        # --- 1. Detection ("understand the question") ---
+        # One deterministic stage (no LLM), shared verbatim with the retrieval
+        # net (scripts/eval_retrieval.py) so behaviour cannot drift between the
+        # agent and its gate. The detection logic + diagnostics live in
+        # scenario.py; here we surface its output as progress events and capture
+        # the typed Scenario the spine organises around (understand -> clarify? ->
+        # plan -> retrieve). Loose locals are rebound for the not-yet-migrated
+        # plan/retrieve stages; the clarify gate below is the Scenario's first
+        # consumer.
+        det = _detect_scenario(retrieval_question, retriever, k)
+        definitions = det.definitions
+        mentioned_regs = det.mentioned_regs
+        target_celexes = det.target_celexes
+        role_specs = det.role_specs
+        explicit_refs = det.explicit_refs
+        is_def_q = det.is_def_q
+        concept_text = det.concept_text
+        route = det.route
+        k = det.k
+        scenario = det.scenario
+
         term_names = [d.get("term", "?") for d in definitions]
         yield {
             "type": "step",
@@ -271,36 +284,6 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                 else "No defined terms detected in question"
             ),
         }
-
-        # --- 2. Regulation detection + CELEX filter ---
-        keyword_mentioned_regs = _detect_mentioned_regulations(retrieval_question)
-        mentioned_regs = set(keyword_mentioned_regs)
-        for d in definitions:
-            reg = d.get("regulation", "")
-            if reg and reg not in mentioned_regs and reg in _REG_NAME_TO_CELEX:
-                mentioned_regs.add(reg)
-                logger.info(
-                    "Implicit regulation detected via defined term '%s': %s",
-                    d.get("term", "?"), reg,
-                )
-
-        target_celexes: set[str] | None = None
-        if len(mentioned_regs) >= 1:
-            target_celexes = {
-                _REG_NAME_TO_CELEX[r]
-                for r in mentioned_regs
-                if r in _REG_NAME_TO_CELEX
-            }
-            if len(mentioned_regs) > 1:
-                has_guidance = any(
-                    _REG_NAME_TO_CELEX.get(r, "").startswith("MDCG_")
-                    for r in mentioned_regs
-                )
-                per_reg = 4 if has_guidance else 3
-                k = max(k, len(mentioned_regs) * per_reg)
-
-        role_specs = _detect_question_roles(retrieval_question, target_celexes=target_celexes)
-
         yield {
             "type": "step",
             "id": "regulations",
@@ -319,41 +302,11 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                     f"{term}@{celex}" for term, celex in role_specs
                 ),
             }
-
-        explicit_refs = _extract_provision_refs(retrieval_question)
-        for _ref in _extract_implicit_provision_refs(retrieval_question, target_celexes=target_celexes):
-            if _ref not in explicit_refs:
-                explicit_refs.append(_ref)
-        is_def_q, concept_text = _is_definition_question(retrieval_question)
-        route = _select_question_route(
-            retrieval_question,
-            explicit_refs=explicit_refs,
-            mentioned_regs=mentioned_regs,
-            keyword_mentioned_regs=keyword_mentioned_regs,
-            role_specs=role_specs,
-            is_definition_question=is_def_q,
-        )
-        logger.info("Question routed to %s: %s", route.id, route.rationale)
         yield {
             "type": "step",
             "id": "route",
             "label": f"Route: {route.label} — {route.rationale}",
         }
-
-        # The detection stage ("understand the question") is complete: capture its
-        # output as one typed Scenario — the spine the agent organises around
-        # (understand -> (clarify?) -> plan -> retrieve). The loose locals remain
-        # for the not-yet-migrated plan/retrieve stages; the clarify gate below is
-        # its first consumer.
-        scenario = _Scenario(
-            question=retrieval_question,
-            mentioned_regs=frozenset(mentioned_regs),
-            target_celexes=frozenset(target_celexes or ()),
-            role_specs=tuple(role_specs),
-            explicit_refs=tuple(explicit_refs),
-            route_id=route.id,
-            is_definition_question=is_def_q,
-        )
 
         # --- 2b. Ask-first scope gate ---
         # When an obligation question omits the decisive actor role, ask for it

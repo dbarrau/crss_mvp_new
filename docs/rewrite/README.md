@@ -110,6 +110,18 @@ net says new ≥ old.
     `_IMPLICIT_PROVISION_REFS` (small seed/lexical config).
 - **Phase 3 — agent spine**: fold detection into `scenario.py`; route the audit
   gap-fill and corrective pass through `RetrievalPlan`.
+  - [x] **Detection → `scenario.py`** — the full "understand the question" stage
+        (definitions → mentioned regs → CELEX filter + budget bump → roles →
+        explicit/implicit refs → definition flag → route → typed `Scenario`)
+        folded out of `ask_stream` into one `detect_scenario(question, retriever,
+        k) -> Detection`. The retrieval net (`eval_retrieval.py`) had
+        **re-implemented this block line-for-line**; both now drive the shared
+        function, so the detection logic has a single source of truth *and* the
+        deterministic net gates it. Behaviour-exact: net `--diff` +0/−0/0
+        regressed (true before/after via `git stash`), full suite green (+6
+        `test_scenario.py` cases closing the stage's zero-coverage gap).
+        `ask_stream` keeps only progress-event emission; the net drops 8
+        detection imports → 1.
   - [x] **C1/C2/C4/C5 → `verify.py`** — the three scattered post-generation
         blocks in `ask_stream` (citation-scope, faithfulness/attribution,
         confidence) folded into one `verify_answer(...) -> VerificationResult`
@@ -121,3 +133,12 @@ net says new ≥ old.
         a constant 1.0 (recomputed post-redaction); compute-once fix deferred as
         an answer-affecting, user-approved step (see ledger).
 - **Phase 4 — delete** subsumed patches, hardcoded tables, and dead env flags.
+  - [x] **Read-path dead-code sweep** — audited `application/` + `retrieval/` for
+        orphaned symbols, unused imports, dead locals, and any surviving
+        references to the B1/B2/GPAI/A1-deleted names: **clean** — the deletions
+        were thorough (zero stragglers, zero orphaned functions, zero unused
+        imports). Only find was one unused loop variable in
+        `_config._build_core_mappings`, now marked `_`-unused. Env-flag surface is
+        already minimal post-D1; the undocumented `CRSS_CITATION_SCOPE_CHECK` +
+        `CRSS_AUDIT*` family are live operational config, not dead. So Phase 4's
+        deletion targets were largely retired inline during Phase 2.
