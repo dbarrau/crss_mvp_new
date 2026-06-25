@@ -137,47 +137,43 @@ def _validate_legal_backbone(
 
 
 def _build_confidence_banner(confidence: "dict[str, Any]") -> str:
-    """Return a visible warning block when confidence is below HIGH.
-    Returns an empty string for HIGH confidence so the answer is not
-    cluttered on well-supported responses.
+    """Return a brief *Scope & limitations* note, or "" when nothing actionable.
+
+    Only surfaces substantive, actionable caveats (thin retrieval coverage;
+    reliance on non-binding guidance). The previous banner led with a bare
+    "Confidence: LOW (Score: 61%)" + generic "independently verify" boilerplate,
+    which the senior-officer judge anchored on as a blanket reliability
+    disclaimer — it added no compliance value and depressed every sub-HIGH
+    answer. The composite score is still emitted as a structured ``confidence``
+    event for the UI; redundant signals are dropped here (faithfulness is already
+    reported in the verification block below the answer, and "a corrective pass
+    ran" is an internal detail). HIGH confidence and no actionable caveat both
+    return "" so well-supported answers stay clean.
     """
-    level = confidence.get("confidence_level", "HIGH")
-    if level == "HIGH":
+    if confidence.get("confidence_level", "HIGH") == "HIGH":
         return ""
-    score     = confidence.get("confidence_score", 0.0)
     breakdown = confidence.get("breakdown", {})
     dist      = confidence.get("legal_force_distribution", {})
-    label = "Warning" if level in ("LOW", "CRITICAL") else "Note"
-    lines: list[str] = [
-        f"> **{label} — Confidence: {level}** (Score: {score:.0%})."
-        " This answer is based on automated retrieval and should be"
-        " independently verified before relying on it for compliance decisions.",
-    ]
+
+    notes: list[str] = []
     if breakdown.get("retrieval_coverage", 1.0) < 0.5:
-        lines.append(
-            "> **Retrieval coverage is low** — some relevant provisions"
-            " may not have been retrieved for this question."
+        notes.append(
+            "Retrieval coverage for this question was partial — some relevant"
+            " provisions may not have been surfaced; confirm against the full text."
         )
     if breakdown.get("legal_force_alignment", 1.0) < 0.5:
         non_b = dist.get("non_binding", 0)
         total = sum(dist.values()) or 1
-        pct   = f"{non_b}/{total}"
-        lines.append(
-            f"> **Legal force warning** — {pct} retrieved provisions are"
-            " non-binding MDCG guidance, not binding regulation."
-            " Verify conclusions against the regulation itself."
+        notes.append(
+            f"{non_b} of {total} cited provisions are non-binding MDCG guidance"
+            " rather than binding regulation — verify conclusions against the"
+            " regulation itself."
         )
-    if breakdown.get("faithfulness", 1.0) < 0.8:
-        lines.append(
-            "> **Faithfulness warning** — one or more verbatim quotes could"
-            " not be verified against the retrieved source text."
-        )
-    if breakdown.get("context_completeness", 1.0) < 0.7:
-        lines.append(
-            "> **Coverage warning** — a corrective retrieval pass was needed"
-            " or role-specific provisions were not found."
-        )
+    if not notes:
+        return ""
 
+    lines = ["> **Scope & limitations**"]
+    lines.extend(f"> - {n}" for n in notes)
     return "\n".join(lines)
 
 

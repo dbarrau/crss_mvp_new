@@ -8,7 +8,7 @@ so these pin its behaviour against fixed answers + evidence (no LLM, no Neo4j).
 import pytest
 
 from application.verify import verify_answer, VerificationResult
-from domain.legislation_catalog import AI_ACT_CELEX as _AI_ACT, GDPR_CELEX as _GDPR
+from domain.legislation_catalog import AI_ACT_CELEX as _AI_ACT
 
 _GROUNDED = "High-risk AI systems shall be subject to a conformity assessment."
 _FABRICATED = (
@@ -65,7 +65,10 @@ def test_fabricated_quote_redacted_and_warned(monkeypatch):
     # The in-body quotation is removed; it survives only inside the warning
     # block's "removed quotes" list (curly-quoted), which is the intended flag.
     assert f'"{_FABRICATED}"' not in res.answer     # straight-quoted in-body form gone
-    assert "FAITHFULNESS FLAG" in res.answer         # warning block prepended
+    assert "FAITHFULNESS FLAG" in res.answer         # warning block present
+    # The block is appended BELOW the answer body (first-impression reframe):
+    # the substantive analysis must precede the verification banner.
+    assert res.answer.index("The regulation states") < res.answer.index("FAITHFULNESS FLAG")
 
 
 def test_faithfulness_flag_off_keeps_fabricated_quote(monkeypatch):
@@ -76,41 +79,18 @@ def test_faithfulness_flag_off_keeps_fabricated_quote(monkeypatch):
     assert "FAITHFULNESS FLAG" not in res.answer
 
 
-def test_citation_scope_note_flags_out_of_scope_ref(monkeypatch):
+def test_citation_scope_note_is_not_rendered(monkeypatch):
+    # The user-facing citation-scope note was removed (poor signal-to-noise; the
+    # quality judge explicitly flagged it). Even the strongest firing case — a
+    # single-reg question citing an Article absent from context, flag ON — must
+    # render no note; the detection survives only as an INFO log. The answer body
+    # itself is left untouched.
     monkeypatch.setenv("CRSS_CITATION_SCOPE_CHECK", "1")
-    monkeypatch.setenv("CRSS_FAITHFULNESS_CHECK", "0")  # isolate the scope path
+    monkeypatch.setenv("CRSS_FAITHFULNESS_CHECK", "0")
     answer = "This obligation is governed by Article 99 of the framework."
     res = verify_answer(answer, **_kwargs())  # context only holds Article 6
-    assert "Citation scope note" in res.answer
+    assert "Citation scope note" not in res.answer
     assert "Article 99" in res.answer
-
-
-def test_citation_scope_flag_off_suppresses_note(monkeypatch):
-    monkeypatch.setenv("CRSS_CITATION_SCOPE_CHECK", "0")
-    monkeypatch.setenv("CRSS_FAITHFULNESS_CHECK", "0")
-    answer = "This obligation is governed by Article 99 of the framework."
-    res = verify_answer(answer, **_kwargs())
-    assert "Citation scope note" not in res.answer
-
-
-def test_citation_scope_silent_when_multi_reg(monkeypatch):
-    monkeypatch.setenv("CRSS_CITATION_SCOPE_CHECK", "1")
-    monkeypatch.setenv("CRSS_FAITHFULNESS_CHECK", "0")
-    answer = "This obligation is governed by Article 99 of the framework."
-    res = verify_answer(
-        answer,
-        **_kwargs(target_celexes={_AI_ACT, _GDPR}, mentioned_regs={"AI Act", "GDPR"}),
-    )
-    # Scope note only fires for single-regulation questions.
-    assert "Citation scope note" not in res.answer
-
-
-def test_in_scope_citation_not_flagged(monkeypatch):
-    monkeypatch.setenv("CRSS_CITATION_SCOPE_CHECK", "1")
-    monkeypatch.setenv("CRSS_FAITHFULNESS_CHECK", "0")
-    answer = "This obligation flows from Article 6 of the framework."
-    res = verify_answer(answer, **_kwargs())  # Article 6 IS in context
-    assert "Citation scope note" not in res.answer
 
 
 # ---------------------------------------------------------------------------
