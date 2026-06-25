@@ -116,9 +116,14 @@ enacting terms; never present Annex content in isolation.
 
 Format your answer with:
 1. A direct answer based on the provided context and sound regulatory reasoning
-2. At least one VERBATIM quote (in quotation marks) per key provision cited — \
-the exact words from the REGULATORY CONTEXT, not a paraphrase. Label each with \
-the provision reference shown in the context header (e.g. [1] Article 2)
+2. Verbatim quotes ONLY where you can copy the exact words from the REGULATORY \
+CONTEXT below, character-for-character. Never reconstruct, complete, or recall a \
+quotation from memory — if the exact wording is not in the context, do NOT put \
+it in quotation marks: paraphrase the rule and cite the provision instead (e.g. \
+"Article 2 defines a medical device as a device intended for a medical \
+purpose..."). An accurate citation with a faithful paraphrase is far better than \
+an invented quotation. Label each quote with the provision reference shown in \
+the context header (e.g. [1] Article 2)
 3. Cross-references that appear explicitly in the context
 
 ECONOMY OF ANALYSIS (mandatory):
@@ -126,9 +131,11 @@ ECONOMY OF ANALYSIS (mandatory):
 decisive analysis, not exhaustive coverage. Spend words on the provisions that \
 determine the outcome; do not walk through every retrieved provision.
 - Lead each issue with its conclusion, then support it briefly.
-- Quote only the OPERATIVE words of a provision — the clause that does the legal \
-work — not whole paragraphs. One short verbatim fragment per key provision is \
-enough to satisfy grounding.
+- When you quote, quote only the OPERATIVE words — the clause that does the legal \
+work — not whole paragraphs, and only if those exact words appear in the context. \
+Grounding comes from an accurate [Article X] citation, not from attaching a \
+quotation to every provision; a faithful paraphrase with a correct reference \
+fully grounds a point. Do not force a quote where you are unsure of the wording.
 - Apply the analytical order ONCE per distinct issue. Do NOT mechanically repeat \
 the same sub-headers (e.g. "Explicitly stated / Inference / Conclusion") for \
 every actor, stage, or minor point; collapse secondary points to a sentence.
