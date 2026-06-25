@@ -247,15 +247,17 @@ over the typed `Evidence` set.
 > answer + evidence) now pins redaction, the citation-scope note + its single-reg
 > guard, the env toggles, and the confidence shape.
 >
-> **Open follow-up (recorded, not yet taken — answer-affecting).** Confidence's
-> faithfulness input is recomputed on the *post-redaction* answer; since
-> redaction has already removed every fabricated/misattributed quote,
-> `unverified_count` is always 0 there, so the confidence faithfulness component
-> is a **constant 1.0** — dead signal, plus a wasted second `check_faithfulness`
-> call. Computing the report **once** (before redaction) and reusing it for both
-> redaction and confidence would make that component meaningful and remove the
-> redundant call, but it changes confidence numbers and is only quality-net-
-> gateable, so it is left as a separate, user-approved step.
+> **Dead-faith follow-up — DONE (user-approved).** Confidence used to recompute
+> faithfulness on the *post-redaction* answer, where `unverified_count` is always
+> 0, so the confidence faithfulness component was a **constant 1.0** (dead signal
+> + a wasted second `check_faithfulness` call). `_apply_faithfulness` now returns
+> the single **pre-redaction** report and `verify_answer` feeds it straight to
+> `compute_confidence` — the component now reflects what the model actually
+> generated (a fabricated-quote answer scores 0.0, not 1.0) and the redundant
+> call is gone. Pinned by three `test_verify.py` regression cases
+> (fabricated → 0.0, grounded → 1.0, no-quotes → neutral 1.0). The redaction and
+> warning behaviour is unchanged; only the confidence number moves, downward,
+> for answers that contained fabrications — which is the point.
 
 ---
 

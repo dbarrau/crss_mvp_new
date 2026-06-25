@@ -114,3 +114,35 @@ def test_in_scope_citation_not_flagged(monkeypatch):
     answer = "This obligation flows from Article 6 of the framework."
     res = verify_answer(answer, **_kwargs())  # Article 6 IS in context
     assert "Citation scope note" not in res.answer
+
+
+# ---------------------------------------------------------------------------
+# Confidence reads the pre-redaction faithfulness report (regression pin for the
+# dead-component fix: the post-redaction answer is always clean, so recomputing
+# there made this component a constant 1.0).
+# ---------------------------------------------------------------------------
+
+
+def test_confidence_faithfulness_reflects_fabrication(monkeypatch):
+    monkeypatch.setenv("CRSS_FAITHFULNESS_CHECK", "1")
+    answer = f'The regulation states: "{_FABRICATED}"'
+    res = verify_answer(answer, **_kwargs())
+    # One quote, fabricated → (total - unverified)/total = (1-1)/1 = 0.0.
+    # The quote is still redacted from the body, but confidence sees the
+    # pre-redaction report, so the faithfulness component is NOT a constant 1.0.
+    assert res.confidence["breakdown"]["faithfulness"] == 0.0
+    assert f'"{_FABRICATED}"' not in res.answer  # body still redacted
+
+
+def test_confidence_faithfulness_full_for_grounded_quote(monkeypatch):
+    monkeypatch.setenv("CRSS_FAITHFULNESS_CHECK", "1")
+    answer = f'The rule is clear: "{_GROUNDED}"'
+    res = verify_answer(answer, **_kwargs())
+    assert res.confidence["breakdown"]["faithfulness"] == 1.0
+
+
+def test_confidence_faithfulness_full_when_no_quotes(monkeypatch):
+    monkeypatch.setenv("CRSS_FAITHFULNESS_CHECK", "1")
+    res = verify_answer("A paraphrased answer with no verbatim quotations.", **_kwargs())
+    # No quotes to verify → neutral 1.0 (nothing to penalise).
+    assert res.confidence["breakdown"]["faithfulness"] == 1.0

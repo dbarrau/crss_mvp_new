@@ -18,14 +18,14 @@ and one place that owns the env flags. ``verify_answer`` is a pure function over
 the draft answer + retrieved evidence; ``ask_stream`` yields the confidence
 event from its result and is otherwise uninvolved.
 
-This relocation is **behaviour-neutral**: the checks run in the same order
-(scope → faithfulness → confidence), read the same env flags, redact and warn
-identically, and compute confidence on the post-redaction answer exactly as
-before. Known follow-up recorded in the ledger: the post-redaction faithfulness
-recompute that feeds confidence is always clean (redaction removed the offending
-quotes), so the confidence faithfulness component is a constant 1.0 — computing
-the report once and reusing it would make that component meaningful, but that
-changes confidence numbers and is left as a separate, user-approved step.
+The checks run in a fixed order (scope → faithfulness → confidence) and read the
+same env flags as the pre-fold pipeline. The faithfulness report is computed
+**once** (before redaction) and feeds both the redaction/warning and the
+confidence faithfulness component — so confidence reflects what the model
+actually generated (fabrication lowers the score), not the post-redaction answer
+which is clean by construction. (The pre-fold pipeline recomputed the report on
+the redacted answer, making that component a meaningless constant 1.0; computing
+once also drops a redundant ``check_faithfulness`` call.)
 """
 from __future__ import annotations
 
@@ -101,10 +101,17 @@ def _apply_faithfulness(
     definitions: list[dict],
     *,
     faith_mode: int,
-) -> str:
-    """C1/C2 — redact ungrounded/displaced quotes and prepend a warning block."""
+) -> tuple[str, Any | None]:
+    """C1/C2 — redact ungrounded/displaced quotes and prepend a warning block.
+
+    Returns the (possibly redacted + warning-prefixed) answer *and* the
+    faithfulness report it computed, so confidence can read the **pre-redaction**
+    report rather than recomputing on the cleaned answer (where every offending
+    quote is already gone and the score would be a meaningless constant 1.0).
+    """
     if not (faith_mode >= 1 and answer):
-        return answer
+        return answer, None
+    report = None
     try:
         report = check_faithfulness(answer, provisions, definitions)
         if not report.ok or report.near_verbatim:
@@ -133,7 +140,7 @@ def _apply_faithfulness(
             )
     except Exception as exc:  # noqa: BLE001 — self-check is best-effort
         logger.warning("Faithfulness check skipped: %s", exc)
-    return answer
+    return answer, report
 
 
 def verify_answer(
@@ -164,22 +171,18 @@ def verify_answer(
     )
 
     faith_mode = faithfulness_mode(os.environ.get("CRSS_FAITHFULNESS_CHECK", "1"))
-    answer = _apply_faithfulness(answer, provisions, definitions, faith_mode=faith_mode)
+    answer, faith_report = _apply_faithfulness(
+        answer, provisions, definitions, faith_mode=faith_mode
+    )
 
-    # Confidence reads a faithfulness report computed on the (now redacted)
-    # answer; see the module docstring for the known constant-component caveat.
-    faith_report_for_conf = None
-    if faith_mode >= 1 and answer:
-        try:
-            faith_report_for_conf = check_faithfulness(answer, provisions, definitions)
-        except Exception:  # noqa: BLE001 — confidence degrades gracefully
-            pass
-
+    # Confidence reads the single pre-redaction faithfulness report: it reflects
+    # what the model actually generated (fabrication lowers the score) rather
+    # than the post-redaction answer, which is clean by construction.
     had_pointer_expansion = any(p.get("_pointer_expansion") for p in provisions)
     confidence = compute_confidence(
         sufficiency=sufficiency,
         provisions=provisions,
-        faith_report=faith_report_for_conf,
+        faith_report=faith_report,
         had_corrective_pass=bool(corrective_actions),
         had_pointer_expansion=had_pointer_expansion,
         had_role_provisions=bool(role_provisions),
