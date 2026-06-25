@@ -72,16 +72,33 @@ _MIN_QUOTE_LEN: int = 40
 # Match a quoted span starting with any opening double-quote glyph and ending
 # at the next matching closing glyph.  Captures the inner text.  Single quotes
 # are intentionally excluded (apostrophes / possessives produce too much noise).
+# The body excludes newlines: a verbatim legal quote is a single contiguous run
+# of provision text, never a multi-line markdown block. Without this, an
+# unbalanced/stray opening quote glyph matches greedily to a closing glyph many
+# lines later, swallowing the model's own analysis (bullets, bold, headings)
+# into one "quote". That span then fails faithfulness and is excised by offset \u2014
+# fusing the surrounding words into nonsense ("medical devicesubstantial
+# modification"). Keeping quotes single-line confines the match to a real quote.
 _QUOTE_PATTERN = re.compile(
     r"""
     (?:[\*_]+)?               # optional leading markdown emphasis
     (?P<open>["\u201C\u201D\u201E\u201F\u00AB\u00BB])
-    (?P<body>[^"\u201C\u201D\u201E\u201F\u00AB\u00BB]{40,})
+    (?P<body>[^"\u201C\u201D\u201E\u201F\u00AB\u00BB\n]{40,})
     (?P<close>["\u201C\u201D\u201E\u201F\u00AB\u00BB])
     (?:[\*_]+)?               # optional trailing markdown emphasis
     """,
     re.VERBOSE,
 )
+
+# Upper bound on a single verbatim quote. The prompt asks for a "short operative
+# fragment"; a single-line span longer than this is a runaway match or a dump,
+# not a quotation \u2014 extracting (and possibly removing) it risks corrupting the
+# answer, so it is skipped.
+_MAX_QUOTE_LEN: int = 600
+
+# Inserted where a fabricated/displaced quote is removed, so the surrounding
+# words do not fuse into an unreadable splice.
+_REDACTION_MARKER: str = "[\u2026]"
 
 
 @dataclass(frozen=True)
@@ -112,7 +129,10 @@ def extract_quotes(answer: str) -> list[Quote]:
     quotes: list[Quote] = []
     for match in _QUOTE_PATTERN.finditer(answer):
         body = match.group("body").strip()
-        if len(body) < _MIN_QUOTE_LEN:
+        if len(body) < _MIN_QUOTE_LEN or len(body) > _MAX_QUOTE_LEN:
+            # Too short → noise; too long → a runaway match or dump, not a
+            # quotation. Skipping the latter keeps a stray quote glyph from
+            # swallowing real analysis that would then be excised.
             continue
         quotes.append(Quote(text=body, start=match.start(), end=match.end()))
     return quotes
@@ -645,7 +665,11 @@ def remove_unverified_quotes(answer: str, report: FaithfulnessReport) -> str:
     redacted = answer
     for q in sorted(removed, key=lambda x: x.start, reverse=True):
         if 0 <= q.start < q.end <= len(redacted):
-            redacted = redacted[:q.start] + redacted[q.end:]
+            # Replace with a marker rather than deleting: an empty splice fuses
+            # the words on either side of the removed quote ("...AI Act" +
+            # "Actor role" -> "AI ActActor role"). The marker preserves the
+            # sentence boundary; the warning block lists what was removed.
+            redacted = redacted[:q.start] + _REDACTION_MARKER + redacted[q.end:]
 
     # Basic cleanup for common artifacts left by quote removal.
     redacted = re.sub(r"[ \t]{2,}", " ", redacted)

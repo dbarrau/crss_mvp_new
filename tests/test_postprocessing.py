@@ -56,3 +56,17 @@ def test_non_binding_majority_reports_counts():
 def test_sub_high_with_no_actionable_caveat_is_silent():
     # MEDIUM/LOW but coverage + legal force are both fine → nothing to say.
     assert _build_confidence_banner(_conf("MEDIUM", coverage=0.9, legal_force=0.9)) == ""
+
+# ---------------------------------------------------------------------------
+# Internal context-index labels ("[14] Article 10(2)") must not leak to readers.
+# ---------------------------------------------------------------------------
+
+from application._postprocessing import _CONTEXT_INDEX_PATTERN  # noqa: E402
+
+
+def test_context_index_labels_are_stripped_keeping_the_real_ref():
+    text = "Risk management under [14] Article 10(2) MDR and [5] Article 43(4) AI Act."
+    out = _CONTEXT_INDEX_PATTERN.sub("", text)
+    assert "[14]" not in out and "[5]" not in out
+    assert "Article 10(2) MDR" in out
+    assert "Article 43(4) AI Act" in out

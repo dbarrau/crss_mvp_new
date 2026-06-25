@@ -620,3 +620,39 @@ def test_out_of_scope_citation_refs_treats_nested_articles_as_in_scope_when_pare
 )
 def test_faithfulness_mode_parses_env_values(env_value, expected):
     assert faithfulness_mode(env_value) == expected
+
+
+# ---------------------------------------------------------------------------
+# Redaction-corruption regression (a stray quote glyph used to swallow analysis
+# across newlines; removing it by offset fused the surrounding words).
+# ---------------------------------------------------------------------------
+
+from application._faithfulness import (  # noqa: E402
+    extract_quotes as _extract_quotes,
+    remove_unverified_quotes as _remove_unverified_quotes,
+    FaithfulnessReport as _FR,
+)
+
+
+def test_quote_extraction_never_spans_newlines_or_runs_away():
+    answer = (
+        'Article 2 MDR ("medical device includes software for a medical purpose).\n'
+        '- **AI Act**: the same entity is the provider of the AI system" then more).'
+    )
+    quotes = _extract_quotes(answer)
+    assert all("\n" not in q.text for q in quotes)
+    assert all(len(q.text) <= 600 for q in quotes)
+
+
+def test_oversized_single_line_quote_is_skipped():
+    answer = 'The rule states: "' + ("x" * 700) + '".'
+    assert _extract_quotes(answer) == []
+
+
+def test_removal_inserts_marker_instead_of_fusing_words():
+    answer = 'under the AI Act"fabricated clause that is well over forty characters in length"Actor role'
+    quotes = _extract_quotes(answer)
+    assert len(quotes) == 1
+    out = _remove_unverified_quotes(answer, _FR(total_quotes=1, unverified=quotes))
+    assert "ActActor" not in out      # words not fused
+    assert "[…]" in out               # marker preserves the boundary

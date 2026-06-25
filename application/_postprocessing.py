@@ -43,6 +43,13 @@ _RULE_LABEL_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Internal context-index labels (e.g. "[14] Article 10(2)") leak from the
+# REGULATORY CONTEXT header numbering, which the prompt asks the model to cite.
+# They are meaningless to a reader — strip the bracketed index, keeping the real
+# provision reference. "[1]" is never legitimate legal text (provisions number
+# their points as "(1)"), so this is safe.
+_CONTEXT_INDEX_PATTERN = re.compile(r"\[\d{1,3}\]\s?")
+
 # ---------------------------------------------------------------------------
 # Post-processing functions
 # ---------------------------------------------------------------------------
@@ -198,6 +205,7 @@ def _postprocess_answer(
         sufficiency=sufficiency,
     )
     processed = _RULE_LABEL_PATTERN.sub("", processed)
+    processed = _CONTEXT_INDEX_PATTERN.sub("", processed)
     backbone_warnings = [] if audited else _validate_legal_backbone(processed, question, route)
     banner = _build_uncertainty_banner(route, sufficiency=sufficiency)
     parts: list[str] = []
