@@ -96,11 +96,12 @@ class Provision:
         return self.raw.get("interpreted_provisions") or []
 
     def text_payload(self) -> str:
-        """Quotable verbatim text — mirrors ``_faithfulness._provision_text``.
+        """Quotable verbatim text — the single authoritative definition.
 
         Body + child texts + interpretive-link lines, exactly what the
-        faithfulness corpus must contain. This contract is the single place that
-        definition should live; the existing helper can delegate here later.
+        faithfulness corpus must contain. ``_faithfulness._provision_text`` now
+        delegates here (its first real consumer), so this is the one place the
+        provision text payload is defined.
         """
         parts: list[str] = []
         body = self.raw.get("article_text") or self.raw.get("text") or ""
@@ -166,7 +167,7 @@ class Definition:
         return self.raw.get("source_provision_id")
 
     def text_payload(self) -> str:
-        """Quotable text — mirrors ``_faithfulness._definition_text``."""
+        """Quotable text — the single definition (``_definition_text`` delegates here)."""
         return str(self.raw.get("definition_text") or self.raw.get("text") or "")
 
     @classmethod

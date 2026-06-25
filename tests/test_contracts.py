@@ -7,7 +7,7 @@ the contract cannot drift behaviour.
 from __future__ import annotations
 
 from application.contracts import Definition, Evidence, Provision, Scenario
-from application._faithfulness import _provision_text, _definition_text
+from application._faithfulness import _provision_text, _definition_text, _build_corpus
 
 
 _PROVISION = {
@@ -66,10 +66,29 @@ def test_provision_to_dict_is_lossless():
     assert p.to_dict()["score"] == 0.91
 
 
-def test_provision_text_payload_matches_faithfulness_helper():
-    # Zero-drift guarantee: the contract reproduces the existing corpus text.
+def test_provision_text_payload_is_the_full_quotable_corpus_text():
+    # The contract is now the single implementation (the _faithfulness helper
+    # delegates to it). Pin the exact bytes: body → children (raw_text, else
+    # text) → interpretive-link lines, joined by newlines.
     p = Provision.from_dict(_PROVISION)
-    assert p.text_payload() == _provision_text(_PROVISION)
+    expected = (
+        "Where a high-risk AI system undergoes a substantial modification …\n"
+        "A new conformity assessment is required.\n"
+        "fallback text\n"
+        "MDCG note on conformity."
+    )
+    assert p.text_payload() == expected
+
+
+def test_faithfulness_helpers_delegate_to_the_contract():
+    # _faithfulness is the contract's first real consumer: its corpus-building
+    # helpers route through text_payload(), so the two cannot drift.
+    assert _provision_text(_PROVISION) == Provision.from_dict(_PROVISION).text_payload()
+    assert _definition_text(_DEFINITION) == Definition.from_dict(_DEFINITION).text_payload()
+    # And the assembled corpus contains the contract's payload for each item.
+    corpus = _build_corpus([_PROVISION], [_DEFINITION])
+    assert "a new conformity assessment is required." in corpus  # normalized child
+    assert "mdcg note on conformity." in corpus                  # interpretive link
 
 
 def test_provision_identity_prefers_node_id_not_display_ref():
@@ -85,12 +104,12 @@ def test_provision_identity_prefers_node_id_not_display_ref():
 # ---------------------------------------------------------------------------
 
 
-def test_definition_typed_accessors_and_text_equivalence():
+def test_definition_typed_accessors_and_text_payload():
     d = Definition.from_dict(_DEFINITION)
     assert d.term == "ai system"
     assert d.celex == "32024R1689"
     assert d.definition_type == "formal"
-    assert d.text_payload() == _definition_text(_DEFINITION)
+    assert d.text_payload() == "'AI system' means a machine-based system …"
     assert d.to_dict() is _DEFINITION
 
 

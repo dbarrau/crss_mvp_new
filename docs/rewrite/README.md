@@ -52,9 +52,16 @@ net says new ≥ old.
         `Provision`/`Definition` are lossless typed views over the canonical
         dict; equivalence tests pin `text_payload()` to the existing
         `_faithfulness` helpers so adoption cannot drift.
-  - [ ] Migrate `_faithfulness` corpus building onto `Provision.text_payload()`
-        (first real consumer; net must stay green).
-  - [ ] Thread a `Scenario` through `ask_stream`'s detection stage.
+  - [x] Migrate `_faithfulness` corpus building onto `Provision.text_payload()`
+        — `_provision_text` / `_definition_text` now delegate to the contract
+        (its first real consumer), deleting the duplicate text-payload impl. The
+        contract is the single source of truth; behaviour-neutral (37
+        faithfulness tests + retrieval net stay green), equivalence tests
+        strengthened to pin the literal payload.
+  - [ ] Thread a `Scenario` through `ask_stream`'s detection stage. (Then
+        `verify_answer` can take a typed `Evidence` instead of provisions /
+        definitions dicts — deferred until the pipeline threads `Evidence`
+        end-to-end, to avoid wrap-then-unwrap churn.)
 - **Phase 2 — retrieval core + expanders** *(in progress)* — graph-derive the
   obligation set, then delete the hardcodes it duplicated. Landed:
   - [x] **A1** — folded `_retrieve_route_provisions`'s `if route.id == …` ladder

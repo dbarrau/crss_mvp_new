@@ -28,6 +28,8 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
 
+from application.contracts import Definition, Provision
+
 # Graduated grounding thresholds.  A quote fragment that is not an exact
 # substring may still be "near-verbatim" — i.e. the model dropped an article
 # ("from the input" -> "from input"), reordered words, or lightly reworded,
@@ -247,37 +249,25 @@ def verify_quote(quote_text: str, normalized_corpus: str) -> bool:
 def _provision_text(provision: dict[str, Any]) -> str:
     """Extract the verbatim text payload from a provision dict.
 
-    Matches the fields used by ``application/_context.py`` so the corpus
-    contains exactly what the LLM saw — including the interpretive-link lines
-    (guidance↔legislation ``INTERPRETS`` edges) that ``_context.py`` renders
-    under each provision.  Omitting those caused legitimate MDCG-guidance
-    quotes to be flagged as unverified.
+    Delegates to :meth:`application.contracts.Provision.text_payload` — the
+    single authoritative definition of a provision's quotable text (body +
+    children + interpretive-link lines, exactly what ``_context.py`` renders so
+    the corpus contains everything the LLM saw). ``_faithfulness`` is the
+    contract's first real consumer; the equivalence tests in
+    ``tests/test_contracts.py`` pin the payload so it cannot drift.
     """
-    parts: list[str] = []
-    body = provision.get("article_text") or provision.get("text") or ""
-    if body:
-        parts.append(str(body))
-    for child in provision.get("children", []) or []:
-        child_text = child.get("raw_text") or child.get("text") or ""
-        if child_text:
-            parts.append(str(child_text))
-    # Interpretive links surfaced in context are quotable source text too.
-    for link_field in ("interpreting_guidance", "interpreted_provisions"):
-        for link in provision.get(link_field, []) or []:
-            link_text = link.get("text") or ""
-            if link_text:
-                parts.append(str(link_text))
-    return "\n".join(parts)
+    return Provision.from_dict(provision).text_payload()
 
 
 def _definition_text(definition: dict[str, Any]) -> str:
     """Extract the quotable text from a definition lookup result.
 
-    The definitions block (formal/scoped defined-term definitions) is part of
-    the REGULATORY CONTEXT the LLM sees, so quotes drawn from it — e.g. the AI
-    Act Article 3(1) 'AI system' definition — must be verifiable.
+    Delegates to :meth:`application.contracts.Definition.text_payload`. The
+    definitions block (formal/scoped defined-term definitions) is part of the
+    REGULATORY CONTEXT the LLM sees, so quotes drawn from it — e.g. the AI Act
+    Article 3(1) 'AI system' definition — must be verifiable.
     """
-    return str(definition.get("definition_text") or definition.get("text") or "")
+    return Definition.from_dict(definition).text_payload()
 
 
 def _build_corpus(
