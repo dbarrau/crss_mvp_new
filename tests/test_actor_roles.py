@@ -1,3 +1,9 @@
+from domain.legislation_catalog import (
+    MDR_CELEX,
+    AI_ACT_CELEX,
+    IVDR_CELEX,
+    GDPR_CELEX,
+)
 from canonicalization.role_linker import (
     _augment_with_derived_roles,
     _build_actor_roles,
@@ -41,18 +47,18 @@ def test_build_obligation_edges_links_role_named_title_without_modal():
     actor_terms = [
         {
             "term_normalized": "authorised_representative",
-            "celex": "32017R0745",
+            "celex": MDR_CELEX,
             "term": "authorised representative",
         },
         {
             "term_normalized": "manufacturer",
-            "celex": "32017R0745",
+            "celex": MDR_CELEX,
             "term": "manufacturer",
         },
     ]
     provisions = [{
-        "id": "32017R0745_art_11",
-        "celex": "32017R0745",
+        "id": f"{MDR_CELEX}_art_11",
+        "celex": MDR_CELEX,
         "title": "Authorised representative",
         "text": _AR_ART_11_TEXT,
     }]
@@ -61,9 +67,9 @@ def test_build_obligation_edges_links_role_named_title_without_modal():
     linked_roles = {e["role_id"] for e in edges}
 
     # The article's named role is linked …
-    assert "32017R0745::role::authorised_representative" in linked_roles
+    assert f"{MDR_CELEX}::role::authorised_representative" in linked_roles
     # … but a different role merely mentioned in the sentence is not.
-    assert "32017R0745::role::manufacturer" not in linked_roles
+    assert f"{MDR_CELEX}::role::manufacturer" not in linked_roles
     assert all(e["modality"] == "obligation" for e in edges)
 
 
@@ -73,19 +79,19 @@ def test_detect_role_specs_resolves_hospital_to_deployer_and_users():
     )
 
     assert specs == [
-        ("deployer", "32024R1689"),
-        ("user", "32017R0745"),
-        ("user", "32017R0746"),
+        ("deployer", AI_ACT_CELEX),
+        ("user", MDR_CELEX),
+        ("user", IVDR_CELEX),
     ]
 
 
 def test_detect_role_specs_honors_celex_filter():
     specs = detect_role_specs(
         "What must a hospital verify before putting a high-risk AI medical device into service?",
-        target_celexes={"32024R1689"},
+        target_celexes={AI_ACT_CELEX},
     )
 
-    assert specs == [("deployer", "32024R1689")]
+    assert specs == [("deployer", AI_ACT_CELEX)]
 
 
 def test_detect_role_specs_routes_gdpr_controller_and_processor():
@@ -94,18 +100,18 @@ def test_detect_role_specs_routes_gdpr_controller_and_processor():
     # the gap addressed here is purely query-time routing to them.
     assert detect_role_specs(
         "What obligations does a data controller have under GDPR?"
-    ) == [("controller", "32016R0679")]
+    ) == [("controller", GDPR_CELEX)]
     assert detect_role_specs("processor responsibilities") == [
-        ("processor", "32016R0679")
+        ("processor", GDPR_CELEX)
     ]
     assert detect_role_specs("duties of the supervisory authority") == [
-        ("supervisory_authority", "32016R0679")
+        ("supervisory_authority", GDPR_CELEX)
     ]
 
 
 def test_detect_role_specs_gdpr_honors_celex_filter():
     # GDPR roles must not leak when the question is scoped to another regulation.
-    assert detect_role_specs("controller duties", target_celexes={"32017R0745"}) == []
+    assert detect_role_specs("controller duties", target_celexes={MDR_CELEX}) == []
 
 
 def test_select_actor_terms_promotes_composite_operator_definition():
@@ -115,7 +121,7 @@ def test_select_actor_terms_promotes_composite_operator_definition():
             "term": "provider",
             "category": "actor",
             "term_normalized": "provider",
-            "celex": "32024R1689",
+            "celex": AI_ACT_CELEX,
             "definition_text": "'provider' means a natural or legal person;",
         },
         {
@@ -123,7 +129,7 @@ def test_select_actor_terms_promotes_composite_operator_definition():
             "term": "deployer",
             "category": "actor",
             "term_normalized": "deployer",
-            "celex": "32024R1689",
+            "celex": AI_ACT_CELEX,
             "definition_text": "'deployer' means a natural or legal person;",
         },
         {
@@ -131,7 +137,7 @@ def test_select_actor_terms_promotes_composite_operator_definition():
             "term": "importer",
             "category": "actor",
             "term_normalized": "importer",
-            "celex": "32024R1689",
+            "celex": AI_ACT_CELEX,
             "definition_text": "'importer' means a natural or legal person;",
         },
         {
@@ -139,7 +145,7 @@ def test_select_actor_terms_promotes_composite_operator_definition():
             "term": "operator",
             "category": "other",
             "term_normalized": "operator",
-            "celex": "32024R1689",
+            "celex": AI_ACT_CELEX,
             "definition_text": "'operator' means a provider, deployer or importer;",
         },
     ]
@@ -161,7 +167,7 @@ def test_select_actor_terms_promotes_exact_legal_user_role():
             "term": "user",
             "category": "other",
             "term_normalized": "user",
-            "celex": "32017R0745",
+            "celex": MDR_CELEX,
             "definition_text": "'user' means any healthcare professional or lay person who uses a device;",
         },
         {
@@ -169,7 +175,7 @@ def test_select_actor_terms_promotes_exact_legal_user_role():
             "term": "user",
             "category": "other",
             "term_normalized": "user",
-            "celex": "32017R0746",
+            "celex": IVDR_CELEX,
             "definition_text": "'user' means any healthcare professional or lay person who uses a device;",
         },
     ]
@@ -177,8 +183,8 @@ def test_select_actor_terms_promotes_exact_legal_user_role():
     selected = _select_actor_terms(defined_terms)
 
     assert {(row["celex"], row["term_normalized"]) for row in selected} == {
-        ("32017R0745", "user"),
-        ("32017R0746", "user"),
+        (MDR_CELEX, "user"),
+        (IVDR_CELEX, "user"),
     }
 
 
@@ -188,38 +194,38 @@ def test_build_includes_edges_expands_composite_operator_role():
             "term": "provider",
             "category": "actor",
             "term_normalized": "provider",
-            "celex": "32024R1689",
+            "celex": AI_ACT_CELEX,
             "definition_text": "'provider' means a natural or legal person;",
         },
         {
             "term": "deployer",
             "category": "actor",
             "term_normalized": "deployer",
-            "celex": "32024R1689",
+            "celex": AI_ACT_CELEX,
             "definition_text": "'deployer' means a natural or legal person;",
         },
         {
             "term": "importer",
             "category": "actor",
             "term_normalized": "importer",
-            "celex": "32024R1689",
+            "celex": AI_ACT_CELEX,
             "definition_text": "'importer' means a natural or legal person;",
         },
         {
             "term": "operator",
             "category": "other",
             "term_normalized": "operator",
-            "celex": "32024R1689",
+            "celex": AI_ACT_CELEX,
             "definition_text": "'operator' means a provider, deployer or importer;",
         },
     ]
 
     edges = _build_includes_edges(actor_terms)
 
-    assert {edge["child_role_id"] for edge in edges if edge["parent_role_id"] == "32024R1689::role::operator"} == {
-        "32024R1689::role::provider",
-        "32024R1689::role::deployer",
-        "32024R1689::role::importer",
+    assert {edge["child_role_id"] for edge in edges if edge["parent_role_id"] == f"{AI_ACT_CELEX}::role::operator"} == {
+        f"{AI_ACT_CELEX}::role::provider",
+        f"{AI_ACT_CELEX}::role::deployer",
+        f"{AI_ACT_CELEX}::role::importer",
     }
 
 
@@ -230,7 +236,7 @@ def test_select_actor_terms_promotes_nested_composite_roles():
             "term": "manufacturer",
             "category": "actor",
             "term_normalized": "manufacturer",
-            "celex": "32024R1689",
+            "celex": AI_ACT_CELEX,
             "definition_text": "'manufacturer' means a natural or legal person;",
         },
         {
@@ -238,7 +244,7 @@ def test_select_actor_terms_promotes_nested_composite_roles():
             "term": "provider",
             "category": "actor",
             "term_normalized": "provider",
-            "celex": "32024R1689",
+            "celex": AI_ACT_CELEX,
             "definition_text": "'provider' means a natural or legal person;",
         },
         {
@@ -246,7 +252,7 @@ def test_select_actor_terms_promotes_nested_composite_roles():
             "term": "deployer",
             "category": "actor",
             "term_normalized": "deployer",
-            "celex": "32024R1689",
+            "celex": AI_ACT_CELEX,
             "definition_text": "'deployer' means a natural or legal person;",
         },
         {
@@ -254,7 +260,7 @@ def test_select_actor_terms_promotes_nested_composite_roles():
             "term": "authorised representative",
             "category": "actor",
             "term_normalized": "authorised_representative",
-            "celex": "32024R1689",
+            "celex": AI_ACT_CELEX,
             "definition_text": "'authorised representative' means a natural or legal person;",
         },
         {
@@ -262,7 +268,7 @@ def test_select_actor_terms_promotes_nested_composite_roles():
             "term": "importer",
             "category": "actor",
             "term_normalized": "importer",
-            "celex": "32024R1689",
+            "celex": AI_ACT_CELEX,
             "definition_text": "'importer' means a natural or legal person;",
         },
         {
@@ -270,7 +276,7 @@ def test_select_actor_terms_promotes_nested_composite_roles():
             "term": "distributor",
             "category": "actor",
             "term_normalized": "distributor",
-            "celex": "32024R1689",
+            "celex": AI_ACT_CELEX,
             "definition_text": "'distributor' means a natural or legal person;",
         },
         {
@@ -278,7 +284,7 @@ def test_select_actor_terms_promotes_nested_composite_roles():
             "term": "product manufacturer",
             "category": "other",
             "term_normalized": "product_manufacturer",
-            "celex": "32024R1689",
+            "celex": AI_ACT_CELEX,
             "definition_text": "'product manufacturer' means a manufacturer of a product;",
         },
         {
@@ -286,7 +292,7 @@ def test_select_actor_terms_promotes_nested_composite_roles():
             "term": "operator",
             "category": "other",
             "term_normalized": "operator",
-            "celex": "32024R1689",
+            "celex": AI_ACT_CELEX,
             "definition_text": "'operator' means a provider, product manufacturer, deployer, authorised representative, importer or distributor;",
         },
     ]
@@ -303,9 +309,9 @@ def test_augment_with_derived_roles_adds_helper_roles_for_present_celexes():
             "term": "provider",
             "category": "actor",
             "term_normalized": "provider",
-            "celex": "32024R1689",
+            "celex": AI_ACT_CELEX,
             "regulation": "EU AI Act",
-            "source_provision_id": "32024R1689_art_3_pt_3",
+            "source_provision_id": f"{AI_ACT_CELEX}_art_3_pt_3",
             "definition_text": "'provider' means a natural or legal person;",
         },
         {
@@ -313,9 +319,9 @@ def test_augment_with_derived_roles_adds_helper_roles_for_present_celexes():
             "term": "operator",
             "category": "other",
             "term_normalized": "operator",
-            "celex": "32024R1689",
+            "celex": AI_ACT_CELEX,
             "regulation": "EU AI Act",
-            "source_provision_id": "32024R1689_art_3_pt_8",
+            "source_provision_id": f"{AI_ACT_CELEX}_art_3_pt_8",
             "definition_text": "'operator' means a provider, product manufacturer, deployer, authorised representative, importer or distributor;",
         },
         {
@@ -323,9 +329,9 @@ def test_augment_with_derived_roles_adds_helper_roles_for_present_celexes():
             "term": "economic operator",
             "category": "other",
             "term_normalized": "economic_operator",
-            "celex": "32017R0745",
+            "celex": MDR_CELEX,
             "regulation": "MDR",
-            "source_provision_id": "32017R0745_art_2_pt_35",
+            "source_provision_id": f"{MDR_CELEX}_art_2_pt_35",
             "definition_text": "'economic operator' means a manufacturer, an authorised representative, an importer, a distributor or the person referred to in Article 22(1) and 22(3);",
         },
     ]
@@ -345,9 +351,9 @@ def test_build_actor_roles_marks_derived_helpers_with_source_type():
             "term": "operator",
             "category": "other",
             "term_normalized": "operator",
-            "celex": "32024R1689",
+            "celex": AI_ACT_CELEX,
             "regulation": "EU AI Act",
-            "source_provision_id": "32024R1689_art_3_pt_8",
+            "source_provision_id": f"{AI_ACT_CELEX}_art_3_pt_8",
             "definition_text": "'operator' means a provider, product manufacturer, deployer, authorised representative, importer or distributor;",
         },
     ])
@@ -365,47 +371,47 @@ def test_build_includes_edges_completes_mdr_economic_operator_with_article_22_pe
             "term": "manufacturer",
             "category": "actor",
             "term_normalized": "manufacturer",
-            "celex": "32017R0745",
-            "source_provision_id": "32017R0745_art_2_pt_31",
+            "celex": MDR_CELEX,
+            "source_provision_id": f"{MDR_CELEX}_art_2_pt_31",
             "definition_text": "'manufacturer' means a natural or legal person;",
         },
         {
             "term": "authorised representative",
             "category": "actor",
             "term_normalized": "authorised_representative",
-            "celex": "32017R0745",
-            "source_provision_id": "32017R0745_art_2_pt_32",
+            "celex": MDR_CELEX,
+            "source_provision_id": f"{MDR_CELEX}_art_2_pt_32",
             "definition_text": "'authorised representative' means a natural or legal person;",
         },
         {
             "term": "importer",
             "category": "actor",
             "term_normalized": "importer",
-            "celex": "32017R0745",
-            "source_provision_id": "32017R0745_art_2_pt_33",
+            "celex": MDR_CELEX,
+            "source_provision_id": f"{MDR_CELEX}_art_2_pt_33",
             "definition_text": "'importer' means a natural or legal person;",
         },
         {
             "term": "distributor",
             "category": "actor",
             "term_normalized": "distributor",
-            "celex": "32017R0745",
-            "source_provision_id": "32017R0745_art_2_pt_34",
+            "celex": MDR_CELEX,
+            "source_provision_id": f"{MDR_CELEX}_art_2_pt_34",
             "definition_text": "'distributor' means a natural or legal person;",
         },
         {
             "term": "economic operator",
             "category": "other",
             "term_normalized": "economic_operator",
-            "celex": "32017R0745",
-            "source_provision_id": "32017R0745_art_2_pt_35",
+            "celex": MDR_CELEX,
+            "source_provision_id": f"{MDR_CELEX}_art_2_pt_35",
             "definition_text": "'economic operator' means a manufacturer, an authorised representative, an importer, a distributor or the person referred to in Article 22(1) and 22(3);",
         },
         {
             "term": "Article 22 person",
             "category": "derived",
             "term_normalized": "article_22_person",
-            "celex": "32017R0745",
+            "celex": MDR_CELEX,
             "source_provision_id": None,
             "definition_text": "",
             "source_type": "derived_role",
@@ -416,13 +422,13 @@ def test_build_includes_edges_completes_mdr_economic_operator_with_article_22_pe
     edges = _build_includes_edges(actor_terms)
 
     assert {
-        edge["child_role_id"] for edge in edges if edge["parent_role_id"] == "32017R0745::role::economic_operator"
+        edge["child_role_id"] for edge in edges if edge["parent_role_id"] == f"{MDR_CELEX}::role::economic_operator"
     } == {
-        "32017R0745::role::manufacturer",
-        "32017R0745::role::authorised_representative",
-        "32017R0745::role::importer",
-        "32017R0745::role::distributor",
-        "32017R0745::role::article_22_person",
+        f"{MDR_CELEX}::role::manufacturer",
+        f"{MDR_CELEX}::role::authorised_representative",
+        f"{MDR_CELEX}::role::importer",
+        f"{MDR_CELEX}::role::distributor",
+        f"{MDR_CELEX}::role::article_22_person",
     }
 
 
@@ -431,8 +437,8 @@ def test_build_equivalent_edges_are_classified_as_retrieval_analogies():
 
     deployer_to_user = next(
         edge for edge in edges
-        if edge["left_role_id"] == "32024R1689::role::deployer"
-        and edge["right_role_id"] == "32017R0745::role::user"
+        if edge["left_role_id"] == f"{AI_ACT_CELEX}::role::deployer"
+        and edge["right_role_id"] == f"{MDR_CELEX}::role::user"
     )
 
     assert deployer_to_user["mapping_kind"] == "retrieval_analogy"
@@ -441,8 +447,8 @@ def test_build_equivalent_edges_are_classified_as_retrieval_analogies():
 
     reverse_edge = next(
         edge for edge in edges
-        if edge["left_role_id"] == "32017R0745::role::user"
-        and edge["right_role_id"] == "32024R1689::role::deployer"
+        if edge["left_role_id"] == f"{MDR_CELEX}::role::user"
+        and edge["right_role_id"] == f"{AI_ACT_CELEX}::role::deployer"
     )
 
     assert reverse_edge["mapping_kind"] == "retrieval_analogy"

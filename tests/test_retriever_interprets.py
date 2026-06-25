@@ -3,6 +3,9 @@
 These tests are purely structural — they verify that the Cypher queries and
 kind sets contain the right constructs without touching Neo4j.
 """
+from domain.legislation_catalog import (
+    MDR_CELEX,
+)
 from retrieval.graph_retriever import (
     _EXPAND_CYPHER,
     _PARENT_KINDS,
@@ -56,7 +59,7 @@ def test_expand_cypher_returns_both_interprets_columns():
 def _make_provision(**overrides) -> dict:
     base = {
         "article_id": "test_id",
-        "celex": "32017R0745",
+        "celex": MDR_CELEX,
         "regulation": "MDR",
         "article_ref": "Article 1",
         "article_path": "",
@@ -96,7 +99,7 @@ def test_format_context_renders_interpreted_provisions():
         interpreting_guidance=[],
         interpreted_provisions=[
             {
-                "id": "32017R0745_art120",
+                "id": f"{MDR_CELEX}_art120",
                 "ref": "Article 120",
                 "text": "Article 120 provides the transitional provisions.",
             }

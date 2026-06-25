@@ -18,10 +18,16 @@ from application._routing import (
     _ProvisionLookupTarget,
     _build_legal_qualification_targets,
 )
+from domain.legislation_catalog import (
+    AI_ACT_CELEX,
+    MDR_CELEX,
+    IVDR_CELEX,
+    GDPR_CELEX,
+)
 
 logger = logging.getLogger(__name__)
 
-_AI_ACT_CELEX = "32024R1689"
+_AI_ACT_CELEX = AI_ACT_CELEX
 _AI_ACT_PROHIBITED_PRACTICES_RE = re.compile(
     r"\b(prohibit(?:ed|ion|ions)?|ban(?:ned)?|forbidden|not\s+allowed)\b",
     re.IGNORECASE,
@@ -36,10 +42,10 @@ _AI_ACT_PROHIBITED_PRACTICES_RE = re.compile(
 # (MDR Article 2 'manufacturer' definition) and concludes the actor has no
 # status at all.
 _DEFINITIONS_REF_BY_CELEX: dict[str, str] = {
-    "32024R1689": "Article 3",  # EU AI Act
-    "32017R0745": "Article 2",  # MDR
-    "32017R0746": "Article 2",  # IVDR
-    "32016R0679": "Article 4",  # GDPR
+    AI_ACT_CELEX: "Article 3",  # EU AI Act
+    MDR_CELEX: "Article 2",     # MDR
+    IVDR_CELEX: "Article 2",    # IVDR
+    GDPR_CELEX: "Article 4",    # GDPR
 }
 _STATUS_ANCHOR_ROUTES: frozenset[str] = frozenset({
     "legal_qualification",
@@ -393,9 +399,9 @@ def _expand_classification_chain(
 
     # Map detected regulations to their primary classification gate articles.
     _GATE_ARTICLES: dict[str, list[str]] = {
-        "32024R1689": ["Article 6", "Article 51", "Article 5"],
-        "32017R0745": ["Article 52", "Article 10"],
-        "32017R0746": ["Article 48", "Article 10"],
+        AI_ACT_CELEX: ["Article 6", "Article 51", "Article 5"],
+        MDR_CELEX: ["Article 52", "Article 10"],
+        IVDR_CELEX: ["Article 48", "Article 10"],
     }
     for celex, gate_refs in _GATE_ARTICLES.items():
         if target_celexes and celex not in target_celexes:
@@ -597,7 +603,7 @@ def _retrieve_route_provisions(
             direct_provisions=direct_provisions,
         )
 
-    _GDPR_CELEX = "32016R0679"
+    _GDPR_CELEX = GDPR_CELEX
     if route.id == "cross_regulation" and target_celexes and _GDPR_CELEX in target_celexes:
         _inject_gdpr_cross_reg_backbone(
             question,

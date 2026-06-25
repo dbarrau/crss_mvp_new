@@ -1,3 +1,9 @@
+from domain.legislation_catalog import (
+    MDR_CELEX,
+    AI_ACT_CELEX,
+    IVDR_CELEX,
+    GDPR_CELEX,
+)
 import pytest
 
 from application.agent import (
@@ -90,7 +96,7 @@ def test_select_question_route_uses_role_obligations():
         "What obligations does the provider have under the AI Act?",
         explicit_refs=[],
         mentioned_regs={"EU AI Act"},
-        role_specs=[("provider", "32024R1689")],
+        role_specs=[("provider", AI_ACT_CELEX)],
         is_definition_question=False,
     )
 
@@ -111,7 +117,7 @@ def test_select_question_route_uses_community_summary_for_broad_provider_obligat
         question,
         explicit_refs=[],
         mentioned_regs={"EU AI Act"},
-        role_specs=[("provider", "32024R1689")],
+        role_specs=[("provider", AI_ACT_CELEX)],
         is_definition_question=False,
     )
 
@@ -123,7 +129,7 @@ def test_select_question_route_prefers_cross_regulation():
         "How do the MDR and the AI Act interact for provider obligations?",
         explicit_refs=[],
         mentioned_regs={"EU AI Act", "MDR 2017/745"},
-        role_specs=[("provider", "32024R1689")],
+        role_specs=[("provider", AI_ACT_CELEX)],
         is_definition_question=False,
     )
 
@@ -139,7 +145,7 @@ def test_select_question_route_uses_legal_qualification_for_medical_ai_status_qu
         ),
         explicit_refs=["Article 5"],
         mentioned_regs={"EU AI Act", "MDR 2017/745"},
-        role_specs=[("deployer", "32024R1689"), ("manufacturer", "32017R0745")],
+        role_specs=[("deployer", AI_ACT_CELEX), ("manufacturer", MDR_CELEX)],
         is_definition_question=False,
     )
 
@@ -152,33 +158,33 @@ def test_detect_question_roles_inflects_provider_and_manufacturer_from_conduct()
             "A university hospital develops and puts into service its own "
             "AI pathology system for internal use."
         ),
-        target_celexes={"32024R1689", "32017R0745"},
+        target_celexes={AI_ACT_CELEX, MDR_CELEX},
     )
 
-    assert ("provider", "32024R1689") in roles
-    assert ("manufacturer", "32017R0745") in roles
-    assert ("deployer", "32024R1689") in roles
+    assert ("provider", AI_ACT_CELEX) in roles
+    assert ("manufacturer", MDR_CELEX) in roles
+    assert ("deployer", AI_ACT_CELEX) in roles
 
 
 def test_detect_question_roles_matches_plural_role_terms():
     roles = _detect_question_roles(
         "What obligations do providers and deployers have under the EU AI Act?",
-        target_celexes={"32024R1689"},
+        target_celexes={AI_ACT_CELEX},
     )
 
-    assert ("provider", "32024R1689") in roles
-    assert ("deployer", "32024R1689") in roles
+    assert ("provider", AI_ACT_CELEX) in roles
+    assert ("deployer", AI_ACT_CELEX) in roles
 
 
 def test_detect_question_roles_matches_plural_entity_terms():
     roles = _detect_question_roles(
         "What are hospitals required to do when they deploy AI systems?",
-        target_celexes={"32024R1689", "32017R0745", "32017R0746"},
+        target_celexes={AI_ACT_CELEX, MDR_CELEX, IVDR_CELEX},
     )
 
-    assert ("deployer", "32024R1689") in roles
-    assert ("user", "32017R0745") in roles
-    assert ("user", "32017R0746") in roles
+    assert ("deployer", AI_ACT_CELEX) in roles
+    assert ("user", MDR_CELEX) in roles
+    assert ("user", IVDR_CELEX) in roles
 
 
 def test_retrieve_route_provisions_skips_hyde_for_direct_lookup():
@@ -199,7 +205,7 @@ def test_retrieve_route_provisions_skips_hyde_for_direct_lookup():
         client=object(),
         k=8,
         route=route,
-        target_celexes={"32024R1689"},
+        target_celexes={AI_ACT_CELEX},
         explicit_refs=["Article 26"],
         role_specs=[],
         hyde_builder=lambda *_args, **_kwargs: pytest.fail("HyDE should not run"),
@@ -217,7 +223,7 @@ def test_retrieve_route_provisions_skips_hyde_for_role_lookup():
         "What obligations does the provider have under the AI Act?",
         explicit_refs=[],
         mentioned_regs={"EU AI Act"},
-        role_specs=[("provider", "32024R1689")],
+        role_specs=[("provider", AI_ACT_CELEX)],
         is_definition_question=False,
     )
 
@@ -227,9 +233,9 @@ def test_retrieve_route_provisions_skips_hyde_for_role_lookup():
         client=object(),
         k=8,
         route=route,
-        target_celexes={"32024R1689"},
+        target_celexes={AI_ACT_CELEX},
         explicit_refs=[],
-        role_specs=[("provider", "32024R1689")],
+        role_specs=[("provider", AI_ACT_CELEX)],
         hyde_builder=lambda *_args, **_kwargs: pytest.fail("HyDE should not run"),
     )
 
@@ -250,7 +256,7 @@ def test_retrieve_route_provisions_cross_regulation_combines_all_paths():
         "How do Article 43 of the AI Act and MDR provider duties interact?",
         explicit_refs=["Article 43"],
         mentioned_regs={"EU AI Act", "MDR 2017/745"},
-        role_specs=[("provider", "32024R1689")],
+        role_specs=[("provider", AI_ACT_CELEX)],
         is_definition_question=False,
     )
 
@@ -260,9 +266,9 @@ def test_retrieve_route_provisions_cross_regulation_combines_all_paths():
         client=object(),
         k=8,
         route=route,
-        target_celexes={"32024R1689", "32017R0745"},
+        target_celexes={AI_ACT_CELEX, MDR_CELEX},
         explicit_refs=["Article 43"],
-        role_specs=[("provider", "32024R1689")],
+        role_specs=[("provider", AI_ACT_CELEX)],
         hyde_builder=lambda *_args, **_kwargs: "synthetic hyde text",
     )
 
@@ -280,18 +286,18 @@ def test_retrieve_route_provisions_cross_regulation_combines_all_paths():
 def test_retrieve_route_provisions_legal_qualification_forces_backbone_refs():
     retriever = _FakeRetriever(
         direct=[
-            [{"article_id": "mdr-art-5", "article_ref": "Article 5", "celex": "32017R0745", "children": []}],
-            [{"article_id": "ai-art-3", "article_ref": "Article 3", "celex": "32024R1689"}],
-            [{"article_id": "mdr-art-2", "article_ref": "Article 2", "celex": "32017R0745"}],
-            [{"article_id": "mdr-art-5-dup", "article_ref": "Article 5", "celex": "32017R0745"}],
-            [{"article_id": "ai-art-6", "article_ref": "Article 6", "celex": "32024R1689"}],
-            [{"article_id": "ai-annex-i", "article_ref": "Annex I", "celex": "32024R1689"}],
-            [{"article_id": "ai-art-43", "article_ref": "Article 43", "celex": "32024R1689"}],
-            [{"article_id": "ai-art-25", "article_ref": "Article 25", "celex": "32024R1689"}],
+            [{"article_id": "mdr-art-5", "article_ref": "Article 5", "celex": MDR_CELEX, "children": []}],
+            [{"article_id": "ai-art-3", "article_ref": "Article 3", "celex": AI_ACT_CELEX}],
+            [{"article_id": "mdr-art-2", "article_ref": "Article 2", "celex": MDR_CELEX}],
+            [{"article_id": "mdr-art-5-dup", "article_ref": "Article 5", "celex": MDR_CELEX}],
+            [{"article_id": "ai-art-6", "article_ref": "Article 6", "celex": AI_ACT_CELEX}],
+            [{"article_id": "ai-annex-i", "article_ref": "Annex I", "celex": AI_ACT_CELEX}],
+            [{"article_id": "ai-art-43", "article_ref": "Article 43", "celex": AI_ACT_CELEX}],
+            [{"article_id": "ai-art-25", "article_ref": "Article 25", "celex": AI_ACT_CELEX}],
             [{"article_id": "mdcg-2025-6", "article_ref": "MDCG 2025-6", "celex": "MDCG_2025_6"}],
         ],
-        role=[{"article_id": "art-role", "article_ref": "Article 29", "celex": "32024R1689"}],
-        hybrid=[{"article_id": "art-hyde", "article_ref": "Article 10", "celex": "32024R1689"}],
+        role=[{"article_id": "art-role", "article_ref": "Article 29", "celex": AI_ACT_CELEX}],
+        hybrid=[{"article_id": "art-hyde", "article_ref": "Article 10", "celex": AI_ACT_CELEX}],
     )
     route = _select_question_route(
         (
@@ -301,7 +307,7 @@ def test_retrieve_route_provisions_legal_qualification_forces_backbone_refs():
         ),
         explicit_refs=["Article 5"],
         mentioned_regs={"EU AI Act", "MDR 2017/745"},
-        role_specs=[("deployer", "32024R1689"), ("manufacturer", "32017R0745")],
+        role_specs=[("deployer", AI_ACT_CELEX), ("manufacturer", MDR_CELEX)],
         is_definition_question=False,
     )
 
@@ -315,9 +321,9 @@ def test_retrieve_route_provisions_legal_qualification_forces_backbone_refs():
         client=object(),
         k=8,
         route=route,
-        target_celexes={"32024R1689", "32017R0745"},
+        target_celexes={AI_ACT_CELEX, MDR_CELEX},
         explicit_refs=["Article 5"],
-        role_specs=[("deployer", "32024R1689"), ("manufacturer", "32017R0745")],
+        role_specs=[("deployer", AI_ACT_CELEX), ("manufacturer", MDR_CELEX)],
         hyde_builder=lambda *_args, **_kwargs: "synthetic hyde text",
     )
 
@@ -367,9 +373,9 @@ def test_build_legal_qualification_targets_skips_article_25_for_already_provider
         ),
         mentioned_regs={"EU AI Act", "MDR 2017/745"},
         role_specs=[
-            ("provider", "32024R1689"),
-            ("deployer", "32024R1689"),
-            ("manufacturer", "32017R0745"),
+            ("provider", AI_ACT_CELEX),
+            ("deployer", AI_ACT_CELEX),
+            ("manufacturer", MDR_CELEX),
         ],
     )
 
@@ -391,7 +397,7 @@ def test_build_legal_qualification_targets_only_adds_annex_iii_when_explicitly_s
             "high-risk under the AI Act?"
         ),
         mentioned_regs={"EU AI Act", "MDR 2017/745"},
-        role_specs=[("deployer", "32024R1689"), ("manufacturer", "32017R0745")],
+        role_specs=[("deployer", AI_ACT_CELEX), ("manufacturer", MDR_CELEX)],
     )
     annex_iii_targets = _build_legal_qualification_targets(
         (
@@ -399,7 +405,7 @@ def test_build_legal_qualification_targets_only_adds_annex_iii_when_explicitly_s
             "AI Act analysis proceed through Annex III or the MDR-linked route?"
         ),
         mentioned_regs={"EU AI Act", "MDR 2017/745"},
-        role_specs=[("deployer", "32024R1689"), ("manufacturer", "32017R0745")],
+        role_specs=[("deployer", AI_ACT_CELEX), ("manufacturer", MDR_CELEX)],
     )
 
     assert "Annex III" not in [target.ref for target in default_targets]
@@ -428,7 +434,7 @@ def test_evaluate_route_sufficiency_flags_missing_explicit_ref():
         route=route,
         question="What does Article 26 of the AI Act require?",
         explicit_refs=["Article 26"],
-        target_celexes={"32024R1689"},
+        target_celexes={AI_ACT_CELEX},
         role_specs=[],
         provisions=[],
         definitions=[],
@@ -443,7 +449,7 @@ def test_evaluate_route_sufficiency_flags_missing_explicit_ref():
 
 def test_corrective_retrieval_pass_recovers_missing_explicit_ref():
     retriever = _FakeRetriever(
-        direct=[{"article_id": "art-26", "article_ref": "Article 26", "celex": "32024R1689", "children": []}],
+        direct=[{"article_id": "art-26", "article_ref": "Article 26", "celex": AI_ACT_CELEX, "children": []}],
     )
     route = _select_question_route(
         "What does Article 26 of the AI Act require?",
@@ -461,7 +467,7 @@ def test_corrective_retrieval_pass_recovers_missing_explicit_ref():
         route=route,
         question="What does Article 26 of the AI Act require?",
         explicit_refs=["Article 26"],
-        target_celexes={"32024R1689"},
+        target_celexes={AI_ACT_CELEX},
         role_specs=[],
         provisions=provisions,
         definitions=definitions,
@@ -475,7 +481,7 @@ def test_corrective_retrieval_pass_recovers_missing_explicit_ref():
         client=object(),
         k=8,
         route=route,
-        target_celexes={"32024R1689"},
+        target_celexes={AI_ACT_CELEX},
         explicit_refs=["Article 26"],
         role_specs=[],
         provisions=provisions,
@@ -498,7 +504,7 @@ def test_evaluate_route_sufficiency_flags_missing_cross_regulation_coverage():
         "How do the MDR and the AI Act interact for provider obligations?",
         explicit_refs=[],
         mentioned_regs={"EU AI Act", "MDR 2017/745"},
-        role_specs=[("provider", "32024R1689")],
+        role_specs=[("provider", AI_ACT_CELEX)],
         is_definition_question=False,
     )
 
@@ -506,17 +512,17 @@ def test_evaluate_route_sufficiency_flags_missing_cross_regulation_coverage():
         route=route,
         question="How do the MDR and the AI Act interact for provider obligations?",
         explicit_refs=[],
-        target_celexes={"32024R1689", "32017R0745"},
-        role_specs=[("provider", "32024R1689")],
-        provisions=[{"article_id": "art-provider", "celex": "32024R1689", "matched_role": "provider"}],
+        target_celexes={AI_ACT_CELEX, MDR_CELEX},
+        role_specs=[("provider", AI_ACT_CELEX)],
+        provisions=[{"article_id": "art-provider", "celex": AI_ACT_CELEX, "matched_role": "provider"}],
         definitions=[],
         direct_provisions=[],
-        role_provisions=[{"article_id": "art-provider", "celex": "32024R1689"}],
+        role_provisions=[{"article_id": "art-provider", "celex": AI_ACT_CELEX}],
         legal_qualification_targets=[],
     )
 
     assert sufficiency["ok"] is False
-    assert sufficiency["missing_celexes"] == ["32017R0745"]
+    assert sufficiency["missing_celexes"] == [MDR_CELEX]
 
 
 def test_evaluate_route_sufficiency_flags_single_community_concentration():
@@ -524,7 +530,7 @@ def test_evaluate_route_sufficiency_flags_single_community_concentration():
         "How do AI Act and MDR deployer obligations compare?",
         explicit_refs=[],
         mentioned_regs={"EU AI Act", "MDR 2017/745"},
-        role_specs=[("deployer", "32024R1689")],
+        role_specs=[("deployer", AI_ACT_CELEX)],
         is_definition_question=False,
     )
 
@@ -532,25 +538,25 @@ def test_evaluate_route_sufficiency_flags_single_community_concentration():
         route=route,
         question="How do AI Act and MDR deployer obligations compare?",
         explicit_refs=[],
-        target_celexes={"32024R1689", "32017R0745"},
-        role_specs=[("deployer", "32024R1689")],
+        target_celexes={AI_ACT_CELEX, MDR_CELEX},
+        role_specs=[("deployer", AI_ACT_CELEX)],
         provisions=[
             {
                 "article_id": "ai-art-26",
-                "celex": "32024R1689",
+                "celex": AI_ACT_CELEX,
                 "community_id": "community::deployer",
                 "matched_role": "deployer",
             },
             {
                 "article_id": "mdr-art-10",
-                "celex": "32017R0745",
+                "celex": MDR_CELEX,
                 "community_id": "community::deployer",
                 "matched_role": "deployer",
             },
         ],
         definitions=[],
         direct_provisions=[],
-        role_provisions=[{"article_id": "ai-art-26", "celex": "32024R1689"}],
+        role_provisions=[{"article_id": "ai-art-26", "celex": AI_ACT_CELEX}],
         legal_qualification_targets=[],
     )
 
@@ -567,7 +573,7 @@ def test_evaluate_route_sufficiency_passes_with_multi_community_coverage():
         "How do AI Act and MDR deployer obligations compare?",
         explicit_refs=[],
         mentioned_regs={"EU AI Act", "MDR 2017/745"},
-        role_specs=[("deployer", "32024R1689")],
+        role_specs=[("deployer", AI_ACT_CELEX)],
         is_definition_question=False,
     )
 
@@ -575,25 +581,25 @@ def test_evaluate_route_sufficiency_passes_with_multi_community_coverage():
         route=route,
         question="How do AI Act and MDR deployer obligations compare?",
         explicit_refs=[],
-        target_celexes={"32024R1689", "32017R0745"},
-        role_specs=[("deployer", "32024R1689")],
+        target_celexes={AI_ACT_CELEX, MDR_CELEX},
+        role_specs=[("deployer", AI_ACT_CELEX)],
         provisions=[
             {
                 "article_id": "ai-art-26",
-                "celex": "32024R1689",
+                "celex": AI_ACT_CELEX,
                 "community_id": "community::deployer",
                 "matched_role": "deployer",
             },
             {
                 "article_id": "mdr-art-10",
-                "celex": "32017R0745",
+                "celex": MDR_CELEX,
                 "community_id": "community::manufacturer",
                 "matched_role": "deployer",
             },
         ],
         definitions=[],
         direct_provisions=[],
-        role_provisions=[{"article_id": "ai-art-26", "celex": "32024R1689"}],
+        role_provisions=[{"article_id": "ai-art-26", "celex": AI_ACT_CELEX}],
         legal_qualification_targets=[],
     )
 
@@ -618,28 +624,28 @@ def test_evaluate_route_sufficiency_flags_missing_qualification_backbone():
         question,
         explicit_refs=["Article 5"],
         mentioned_regs={"EU AI Act", "MDR 2017/745"},
-        role_specs=[("deployer", "32024R1689"), ("manufacturer", "32017R0745")],
+        role_specs=[("deployer", AI_ACT_CELEX), ("manufacturer", MDR_CELEX)],
         is_definition_question=False,
     )
     qualification_targets = _build_legal_qualification_targets(
         question,
         mentioned_regs={"EU AI Act", "MDR 2017/745"},
-        role_specs=[("deployer", "32024R1689"), ("manufacturer", "32017R0745")],
+        role_specs=[("deployer", AI_ACT_CELEX), ("manufacturer", MDR_CELEX)],
     )
 
     sufficiency = _evaluate_route_sufficiency(
         route=route,
         question=question,
         explicit_refs=["Article 5"],
-        target_celexes={"32024R1689", "32017R0745"},
-        role_specs=[("deployer", "32024R1689"), ("manufacturer", "32017R0745")],
+        target_celexes={AI_ACT_CELEX, MDR_CELEX},
+        role_specs=[("deployer", AI_ACT_CELEX), ("manufacturer", MDR_CELEX)],
         provisions=[
-            {"article_id": "mdr-art-5", "article_ref": "Article 5", "celex": "32017R0745"},
-            {"article_id": "ai-art-3", "article_ref": "Article 3", "celex": "32024R1689", "matched_role": "deployer"},
+            {"article_id": "mdr-art-5", "article_ref": "Article 5", "celex": MDR_CELEX},
+            {"article_id": "ai-art-3", "article_ref": "Article 3", "celex": AI_ACT_CELEX, "matched_role": "deployer"},
         ],
         definitions=[],
-        direct_provisions=[{"article_id": "mdr-art-5", "article_ref": "Article 5", "celex": "32017R0745"}],
-        role_provisions=[{"article_id": "ai-art-3", "article_ref": "Article 3", "celex": "32024R1689"}],
+        direct_provisions=[{"article_id": "mdr-art-5", "article_ref": "Article 5", "celex": MDR_CELEX}],
+        role_provisions=[{"article_id": "ai-art-3", "article_ref": "Article 3", "celex": AI_ACT_CELEX}],
         legal_qualification_targets=qualification_targets,
     )
 
@@ -669,26 +675,26 @@ def test_evaluate_route_sufficiency_flags_missing_status_anchor():
         route=route,
         question=question,
         explicit_refs=["Article 5"],
-        target_celexes={"32017R0745"},
-        role_specs=[("manufacturer", "32017R0745")],
+        target_celexes={MDR_CELEX},
+        role_specs=[("manufacturer", MDR_CELEX)],
         provisions=[
             {
                 "article_id": "mdr-art-5",
                 "article_ref": "Article 5",
-                "celex": "32017R0745",
+                "celex": MDR_CELEX,
                 "provision_role": "EXEMPTS",
                 "matched_role": "manufacturer",
             },
         ],
         definitions=[],
         direct_provisions=[],
-        role_provisions=[{"article_id": "mdr-art-5", "celex": "32017R0745"}],
+        role_provisions=[{"article_id": "mdr-art-5", "celex": MDR_CELEX}],
         legal_qualification_targets=[],
     )
 
     assert sufficiency["ok"] is False
     assert sufficiency["missing_status_anchors"] == [
-        {"ref": "Article 2", "celexes": ["32017R0745"]}
+        {"ref": "Article 2", "celexes": [MDR_CELEX]}
     ]
     assert any(
         check["name"] == "status_anchor" and check["passed"] is False
@@ -710,26 +716,26 @@ def test_evaluate_route_sufficiency_passes_when_defines_anchor_present():
         route=route,
         question=question,
         explicit_refs=["Article 5"],
-        target_celexes={"32017R0745"},
-        role_specs=[("manufacturer", "32017R0745")],
+        target_celexes={MDR_CELEX},
+        role_specs=[("manufacturer", MDR_CELEX)],
         provisions=[
             {
                 "article_id": "mdr-art-5",
                 "article_ref": "Article 5",
-                "celex": "32017R0745",
+                "celex": MDR_CELEX,
                 "provision_role": "EXEMPTS",
                 "matched_role": "manufacturer",
             },
             {
                 "article_id": "mdr-art-2",
                 "article_ref": "Article 2",
-                "celex": "32017R0745",
+                "celex": MDR_CELEX,
                 "provision_role": "DEFINES",
             },
         ],
         definitions=[],
         direct_provisions=[],
-        role_provisions=[{"article_id": "mdr-art-5", "celex": "32017R0745"}],
+        role_provisions=[{"article_id": "mdr-art-5", "celex": MDR_CELEX}],
         legal_qualification_targets=[],
     )
 
@@ -752,13 +758,13 @@ def test_evaluate_route_sufficiency_skips_status_anchor_on_general_route():
         route=route,
         question=question,
         explicit_refs=[],
-        target_celexes={"32017R0745"},
+        target_celexes={MDR_CELEX},
         role_specs=[],
         provisions=[
             {
                 "article_id": "mdr-art-5",
                 "article_ref": "Article 5",
-                "celex": "32017R0745",
+                "celex": MDR_CELEX,
                 "provision_role": "EXEMPTS",
             },
         ],
@@ -782,7 +788,7 @@ def test_corrective_retrieval_pass_recovers_missing_status_anchor():
                 {
                     "article_id": "mdr-art-2",
                     "article_ref": "Article 2",
-                    "celex": "32017R0745",
+                    "celex": MDR_CELEX,
                     "provision_role": "DEFINES",
                     "children": [],
                 }
@@ -798,14 +804,14 @@ def test_corrective_retrieval_pass_recovers_missing_status_anchor():
         {
             "article_id": "mdr-art-5",
             "article_ref": "Article 5",
-            "celex": "32017R0745",
+            "celex": MDR_CELEX,
             "provision_role": "EXEMPTS",
             "matched_role": "manufacturer",
         },
     ]
     direct_provisions: list[dict] = []
     role_provisions: list[dict] = [
-        {"article_id": "mdr-art-5", "celex": "32017R0745"},
+        {"article_id": "mdr-art-5", "celex": MDR_CELEX},
     ]
     definitions: list[dict] = []
 
@@ -813,8 +819,8 @@ def test_corrective_retrieval_pass_recovers_missing_status_anchor():
         route=route,
         question=question,
         explicit_refs=["Article 5"],
-        target_celexes={"32017R0745"},
-        role_specs=[("manufacturer", "32017R0745")],
+        target_celexes={MDR_CELEX},
+        role_specs=[("manufacturer", MDR_CELEX)],
         provisions=provisions,
         definitions=definitions,
         direct_provisions=direct_provisions,
@@ -822,7 +828,7 @@ def test_corrective_retrieval_pass_recovers_missing_status_anchor():
         legal_qualification_targets=[],
     )
     assert sufficiency["missing_status_anchors"] == [
-        {"ref": "Article 2", "celexes": ["32017R0745"]}
+        {"ref": "Article 2", "celexes": [MDR_CELEX]}
     ]
 
     recovery = _run_corrective_retrieval_pass(
@@ -831,9 +837,9 @@ def test_corrective_retrieval_pass_recovers_missing_status_anchor():
         client=object(),
         k=8,
         route=route,
-        target_celexes={"32017R0745"},
+        target_celexes={MDR_CELEX},
         explicit_refs=["Article 5"],
-        role_specs=[("manufacturer", "32017R0745")],
+        role_specs=[("manufacturer", MDR_CELEX)],
         provisions=provisions,
         direct_provisions=direct_provisions,
         role_provisions=role_provisions,
@@ -861,7 +867,7 @@ def test_build_route_answer_guidance_requires_uncertainty_for_qualification_rout
         ),
         explicit_refs=["Article 5"],
         mentioned_regs={"EU AI Act", "MDR 2017/745"},
-        role_specs=[("deployer", "32024R1689"), ("manufacturer", "32017R0745")],
+        role_specs=[("deployer", AI_ACT_CELEX), ("manufacturer", MDR_CELEX)],
         is_definition_question=False,
     )
 
@@ -895,7 +901,7 @@ def test_build_user_message_injects_route_guidance_only_for_qualification_route(
         ),
         explicit_refs=["Article 5"],
         mentioned_regs={"EU AI Act", "MDR 2017/745"},
-        role_specs=[("deployer", "32024R1689"), ("manufacturer", "32017R0745")],
+        role_specs=[("deployer", AI_ACT_CELEX), ("manufacturer", MDR_CELEX)],
         is_definition_question=False,
     )
     general_route = _select_question_route(
@@ -936,7 +942,7 @@ def test_build_uncertainty_banner_varies_with_sufficiency():
         ),
         explicit_refs=["Article 5"],
         mentioned_regs={"EU AI Act", "MDR 2017/745"},
-        role_specs=[("deployer", "32024R1689"), ("manufacturer", "32017R0745")],
+        role_specs=[("deployer", AI_ACT_CELEX), ("manufacturer", MDR_CELEX)],
         is_definition_question=False,
     )
 
@@ -956,7 +962,7 @@ def test_postprocess_answer_adds_banner_and_softens_categorical_phrasing():
         ),
         explicit_refs=["Article 5"],
         mentioned_regs={"EU AI Act", "MDR 2017/745"},
-        role_specs=[("deployer", "32024R1689"), ("manufacturer", "32017R0745")],
+        role_specs=[("deployer", AI_ACT_CELEX), ("manufacturer", MDR_CELEX)],
         is_definition_question=False,
     )
 
@@ -1043,7 +1049,7 @@ def test_build_legal_qualification_targets_includes_mdcg_2025_6_for_ai_act_mdr_o
     targets_ai_only = _build_legal_qualification_targets(
         "A hospital uses an AI system; when does it become a provider under the AI Act?",
         mentioned_regs={"EU AI Act"},
-        role_specs=[("deployer", "32024R1689")],
+        role_specs=[("deployer", AI_ACT_CELEX)],
     )
     assert "MDCG 2025-6" not in [t.ref for t in targets_ai_only]
 
@@ -1065,7 +1071,7 @@ def test_validate_legal_backbone_flags_deployer_misclassification():
         "A university hospital develops its own in-house AI system.",
         explicit_refs=[],
         mentioned_regs={"EU AI Act", "MDR 2017/745"},
-        role_specs=[("deployer", "32024R1689")],
+        role_specs=[("deployer", AI_ACT_CELEX)],
         is_definition_question=False,
     )
     question = "A university hospital develops and trains its own in-house AI pathology system."
@@ -1156,13 +1162,13 @@ def test_demo_question_curated_targets_include_ai_act_backbone_gdpr_and_mdcg():
             refs_by_celex.setdefault(celex, set()).add(t.ref)
 
     # AI Act backbone (Route I)
-    assert {"Article 6", "Annex I"} <= refs_by_celex.get("32024R1689", set())
+    assert {"Article 6", "Annex I"} <= refs_by_celex.get(AI_ACT_CELEX, set())
     # Cross-reg conformity assessment bridge
-    assert "Article 43" in refs_by_celex.get("32024R1689", set())
+    assert "Article 43" in refs_by_celex.get(AI_ACT_CELEX, set())
     # MDCG 2025-6 interplay guidance
     assert "MDCG 2025-6" in refs_by_celex.get("MDCG_2025_6", set())
     # GDPR backbone (definitions, lawful basis, special categories, DPIA)
-    gdpr_refs = refs_by_celex.get("32016R0679", set())
+    gdpr_refs = refs_by_celex.get(GDPR_CELEX, set())
     assert {"Article 4", "Article 6", "Article 9", "Article 35"} <= gdpr_refs
     # DPIA explicitly mentioned → Article 36 (prior consultation) must also be included
     assert "Article 36" in gdpr_refs
@@ -1179,7 +1185,7 @@ def test_gdpr_targets_only_inject_when_gdpr_is_in_scope():
     )
     for t in targets:
         if t.celexes:
-            assert "32016R0679" not in t.celexes
+            assert GDPR_CELEX not in t.celexes
 
 
 def test_obligation_focus_alone_triggers_legal_qualification_for_medtech_ai():
@@ -1231,7 +1237,7 @@ def test_build_route_answer_guidance_skips_gdpr_block_when_gdpr_absent():
         "When does a hospital using an in-house AI medical device become a provider?",
         explicit_refs=[],
         mentioned_regs={"EU AI Act", "MDR 2017/745"},
-        role_specs=[("deployer", "32024R1689"), ("manufacturer", "32017R0745")],
+        role_specs=[("deployer", AI_ACT_CELEX), ("manufacturer", MDR_CELEX)],
         is_definition_question=False,
     )
     guidance = _build_route_answer_guidance(

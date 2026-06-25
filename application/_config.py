@@ -11,7 +11,12 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from domain.legislation_catalog import LEGISLATION as _LEGISLATION
+from domain.legislation_catalog import (
+    LEGISLATION as _LEGISLATION,
+    AI_ACT_CELEX,
+    MDR_CELEX,
+    GDPR_CELEX,
+)
 from domain.mdcg_catalog import MDCG_DOCUMENTS as _MDCG_DOCS
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
@@ -204,11 +209,11 @@ def _detect_mentioned_regulations(question: str) -> set[str]:
 
 _IMPLICIT_PROVISION_REFS: list[tuple[re.Pattern, str, str]] = [
     # "lawful basis / lawful bases" → GDPR Article 6 (the six-ground enumeration)
-    (re.compile(r"\blawful\s+bas(?:is|es)\b", re.I), "32016R0679", "Article 6"),
+    (re.compile(r"\blawful\s+bas(?:is|es)\b", re.I), GDPR_CELEX, "Article 6"),
     # "prohibited / prohibition" in AI Act context → Article 5 (sole prohibition article)
-    (re.compile(r"\bprohibit(?:ed|ion|ions|s)?\b", re.I), "32024R1689", "Article 5"),
+    (re.compile(r"\bprohibit(?:ed|ion|ions|s)?\b", re.I), AI_ACT_CELEX, "Article 5"),
     # "technical documentation" in MDR context → Annex II (primary tech-doc annex)
-    (re.compile(r"\btechnical\s+documentation\b", re.I), "32017R0745", "Annex II"),
+    (re.compile(r"\btechnical\s+documentation\b", re.I), MDR_CELEX, "Annex II"),
 ]
 
 

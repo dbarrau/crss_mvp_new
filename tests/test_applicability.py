@@ -1,4 +1,9 @@
 """Tests for the curated temporal-applicability model (#6)."""
+from domain.legislation_catalog import (
+    MDR_CELEX,
+    AI_ACT_CELEX,
+    GDPR_CELEX,
+)
 from datetime import date
 
 from domain.ontology.applicability import (
@@ -9,7 +14,7 @@ from domain.ontology.applicability import (
 
 
 def test_ai_act_staged_application_boundaries():
-    celex = "32024R1689"
+    celex = AI_ACT_CELEX
     # Before entry into force.
     assert status_as_of(celex, date(2024, 7, 1))["in_force"] is False
     # After EIF but before prohibitions apply.
@@ -34,7 +39,7 @@ def test_unknown_celex_returns_none():
 
 
 def test_note_flags_ai_act_pending_general_application_in_mid_2026():
-    note = applicability_note({"32024R1689"}, date(2026, 6, 22))
+    note = applicability_note({AI_ACT_CELEX}, date(2026, 6, 22))
     assert "EU AI Act" in note
     assert "NOT YET applicable" in note          # general application is pending
     assert "Art 113" in note                     # carries the governing citation
@@ -44,13 +49,13 @@ def test_note_flags_ai_act_pending_general_application_in_mid_2026():
 def test_note_omits_long_applicable_single_stage_regulation():
     # GDPR has one milestone long in the past -> not temporally interesting,
     # so it is suppressed to avoid noise.
-    assert applicability_note({"32016R0679"}, date(2026, 6, 22)) == ""
+    assert applicability_note({GDPR_CELEX}, date(2026, 6, 22)) == ""
 
 
 def test_note_includes_mdr_transitional_when_pending():
     # MDR legacy-device transition runs to 2027/2028, so as of mid-2026 it is
     # surfaced with its transitional note.
-    note = applicability_note({"32017R0745"}, date(2026, 6, 22))
+    note = applicability_note({MDR_CELEX}, date(2026, 6, 22))
     assert "MDR" in note and "transitional" in note.lower()
 
 

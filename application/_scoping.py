@@ -24,6 +24,12 @@ from dataclasses import dataclass, field
 
 from application._routing import _has_obligation_focus
 from application.contracts import Scenario
+from domain.legislation_catalog import (
+    AI_ACT_CELEX,
+    MDR_CELEX,
+    IVDR_CELEX,
+    GDPR_CELEX,
+)
 from domain.ontology.actor_roles import CANONICAL_ACTOR_ROLES
 
 # Roles ordered by how likely an asker is to self-identify as one; oversight
@@ -52,10 +58,10 @@ _MAX_ROLE_OPTIONS: int = 6
 # Human-readable framework names for the role-partitioned regulations. MDCG
 # guidance CELEXes are intentionally absent — they carry no actor roles.
 _CELEX_SHORT: dict[str, str] = {
-    "32016R0679": "GDPR",
-    "32017R0745": "MDR",
-    "32017R0746": "IVDR",
-    "32024R1689": "EU AI Act",
+    GDPR_CELEX: "GDPR",
+    MDR_CELEX: "MDR",
+    IVDR_CELEX: "IVDR",
+    AI_ACT_CELEX: "EU AI Act",
 }
 
 # Routes where a missing actor role is already handled, or where asking is

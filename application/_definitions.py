@@ -15,6 +15,12 @@ from application._config import (
     _RELATED_DEFINITION_SCAN_LIMIT,
     _detect_mentioned_regulations,
 )
+from domain.legislation_catalog import (
+    AI_ACT_CELEX,
+    MDR_CELEX,
+    IVDR_CELEX,
+    GDPR_CELEX,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +32,10 @@ logger = logging.getLogger(__name__)
 # the LLM to backfill them from training memory (the AI Act Article 3(1)
 # 'AI system' fallback).  These anchors are force-injected past the cap.
 _ANCHOR_DEFINITION_TERMS: dict[str, str] = {
-    "32024R1689": "ai system",                           # AI Act, Article 3(1)
-    "32017R0745": "medical device",                      # MDR, Article 2(1)
-    "32017R0746": "in vitro diagnostic medical device",  # IVDR, Article 2(2)
-    "32016R0679": "personal data",                       # GDPR, Article 4(1)
+    AI_ACT_CELEX: "ai system",                           # AI Act, Article 3(1)
+    MDR_CELEX: "medical device",                         # MDR, Article 2(1)
+    IVDR_CELEX: "in vitro diagnostic medical device",    # IVDR, Article 2(2)
+    GDPR_CELEX: "personal data",                         # GDPR, Article 4(1)
 }
 
 

@@ -7,6 +7,10 @@ expected-classification examples here must continue to pass.
 Each test uses a *realistic* sample of regulatory text, lightly trimmed.
 """
 from __future__ import annotations
+from domain.legislation_catalog import (
+    AI_ACT_CELEX,
+    GDPR_CELEX,
+)
 
 from domain.ontology.provision_roles import (
     PROVISION_ROLE_TAXONOMY,
@@ -45,8 +49,8 @@ def test_defines_inside_definitions_article_without_quotes():
     text = "deployer means a natural or legal person using an AI system under its authority."
     result = _classify(
         text,
-        provision_id="32024R1689_art_3_pt_4",
-        celex="32024R1689",
+        provision_id=f"{AI_ACT_CELEX}_art_3_pt_4",
+        celex=AI_ACT_CELEX,
     )
     assert result.role == "DEFINES"
     assert result.rule_id == "defines.definitions_article.v1"
@@ -56,8 +60,8 @@ def test_defines_inside_gdpr_definitions_article():
     text = "controller means the natural or legal person which determines the purposes and means of the processing of personal data."
     result = _classify(
         text,
-        provision_id="32016R0679_art_4_pt_7",
-        celex="32016R0679",
+        provision_id=f"{GDPR_CELEX}_art_4_pt_7",
+        celex=GDPR_CELEX,
     )
     assert result.role == "DEFINES"
 

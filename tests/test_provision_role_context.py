@@ -4,13 +4,17 @@ These tests pin the contract between the retriever output (which now carries
 ``provision_role``) and the formatter (which groups provisions by role into
 labelled sections in the LLM context). No Neo4j or LLM is required.
 """
+from domain.legislation_catalog import (
+    MDR_CELEX,
+    AI_ACT_CELEX,
+)
 from application._context import _format_context
 
 
 def _make_provision(**overrides) -> dict:
     base = {
         "article_id": "test_id",
-        "celex": "32024R1689",
+        "celex": AI_ACT_CELEX,
         "regulation": "AI Act",
         "article_ref": "Article 1",
         "article_path": "",
@@ -91,7 +95,7 @@ def test_buckets_emitted_when_multiple_roles_present():
         _make_provision(article_ref="Article 16", provision_role="OBLIGATION"),
         _make_provision(article_ref="Article 3", provision_role="DEFINES"),
         _make_provision(article_ref="Article 5(5)", provision_role="EXEMPTS",
-                        celex="32017R0745", regulation="MDR"),
+                        celex=MDR_CELEX, regulation="MDR"),
     ]
     out = _format_context(provs)
     assert "### DEFINITIONS ###" in out

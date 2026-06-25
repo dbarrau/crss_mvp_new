@@ -7,6 +7,9 @@ Covers:
 - _retrieval.py: community route wiring and sufficiency checks
 """
 from __future__ import annotations
+from domain.legislation_catalog import (
+    AI_ACT_CELEX,
+)
 
 import numpy as np
 import pytest
@@ -24,7 +27,7 @@ from application._routing import _is_community_summary_question
 # Helper: minimal provision dicts
 # ---------------------------------------------------------------------------
 
-def _make_provision(*, article_id="art-1", celex="32024R1689", community_id=None,
+def _make_provision(*, article_id="art-1", celex=AI_ACT_CELEX, community_id=None,
                     community_summary=None, community_retrieval=False):
     return {
         "article_id": article_id,
@@ -67,7 +70,7 @@ class TestIsCommunityQuestion:
         assert _is_community_summary_question(
             "Enumerate all duties of a deployer.",
             mentioned_regs=set(),
-            role_specs=[("deployer", "32024R1689")],
+            role_specs=[("deployer", AI_ACT_CELEX)],
         )
 
     def test_no_signal_returns_false(self):
@@ -263,7 +266,7 @@ class TestRetrieveRouteProvisionsCommunity:
             client=_FAKE_DECOMPOSE_CLIENT,
             k=20,
             route=_DUMMY_ROUTE_COMMUNITY,
-            target_celexes={"32024R1689"},
+            target_celexes={AI_ACT_CELEX},
             explicit_refs=[],
             role_specs=[],
             hyde_builder=_noop_hyde,

@@ -8,7 +8,11 @@ from __future__ import annotations
 
 from application.contracts import Definition, Evidence, Provision, Scenario
 from application._faithfulness import _provision_text, _definition_text, _build_corpus
-from domain.legislation_catalog import AI_ACT_CELEX as _AI_ACT, MDR_CELEX as _MDR
+from domain.legislation_catalog import (
+    AI_ACT_CELEX as _AI_ACT,
+    MDR_CELEX as _MDR,
+    GDPR_CELEX as _GDPR,
+)
 
 
 _PROVISION = {
@@ -49,12 +53,12 @@ _DEFINITION = {
 
 def test_provision_typed_accessors_match_dict():
     p = Provision.from_dict(_PROVISION)
-    assert p.article_id == "32024R1689_article_43"
-    assert p.celex == "32024R1689"
+    assert p.article_id == f"{_AI_ACT}_article_43"
+    assert p.celex == _AI_ACT
     assert p.article_ref == "Article 43"
     assert p.binding_force == "binding"
     assert p.provision_role == "obligation"
-    assert p.matched_leaf_id == "32024R1689_article_43_para_4"
+    assert p.matched_leaf_id == f"{_AI_ACT}_article_43_para_4"
     assert len(p.children) == 2
 
 
@@ -108,7 +112,7 @@ def test_provision_identity_prefers_node_id_not_display_ref():
 def test_definition_typed_accessors_and_text_payload():
     d = Definition.from_dict(_DEFINITION)
     assert d.term == "ai system"
-    assert d.celex == "32024R1689"
+    assert d.celex == _AI_ACT
     assert d.definition_type == "formal"
     assert d.text_payload() == "'AI system' means a machine-based system …"
     assert d.to_dict() is _DEFINITION
@@ -123,16 +127,16 @@ def test_scenario_construction_and_helpers():
     s = Scenario(
         question="What obligations apply?",
         mentioned_regs=frozenset({"EU AI Act", "MDR 2017/745"}),
-        target_celexes=frozenset({"32024R1689", "32017R0745"}),
-        role_specs=(("provider", "32024R1689"),),
+        target_celexes=frozenset({_AI_ACT, _MDR}),
+        role_specs=(("provider", _AI_ACT),),
         explicit_refs=(),
         route_id="classification_chain",
         is_definition_question=False,
     )
     assert s.has_role is True
     assert s.is_cross_regulation is True
-    assert s.in_scope("32024R1689") is True
-    assert s.in_scope("32016R0679") is False
+    assert s.in_scope(_AI_ACT) is True
+    assert s.in_scope(_GDPR) is False
 
 
 def test_scenario_defaults_are_empty_not_none():
@@ -157,11 +161,11 @@ def test_evidence_dedup_by_identity():
 def test_evidence_extend_merges_without_duplicates():
     ev = Evidence.from_dicts([_PROVISION], [_DEFINITION])
     other = Evidence.from_dicts(
-        [_PROVISION, {"article_id": "32017R0745_article_10", "celex": "32017R0745"}],
+        [_PROVISION, {"article_id": f"{_MDR}_article_10", "celex": _MDR}],
         [_DEFINITION],
     )
     ev.extend(other)
-    assert sorted(ev.provision_ids()) == ["32017R0745_article_10", "32024R1689_article_43"]
+    assert sorted(ev.provision_ids()) == [f"{_MDR}_article_10", f"{_AI_ACT}_article_43"]
     assert len(ev.definitions) == 1  # same (term, celex) not duplicated
 
 

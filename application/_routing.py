@@ -10,6 +10,12 @@ import re
 from dataclasses import dataclass
 
 from domain.ontology.actor_roles import detect_role_specs as _detect_role_specs
+from domain.legislation_catalog import (
+    AI_ACT_CELEX,
+    MDR_CELEX,
+    IVDR_CELEX,
+    GDPR_CELEX,
+)
 
 # ---------------------------------------------------------------------------
 # Route and target dataclasses
@@ -379,11 +385,11 @@ def _build_legal_qualification_targets(
             )
         )
 
-    ai_celex = {"32024R1689"} if "EU AI Act" in mentioned_regs else None
-    mdr_celex = {"32017R0745"} if "MDR 2017/745" in mentioned_regs else None
-    ivdr_celex = {"32017R0746"} if "IVDR 2017/746" in mentioned_regs else None
+    ai_celex = {AI_ACT_CELEX} if "EU AI Act" in mentioned_regs else None
+    mdr_celex = {MDR_CELEX} if "MDR 2017/745" in mentioned_regs else None
+    ivdr_celex = {IVDR_CELEX} if "IVDR 2017/746" in mentioned_regs else None
     gdpr_celex = (
-        {"32016R0679"}
+        {GDPR_CELEX}
         if "General Data Protection Regulation (GDPR) 2016/679" in mentioned_regs
         else None
     )

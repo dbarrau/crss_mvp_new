@@ -5,6 +5,9 @@ if either dependent lexicon drifts from it — preventing the class of silent
 inconsistency that left GDPR ``supervisory authority`` routable (Tier 2) but
 undetectable by the obligation rule.
 """
+from domain.legislation_catalog import (
+    GDPR_CELEX,
+)
 from domain.ontology.actor_roles import (
     CANONICAL_ACTOR_ROLES,
     ENTITY_SYNONYMS,
@@ -49,7 +52,7 @@ def test_canonical_role_keys_are_normalized():
 def test_gdpr_roles_are_registered_and_detectable():
     # Regression guard for the specific Tier-2 / Tier-3 gap.
     for role in ("controller", "processor", "supervisory authority"):
-        assert is_known_actor_role(role, "32016R0679")
+        assert is_known_actor_role(role, GDPR_CELEX)
         assert _ACTOR_SUBJECT_RE.search(role)
     # normalize_role_term keeps multi-word roles consistent with ActorRole keys
     assert normalize_role_term("supervisory authority") == "supervisory_authority"

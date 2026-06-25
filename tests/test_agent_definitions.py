@@ -1,3 +1,6 @@
+from domain.legislation_catalog import (
+    AI_ACT_CELEX,
+)
 from application.agent import _detect_defined_terms, _expand_definitions_from_provisions
 
 
@@ -7,21 +10,21 @@ class _FakeRetriever:
             "substantial modification": [{
                 "term": "substantial modification",
                 "definition_type": "formal",
-                "celex": "32024R1689",
+                "celex": AI_ACT_CELEX,
                 "regulation": "EU AI Act",
                 "definition_text": "formal definition text",
             }],
             "remote biometric identification system": [{
                 "term": "remote biometric identification system",
                 "definition_type": "formal",
-                "celex": "32024R1689",
+                "celex": AI_ACT_CELEX,
                 "regulation": "EU AI Act",
                 "definition_text": "other definition text",
             }],
             "ai system": [{
                 "term": "AI system",
                 "definition_type": "formal",
-                "celex": "32024R1689",
+                "celex": AI_ACT_CELEX,
                 "regulation": "EU AI Act",
                 "definition_text": "'AI system' means a machine-based system ...",
             }],
@@ -54,7 +57,7 @@ def test_expand_definitions_from_provisions_adds_formal_term_used_in_context():
         provisions,
         retriever,
         existing,
-        target_celexes={"32024R1689"},
+        target_celexes={AI_ACT_CELEX},
     )
 
     # 'high-risk AI system' in the provision text also resolves the
@@ -99,7 +102,7 @@ def test_expand_definitions_from_provisions_ignores_lower_ranked_noise():
         provisions,
         retriever,
         existing=[],
-        target_celexes={"32024R1689"},
+        target_celexes={AI_ACT_CELEX},
     )
 
     terms = [d["term"] for d in expanded]
@@ -128,7 +131,7 @@ def test_expand_definitions_matches_plural_term_in_context():
         provisions,
         retriever,
         existing=[],
-        target_celexes={"32024R1689"},
+        target_celexes={AI_ACT_CELEX},
     )
 
     assert "AI system" in [d["term"] for d in expanded]
