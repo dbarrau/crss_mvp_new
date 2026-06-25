@@ -144,7 +144,7 @@ def _build_core_mappings() -> None:
     gap, register each catalog entry's bare ``number`` (e.g. "2026/977") as a
     minimal fallback detection pattern when no curated entry exists.
     """
-    for celex_key, meta in _LEGISLATION.items():
+    for _celex_key, meta in _LEGISLATION.items():
         name = meta["name"]
         number = meta.get("number")
         if name in _REG_PATTERNS:
