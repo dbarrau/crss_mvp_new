@@ -132,6 +132,23 @@ net says new ≥ old.
         not verification. Open follow-up: confidence's faithfulness component is
         a constant 1.0 (recomputed post-redaction); compute-once fix deferred as
         an answer-affecting, user-approved step (see ledger).
+  - [x] **A6 / B3 / B4 — KEEP in place (relocation declined as net-additive).**
+        Grounded re-check on reaching Phase 3: each is a small KEEP-classified
+        table *already co-located with its single consumer* —
+        `_GATE_ARTICLES` is a local inside the classification-chain expander,
+        `_IMPLICIT_PROVISION_REFS` lives in `_config.py` (the shared-constants
+        home), `_ANCHOR_DEFINITION_TERMS` sits with
+        `_expand_definitions_from_provisions`. None is *duplicated* (the thing
+        the detection fold removed), so wrapping them in a new `DefinitionExpander`
+        / seed-config module would only *add* structure for identical behaviour —
+        net-additive, exactly the over-engineering the A1.2/A5/A6 verdicts
+        decline. The existing shared function already is the clean end state.
+  - [ ] **RetrievalPlan routing** (corrective + audit gap-fill) — the one
+        substantive Phase-3 remainder. Deferred: it is net-*additive* North-Star
+        scaffolding (the corrective pass is already folded into `_recover` (A4)
+        and `_gap_retrieve` is already seed-driven over public primitives (A5)),
+        best done deliberately alongside threading `Evidence` end-to-end — not
+        rushed under a half-build risk.
 - **Phase 4 — delete** subsumed patches, hardcoded tables, and dead env flags.
   - [x] **Read-path dead-code sweep** — audited `application/` + `retrieval/` for
         orphaned symbols, unused imports, dead locals, and any surviving
