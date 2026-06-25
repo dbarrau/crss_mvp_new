@@ -58,10 +58,16 @@ net says new ≥ old.
         contract is the single source of truth; behaviour-neutral (37
         faithfulness tests + retrieval net stay green), equivalence tests
         strengthened to pin the literal payload.
-  - [ ] Thread a `Scenario` through `ask_stream`'s detection stage. (Then
-        `verify_answer` can take a typed `Evidence` instead of provisions /
-        definitions dicts — deferred until the pipeline threads `Evidence`
-        end-to-end, to avoid wrap-then-unwrap churn.)
+  - [x] Thread a `Scenario` through `ask_stream`'s detection stage — the
+        detection locals (mentioned regs, target celexes, role specs, explicit
+        refs, route id, definition flag) are captured into one typed `Scenario`
+        right after routing; the ask-first scope gate (`assess_scope`) is its
+        first consumer, now reading `scenario.has_role` / `.target_celexes` etc.
+        Behaviour-neutral (`assess_scope` treats empty/None celexes identically;
+        scoping + full suite green). Loose locals remain for the not-yet-migrated
+        plan/retrieve stages. (Then `verify_answer` can take a typed `Evidence`
+        instead of provisions / definitions dicts — deferred until the pipeline
+        threads `Evidence` end-to-end, to avoid wrap-then-unwrap churn.)
 - **Phase 2 — retrieval core + expanders** *(in progress)* — graph-derive the
   obligation set, then delete the hardcodes it duplicated. Landed:
   - [x] **A1** — folded `_retrieve_route_provisions`'s `if route.id == …` ladder

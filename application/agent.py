@@ -120,6 +120,7 @@ from application.verify import (                         # noqa: F401
     verify_answer as _verify_answer,
     VerificationResult as _VerificationResult,
 )
+from application.contracts import Scenario as _Scenario   # noqa: F401
 from application._audit import (                          # noqa: F401
     _should_audit,
     _audit_answer,
@@ -339,19 +340,27 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
             "label": f"Route: {route.label} — {route.rationale}",
         }
 
+        # The detection stage ("understand the question") is complete: capture its
+        # output as one typed Scenario — the spine the agent organises around
+        # (understand -> (clarify?) -> plan -> retrieve). The loose locals remain
+        # for the not-yet-migrated plan/retrieve stages; the clarify gate below is
+        # its first consumer.
+        scenario = _Scenario(
+            question=retrieval_question,
+            mentioned_regs=frozenset(mentioned_regs),
+            target_celexes=frozenset(target_celexes or ()),
+            role_specs=tuple(role_specs),
+            explicit_refs=tuple(explicit_refs),
+            route_id=route.id,
+            is_definition_question=is_def_q,
+        )
+
         # --- 2b. Ask-first scope gate ---
         # When an obligation question omits the decisive actor role, ask for it
         # before retrieving/generating rather than silently assuming a role
         # (the backbone of every compliance answer). Deterministic; no LLM.
         if os.environ.get("CRSS_CLARIFY", "1") != "0":
-            scope = _assess_scope(
-                retrieval_question,
-                route_id=route.id,
-                target_celexes=target_celexes,
-                role_specs=role_specs,
-                explicit_refs=explicit_refs,
-                is_definition_question=is_def_q,
-            )
+            scope = _assess_scope(scenario)
             if scope.needs_clarification and scope.clarification is not None:
                 clar = scope.clarification
                 logger.info("Scope gate: asking for missing slot %r", clar.slot)

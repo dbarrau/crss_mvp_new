@@ -7,10 +7,12 @@ from application._scoping import (
     assess_scope,
     render_clarification_markdown,
 )
-
-_AI_ACT = "32024R1689"
-_MDR = "32017R0745"
-_GDPR = "32016R0679"
+from application.contracts import Scenario
+from domain.legislation_catalog import (
+    AI_ACT_CELEX as _AI_ACT,
+    MDR_CELEX as _MDR,
+    GDPR_CELEX as _GDPR,
+)
 
 
 def _assess(question, **overrides):
@@ -22,7 +24,15 @@ def _assess(question, **overrides):
         is_definition_question=False,
     )
     kwargs.update(overrides)
-    return assess_scope(question, **kwargs)
+    scenario = Scenario(
+        question=question,
+        route_id=kwargs["route_id"],
+        target_celexes=frozenset(kwargs["target_celexes"] or ()),
+        role_specs=tuple(kwargs["role_specs"]),
+        explicit_refs=tuple(kwargs["explicit_refs"]),
+        is_definition_question=kwargs["is_definition_question"],
+    )
+    return assess_scope(scenario)
 
 
 # ---------------------------------------------------------------------------

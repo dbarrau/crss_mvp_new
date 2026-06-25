@@ -23,6 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from application._routing import _has_obligation_focus
+from application.contracts import Scenario
 from domain.ontology.actor_roles import CANONICAL_ACTOR_ROLES
 
 # Roles ordered by how likely an asker is to self-identify as one; oversight
@@ -129,43 +130,36 @@ def _role_options(target_celexes: set[str]) -> list[ClarificationOption]:
     return options
 
 
-def assess_scope(
-    question: str,
-    *,
-    route_id: str,
-    target_celexes: set[str] | None,
-    role_specs: list[tuple[str, str]],
-    explicit_refs: list[str],
-    is_definition_question: bool,
-) -> ScopingResult:
+def assess_scope(scenario: Scenario) -> ScopingResult:
     """Decide whether to ask for a decisive missing slot before answering.
 
-    Ask-first fires only when *all* hold, so a defensible answer is never
-    blocked by a needless question:
+    Reads the typed :class:`~application.contracts.Scenario` produced by the
+    detection stage. Ask-first fires only when *all* hold, so a defensible
+    answer is never blocked by a needless question:
 
     * the route is not one where role is irrelevant or already handled;
     * the question is not a definition or explicit-provision lookup;
-    * no actor role was detected (``role_specs`` is empty);
+    * no actor role was detected (``scenario.has_role`` is False);
     * at least one role-partitioned regulation is in scope (to build options);
     * the question is obligation-focused (asks about duties/requirements);
     * at least two candidate roles genuinely fork the analysis.
     """
-    if route_id in _NO_CLARIFY_ROUTES:
+    if scenario.route_id in _NO_CLARIFY_ROUTES:
         return ScopingResult(False)
-    if is_definition_question or explicit_refs:
+    if scenario.is_definition_question or scenario.explicit_refs:
         return ScopingResult(False)
-    if role_specs:
+    if scenario.has_role:
         return ScopingResult(False)
-    if not target_celexes:
+    if not scenario.target_celexes:
         return ScopingResult(False)
-    if not _has_obligation_focus(question):
+    if not _has_obligation_focus(scenario.question):
         return ScopingResult(False)
 
-    options = _role_options(set(target_celexes))
+    options = _role_options(set(scenario.target_celexes))
     if len(options) < 2:
         return ScopingResult(False)
 
-    frameworks = _readable_frameworks(set(target_celexes))
+    frameworks = _readable_frameworks(set(scenario.target_celexes))
     where = f" under the {frameworks}" if frameworks else ""
     clarification = Clarification(
         slot="actor_role",
