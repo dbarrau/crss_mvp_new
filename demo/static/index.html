@@ -436,7 +436,9 @@
   <div class="welcome" id="welcome">
     <h2>EU Regulatory Compliance Agent</h2>
     <p>Ask questions grounded in the actual legal text of EU regulations and MDCG guidance. Every answer is traceable to a specific provision.</p>
-    <div class="reg-pills">
+    <!-- Populated from /api/legislation (catalog-sourced). The pills below are a
+         static fallback shown only if that fetch fails. -->
+    <div class="reg-pills" id="regPills">
       <span class="reg-pill">MDR 2017/745</span>
       <span class="reg-pill">IVDR 2017/746</span>
       <span class="reg-pill">EU AI Act 2024/1689</span>
@@ -470,6 +472,37 @@ const welcome = document.getElementById('welcome');
 let debugMode = false;
 let busy = false;
 const conversationHistory = [];  // {role, content} — raw text
+
+// ── Corpus pills: sourced from the catalog via /api/legislation, never hardcoded
+//    (the static markup is only a fallback if the fetch fails). ──
+function regLabel(e) {
+  const m = e.name.match(/\(([A-Z]{2,})\)/);            // an in-name acronym like (GDPR)
+  const base = (m && m[1] !== 'EU' && m[1] !== 'EC')
+    ? m[1]
+    : e.name.replace(/\s*\([^)]*\)/g, '').trim();        // else drop parentheticals
+  return (e.number && !base.includes(e.number)) ? `${base} ${e.number}` : base;
+}
+
+async function loadCorpus() {
+  try {
+    const res = await fetch('/api/legislation');
+    if (!res.ok) return;                                  // keep the static fallback
+    const data = await res.json();
+    const esc = (s) => (s || '').replace(/"/g, '&quot;');
+    const pills = (data.legislation || []).map(
+      (e) => `<span class="reg-pill" title="${esc(e.name)}">${regLabel(e)}</span>`
+    );
+    const g = data.guidance || [];
+    if (g.length) {
+      pills.push(
+        `<span class="reg-pill" title="${esc(g.map((d) => d.name).join(', '))}">MDCG Guidance ×${g.length}</span>`
+      );
+    }
+    const el = document.getElementById('regPills');
+    if (el && pills.length) el.innerHTML = pills.join('\n');
+  } catch (_) { /* network/parse error → keep the static fallback */ }
+}
+loadCorpus();
 
 function enableExportButtons() {
   document.getElementById('export-md').disabled = false;

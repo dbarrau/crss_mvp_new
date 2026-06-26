@@ -39,6 +39,8 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
 from application.agent import ask_stream, ask_with_trace
+from domain.legislation_catalog import LEGISLATION
+from domain.mdcg_catalog import MDCG_DOCUMENTS
 from export import generate_markdown
 from retrieval.graph_retriever import GraphRetriever
 
@@ -147,6 +149,37 @@ def api_debug():
     except Exception as exc:
         logging.exception("Error in retrieve()")
         return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/legislation", methods=["GET"])
+def api_legislation():
+    """Return the corpus catalog, sourced from the domain catalogs.
+
+    The demo's "covered corpus" used to be a hardcoded pill list in the frontend,
+    which silently drifted from what is actually ingested (it was missing GDPR and
+    the implementing regulation). Serving the catalog directly keeps the demo in
+    sync with ``domain/legislation_catalog.py`` + ``domain/mdcg_catalog.py`` — add
+    a document there and it appears here automatically.
+    """
+    legislation = [
+        {
+            "celex": celex,
+            "name": meta.get("name", celex),
+            "number": meta.get("number", ""),
+            "type": meta.get("type", ""),
+        }
+        for celex, meta in LEGISLATION.items()
+    ]
+    guidance = [
+        {
+            "id": gid,
+            "name": meta.get("name", gid),
+            "title": meta.get("title", ""),
+            "tier": meta.get("tier"),
+        }
+        for gid, meta in MDCG_DOCUMENTS.items()
+    ]
+    return jsonify({"legislation": legislation, "guidance": guidance})
 
 
 # ---------------------------------------------------------------------------
