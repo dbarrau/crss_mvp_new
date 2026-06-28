@@ -27,13 +27,67 @@
     "id": "HQ_005",
     "label": "AI Act GPAI model provider — systemic-risk obligations (Article 53 + 55)",
     "tests": "role_obligations; GPAI; systemic risk",
-    "question": "What obligations does a provider of a general-purpose AI model with systemic risk have under the EU AI Act?"
+    "question": "What obligations does a provider of a general-purpose AI model with systemic risk have under the EU AI Act?",
+    "answer_key": {
+      "must_cite": [
+        "Article 53",
+        "Article 55"
+      ],
+      "must_state": [
+        [
+          "systemic risk"
+        ],
+        [
+          "adversarial",
+          "model evaluation",
+          "red-team",
+          "red team"
+        ],
+        [
+          "serious incident"
+        ],
+        [
+          "cybersecurity",
+          "cyber security",
+          "cyber-security"
+        ]
+      ],
+      "must_not_claim": []
+    }
   },
   {
     "id": "HQ_006",
     "label": "AI Act prohibited practices — workplace emotion recognition (Article 5)",
     "tests": "provision_lookup; prohibition; calibration",
-    "question": "Is it lawful under the EU AI Act to deploy an AI system that infers employees' emotions from webcam feeds during work, and which provision governs this?"
+    "question": "Is it lawful under the EU AI Act to deploy an AI system that infers employees' emotions from webcam feeds during work, and which provision governs this?",
+    "answer_key": {
+      "must_cite": [
+        "Article 5"
+      ],
+      "must_state": [
+        [
+          "prohibited",
+          "prohibition",
+          "banned",
+          "not lawful",
+          "unlawful",
+          "not permitted"
+        ],
+        [
+          "emotion"
+        ],
+        [
+          "workplace",
+          "work place",
+          "at work"
+        ],
+        [
+          "medical",
+          "safety"
+        ]
+      ],
+      "must_not_claim": []
+    }
   },
   {
     "id": "HQ_007",
@@ -75,7 +129,34 @@
     "id": "HQ_013",
     "label": "MDR Class IIb conformity assessment route (Annex IX vs Annex X)",
     "tests": "classification_chain; conformity route; MDR",
-    "question": "Which conformity assessment routes are available for a Class IIb medical device under MDR 2017/745, and what role does the notified body play?"
+    "question": "Which conformity assessment routes are available for a Class IIb medical device under MDR 2017/745, and what role does the notified body play?",
+    "answer_key": {
+      "must_cite": [
+        "Annex IX",
+        "Annex XI",
+        "Article 52"
+      ],
+      "must_state": [
+        [
+          "notified body"
+        ],
+        [
+          "Annex IX"
+        ],
+        [
+          "Annex X",
+          "type examination",
+          "Annex XI",
+          "production quality"
+        ],
+        [
+          "quality management",
+          "qms",
+          "technical documentation"
+        ]
+      ],
+      "must_not_claim": []
+    }
   },
   {
     "id": "HQ_014",
@@ -123,7 +204,46 @@
     "id": "HQ_021",
     "label": "MDR vigilance — serious incident vs FSCA reporting (Article 87)",
     "tests": "provision_lookup; vigilance; MDR",
-    "question": "What are a manufacturer's vigilance reporting obligations under MDR - the distinction and timelines between serious incidents and field safety corrective actions?"
+    "question": "What are a manufacturer's vigilance reporting obligations under MDR - the distinction and timelines between serious incidents and field safety corrective actions?",
+    "answer_key": {
+      "must_cite": [
+        "Article 87"
+      ],
+      "must_state": [
+        [
+          "15 day",
+          "15-day",
+          "fifteen day"
+        ],
+        [
+          "2 day",
+          "2-day",
+          "two day",
+          "48 hour"
+        ],
+        [
+          "10 day",
+          "10-day",
+          "ten day"
+        ],
+        [
+          "public health threat"
+        ],
+        [
+          "death",
+          "deterioration"
+        ],
+        [
+          "field safety corrective action",
+          "fsca"
+        ],
+        [
+          "aware",
+          "awareness"
+        ]
+      ],
+      "must_not_claim": []
+    }
   },
   {
     "id": "HQ_022",
@@ -141,7 +261,53 @@
     "id": "HQ_024",
     "label": "GDPR lawful basis for health data in clinical AI (Articles 6 + 9)",
     "tests": "provision_lookup; GDPR; special category data",
-    "question": "What lawful basis is required to process patients' health data to train and run a clinical AI system under the GDPR, considering Articles 6 and 9?"
+    "question": "What lawful basis is required to process patients' health data to train and run a clinical AI system under the GDPR, considering Articles 6 and 9?",
+    "answer_key": {
+      "must_cite": [
+        "Article 6",
+        "Article 9"
+      ],
+      "must_state": [
+        [
+          "special category",
+          "special-category",
+          "sensitive data"
+        ],
+        [
+          "article 6 and article 9",
+          "both article 6",
+          "article 9 in addition",
+          "as well as an article 6",
+          "combined with an article 6",
+          "in addition to a lawful basis",
+          "two-step",
+          "two step",
+          "both a lawful basis",
+          "alongside an article 6",
+          "article 6 + article 9",
+          "+ article 9",
+          "dual-basis",
+          "dual basis",
+          "6(1) is still required",
+          "still required"
+        ],
+        [
+          "explicit consent",
+          "9(2)(a)",
+          "9(2)(h)",
+          "9(2)(i)",
+          "9(2)(j)",
+          "scientific research",
+          "health care",
+          "public health",
+          "provision of health"
+        ]
+      ],
+      "must_not_claim": [
+        "legitimate interest is sufficient",
+        "consent alone is sufficient"
+      ]
+    }
   },
   {
     "id": "HQ_025",
@@ -159,7 +325,46 @@
     "id": "HQ_027",
     "label": "Wrong-premise trap — 'we only deploy, so we're not a provider' (fine-tune + market)",
     "tests": "actor-status correction; audit-loop calibration",
-    "question": "We take an open-source foundation model, fine-tune it on our data, and put it on the market under our own brand for medical triage. Since we did not build the original model and only deploy it, we are just a deployer and not a provider under the EU AI Act, correct?"
+    "question": "We take an open-source foundation model, fine-tune it on our data, and put it on the market under our own brand for medical triage. Since we did not build the original model and only deploy it, we are just a deployer and not a provider under the EU AI Act, correct?",
+    "answer_key": {
+      "must_cite": [
+        "Article 25",
+        "Article 3"
+      ],
+      "must_state": [
+        [
+          "are a provider",
+          "is a provider",
+          "qualify as a provider",
+          "become a provider",
+          "becomes a provider",
+          "considered a provider",
+          "deemed a provider",
+          "treated as a provider",
+          "a provider, not",
+          "you are a provider"
+        ],
+        [
+          "own name",
+          "own brand",
+          "trademark",
+          "under your own",
+          "your own name"
+        ],
+        [
+          "substantial modification",
+          "intended purpose",
+          "fine-tun"
+        ]
+      ],
+      "must_not_claim": [
+        "you are just a deployer",
+        "you are only a deployer",
+        "you are merely a deployer",
+        "yes, you are correct",
+        "you remain merely a deployer"
+      ]
+    }
   },
   {
     "id": "HQ_028",
