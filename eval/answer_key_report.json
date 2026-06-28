@@ -1,21 +1,21 @@
 [
   {
     "id": "HQ_001",
-    "cite_recall": 0.5,
-    "state_recall": 1.0,
-    "missed_cites": [
-      "Article 25"
-    ],
-    "missed_states": [],
-    "violations": [],
-    "passed": false
-  },
-  {
-    "id": "HQ_002",
     "cite_recall": 1.0,
     "state_recall": 1.0,
     "missed_cites": [],
     "missed_states": [],
+    "violations": [],
+    "passed": true
+  },
+  {
+    "id": "HQ_002",
+    "cite_recall": 1.0,
+    "state_recall": 0.8,
+    "missed_cites": [],
+    "missed_states": [
+      "by design"
+    ],
     "violations": [],
     "passed": true
   },
@@ -75,16 +75,12 @@
   },
   {
     "id": "HQ_009",
-    "cite_recall": 0.0,
-    "state_recall": 0.75,
-    "missed_cites": [
-      "Article 73"
-    ],
-    "missed_states": [
-      "market surveillance"
-    ],
+    "cite_recall": 1.0,
+    "state_recall": 1.0,
+    "missed_cites": [],
+    "missed_states": [],
     "violations": [],
-    "passed": false
+    "passed": true
   },
   {
     "id": "HQ_010",
@@ -161,11 +157,9 @@
   {
     "id": "HQ_018",
     "cite_recall": 1.0,
-    "state_recall": 0.8,
+    "state_recall": 1.0,
     "missed_cites": [],
-    "missed_states": [
-      "storage"
-    ],
+    "missed_states": [],
     "violations": [],
     "passed": true
   },
@@ -208,9 +202,11 @@
   {
     "id": "HQ_023",
     "cite_recall": 1.0,
-    "state_recall": 1.0,
+    "state_recall": 0.857,
     "missed_cites": [],
-    "missed_states": [],
+    "missed_states": [
+      "delete or return"
+    ],
     "violations": [],
     "passed": true
   },
@@ -225,14 +221,12 @@
   },
   {
     "id": "HQ_025",
-    "cite_recall": 0.5,
+    "cite_recall": 1.0,
     "state_recall": 1.0,
-    "missed_cites": [
-      "Article 27"
-    ],
+    "missed_cites": [],
     "missed_states": [],
     "violations": [],
-    "passed": false
+    "passed": true
   },
   {
     "id": "HQ_026",
@@ -255,11 +249,9 @@
   {
     "id": "HQ_028",
     "cite_recall": 1.0,
-    "state_recall": 0.8,
+    "state_recall": 1.0,
     "missed_cites": [],
-    "missed_states": [
-      "depends"
-    ],
+    "missed_states": [],
     "violations": [],
     "passed": true
   },
@@ -284,9 +276,11 @@
   {
     "id": "HQ_031",
     "cite_recall": 1.0,
-    "state_recall": 1.0,
+    "state_recall": 0.8,
     "missed_cites": [],
-    "missed_states": [],
+    "missed_states": [
+      "transitional"
+    ],
     "violations": [],
     "passed": true
   },

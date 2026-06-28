@@ -88,7 +88,11 @@
     "answer_key": {
       "must_cite": [
         "Article 43",
-        "Article 16"
+        [
+          "Article 16",
+          "Article 17",
+          "Article 19"
+        ]
       ],
       "must_state": [
         [
