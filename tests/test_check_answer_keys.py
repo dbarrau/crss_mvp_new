@@ -49,3 +49,14 @@ def test_trap_phrase_is_flagged():
     key = {"must_cite": [], "must_state": [], "must_not_claim": ["you are just a deployer"]}
     v = check_answer("Yes, you are just a deployer under the AI Act.", key)
     assert v["violations"] == ["you are just a deployer"]
+
+def test_must_cite_accepts_alternatives():
+    # A list element is satisfied if ANY alternative is cited.
+    key = {"must_cite": ["Article 5", ["Article 25", "Article 3"]],
+           "must_state": [], "must_not_claim": []}
+    # cites Article 5 and Article 3(3) -> the [25,3] alternative is satisfied
+    v = check_answer("Under Article 5 MDR and Article 3(3) AI Act, the hospital is a provider.", key)
+    assert v["passed"] and v["cite_recall"] == 1.0
+    # neither alternative present -> the requirement is missed
+    v2 = check_answer("Only Article 5 MDR is discussed.", key)
+    assert not v2["passed"] and v2["missed_cites"] == ["Article 25 or Article 3"]

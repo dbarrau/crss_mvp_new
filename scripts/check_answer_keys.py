@@ -55,9 +55,18 @@ def check_answer(answer: str, key: dict) -> dict:
     """Score a single answer against its key. Pure; no LLM."""
     low = answer.lower()
 
+    # A must_cite element is either a string (required) or a list of acceptable
+    # alternatives (any one satisfies it) — e.g. an actor-status transition may be
+    # anchored in Article 3(3) (developer = provider from inception) OR Article 25
+    # (a deployer/distributor becoming a provider), and both are correct.
     cites = key.get("must_cite", [])
-    found_cites = [c for c in cites if _cite_pattern(c).search(answer)]
-    missed_cites = [c for c in cites if c not in found_cites]
+    found_cites: list[str] = []
+    missed_cites: list[str] = []
+    for req in cites:
+        alts = req if isinstance(req, list) else [req]
+        label = " or ".join(alts) if isinstance(req, list) else req
+        (found_cites if any(_cite_pattern(a).search(answer) for a in alts)
+         else missed_cites).append(label)
 
     states = key.get("must_state", [])
     missed_states: list[str] = []
