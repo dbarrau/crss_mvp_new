@@ -582,6 +582,14 @@ def _build_route_answer_guidance(
         "consequences."
     )
     lines.append(
+        "- Do NOT carry an MDR exemption across to the AI Act. The MDR Article 5(5) "
+        "health-institution (in-house) exemption has no equivalent in the AI Act: an "
+        "entity that develops a high-risk AI system and puts it into service for its "
+        "own use is a provider under AI Act Article 3(3) and stays fully within scope "
+        "(Article 2), with no in-house carve-out. When a question engages both MDR "
+        "Article 5(5) and the AI Act, state this asymmetry explicitly."
+    )
+    lines.append(
         "- For medical-device AI questions, treat Article 6(1) plus Annex I as the "
         "default high-risk route. Do not invoke Annex III unless the question or "
         "retrieved context clearly supports a specific Annex III pathway."
