@@ -55,18 +55,21 @@ _BATCH = 500
 def _load_provisions(session) -> list[dict[str, Any]]:
     """Return every :Provision node with the fields needed for classification.
 
-    Prefers ``text_for_analysis`` (the bottom-up flattened body) over the raw
-    ``text``: for article-container nodes ``p.text`` is heading-only — the
-    normative body lives in child paragraph nodes — so classifying on ``p.text``
-    leaves such nodes ``UNCLASSIFIED``. The ancestry prefix carried by
-    ``text_for_analysis`` is removed downstream via ``strip_context_prefix``.
-    Falls back to ``p.text`` for nodes without enrichment.
+    Prefers ``text_for_analysis_full`` — the *uncapped* flattened body, present
+    only on the nodes whose ``text_for_analysis`` was truncated by the embedding
+    cap — then the capped ``text_for_analysis``, then the raw ``text``.
+    Classification must see the *whole* normative body: for article-container
+    nodes ``p.text`` is heading-only (the body lives in child paragraphs), so
+    classifying on ``p.text`` leaves them ``UNCLASSIFIED``; and a late
+    EXEMPTS/PENALTY cue past the embedding cap in a long article would be lost if
+    it read the capped field. The ancestry prefix carried by both flattened
+    fields is removed downstream via ``strip_context_prefix``.
     """
     return session.run(
         "MATCH (p:Provision) "
         "RETURN p.id AS id, p.celex AS celex, p.kind AS kind, "
         "       coalesce(p.title, '') AS title, "
-        "       coalesce(p.text_for_analysis, p.text, '') AS text"
+        "       coalesce(p.text_for_analysis_full, p.text_for_analysis, p.text, '') AS text"
     ).data()
 
 

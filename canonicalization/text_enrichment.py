@@ -111,8 +111,17 @@ def enrich_text_for_analysis(provisions: List[Dict[str, Any]]) -> int:
         # intfloat/multilingual-e5-small has 512 tokens ≈ 1 500–2 000
         # chars; capping at _ANNEX_FLATTEN_CAP keeps the body within
         # the usable range after the ancestry prefix is prepended.
+        #
+        # The cap is an *embedding / retrieval-display* constraint. Consumers
+        # that must reason over the whole normative body — provision_role
+        # classification — would be starved by it (a late EXEMPTS/PENALTY cue in
+        # a long article is cut, degrading the role). So when the cap actually
+        # truncates, we also emit an uncapped ``text_for_analysis_full`` for
+        # those consumers; embeddings/retrieval keep the capped field.
         has_children = bool(prov.get("children"))
-        if has_children and len(body) > _ANNEX_FLATTEN_CAP:
+        full_body = body
+        capped = has_children and len(body) > _ANNEX_FLATTEN_CAP
+        if capped:
             cut = body[:_ANNEX_FLATTEN_CAP]
             last_period = cut.rfind('.')
             if last_period > _ANNEX_FLATTEN_CAP // 2:
@@ -123,8 +132,12 @@ def enrich_text_for_analysis(provisions: List[Dict[str, Any]]) -> int:
         prefix = _build_context_prefix(prov, by_id)
         if prefix:
             prov["text_for_analysis"] = prefix + _CTX_SEP + body
+            if capped:
+                prov["text_for_analysis_full"] = prefix + _CTX_SEP + full_body
         else:
             prov["text_for_analysis"] = body
+            if capped:
+                prov["text_for_analysis_full"] = full_body
 
         enriched += 1
 
