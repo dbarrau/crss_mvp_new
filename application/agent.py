@@ -20,6 +20,9 @@ from __future__ import annotations
 
 import logging
 import os
+import random
+import re
+import time
 from datetime import date
 from typing import Any
 
@@ -100,6 +103,7 @@ from application._context import (                       # noqa: F401
     _format_definitions,
     _format_context,
     _trim_provisions_to_budget,
+    _CONTEXT_CHAR_BUDGET,
     _community_summary_header,
 )
 from application._prompts import (                       # noqa: F401
@@ -206,6 +210,66 @@ def _rewrite_standalone_question(
 
 
 # ---------------------------------------------------------------------------
+# Transient-failure handling for Mistral streaming calls
+# ---------------------------------------------------------------------------
+# Mistral intermittently returns 5xx ("Service unavailable") or 429 (rate limit)
+# for a request that succeeds moments later; without a retry these surface to the
+# demo as an ``{"type": "error"}`` event (and a server-side stack trace) mid-answer.
+# We retry such *transient* failures with exponential backoff + full jitter.
+# Deterministic 4xx (bad request, auth) are not retryable and propagate at once.
+_LLM_MAX_RETRIES = 4          # total attempts per streaming call
+_LLM_BACKOFF_BASE = 0.75      # seconds; attempt N waits up to base * 2**N …
+_LLM_BACKOFF_CAP = 8.0        # … capped here, before jitter
+
+
+def _is_retryable_llm_error(exc: Exception) -> bool:
+    """True for transient Mistral failures (429 rate-limit or any 5xx server error).
+
+    Mistral's ``SDKError`` carries a numeric ``status_code``; we read it directly
+    and fall back to sniffing the string form so the check still works if the SDK
+    surface changes or a lower-level transport error is raised instead.
+    """
+    code = getattr(exc, "status_code", None)
+    if isinstance(code, int):
+        return code == 429 or 500 <= code <= 599
+    return bool(re.search(r"\b(?:429|5\d{2})\b", str(exc)))
+
+
+def _stream_chat_with_retry(client, *, model, messages, temperature):
+    """Yield content deltas from a Mistral chat stream, retrying transient failures.
+
+    Retries only while *no* delta has been emitted yet, so a client that appends
+    tokens never sees a duplicated partial answer from a mid-stream restart. A
+    failure after streaming has begun — or any non-transient error — propagates to
+    the caller (surfaced as an ``error`` event by :func:`ask_stream`).
+    """
+    for attempt in range(_LLM_MAX_RETRIES):
+        emitted = False
+        try:
+            with client.chat.stream(
+                model=model, messages=messages, temperature=temperature,
+            ) as stream:
+                for chunk in stream:
+                    delta = chunk.data.choices[0].delta.content
+                    if delta:
+                        emitted = True
+                        yield delta
+            return
+        except Exception as exc:  # noqa: BLE001 — classify, then retry or re-raise
+            last_attempt = attempt == _LLM_MAX_RETRIES - 1
+            if emitted or last_attempt or not _is_retryable_llm_error(exc):
+                raise
+            ceiling = min(_LLM_BACKOFF_CAP, _LLM_BACKOFF_BASE * (2 ** attempt))
+            wait = random.uniform(0, ceiling)
+            logger.warning(
+                "Transient LLM error (status %s); retry %d/%d in %.1fs: %s",
+                getattr(exc, "status_code", "?"),
+                attempt + 1, _LLM_MAX_RETRIES - 1, wait, str(exc)[:160],
+            )
+            time.sleep(wait)
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -232,7 +296,6 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
     ``{"type": "audit",      "trace": <dict>}``
         Structured retrieval/audit metadata emitted before generation.
     """
-    import time
     from mistralai.client import Mistral
 
     try:
@@ -553,29 +616,42 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                     context_parts.append(note)
                     logger.info("Negative-definition signal injected for '%s'.", concept_text)
 
+        _sep = "\n\n---\n\n"
+        _budgeted: list[dict] = provisions
         if provisions:
             if route.id == "community_summary_search":
                 header = _community_summary_header(provisions)
                 if header:
                     context_parts.append(header)
 
-            # Bound the prompt size: broad routes can retrieve 40+ provisions
-            # (~220 KB / ~56 K tokens), which inflates the large model's
-            # time-to-first-token. Keep the highest-priority provisions and drop
-            # the low-value tail. The backbone block above is rendered in full.
-            _budgeted = _trim_provisions_to_budget(provisions)
+            # Bound the *total* prompt size: broad routes can retrieve 40+
+            # provisions (~220 KB / ~56 K tokens), which inflates the large
+            # model's time-to-first-token. Keep the highest-priority provisions
+            # and drop the low-value tail. Budget the provision block against
+            # what the non-provision parts already consume (definitions, the
+            # community overview, applicability / negative-definition notes) —
+            # those were previously uncounted, letting broad routes slip well
+            # past the cap (166 KB seen in the demo). The backbone stays whole;
+            # only the provision tail is trimmed to fit the remainder.
+            _reserved = sum(len(part) for part in context_parts) + len(_sep) * len(
+                context_parts
+            )
+            _prov_budget = max(0, _CONTEXT_CHAR_BUDGET - _reserved)
+            _budgeted = _trim_provisions_to_budget(provisions, _prov_budget)
             if len(_budgeted) < len(provisions):
                 logger.info(
-                    "Context budget: kept %d of %d provisions (tail trimmed)",
-                    len(_budgeted), len(provisions),
+                    "Context budget: kept %d of %d provisions (%d chars reserved "
+                    "for definitions/overview; %d budgeted for provisions)",
+                    len(_budgeted), len(provisions), _reserved, _prov_budget,
                 )
             context_parts.append(_format_context(_budgeted))
-        context = "\n\n---\n\n".join(context_parts)
+        context = _sep.join(context_parts)
 
         logger.info(
-            "Context assembled: %d provisions + %d definitions, %d chars "
+            "Context assembled: %d of %d provisions + %d definitions, %d chars "
             "(~%d tokens) — sending to %s",
-            len(provisions), len(definitions), len(context), len(context) // 4,
+            len(_budgeted), len(provisions), len(definitions),
+            len(context), len(context) // 4,
             os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
         )
 
@@ -623,30 +699,15 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
             },
         ]
 
-        _MAX_RETRIES = 4
         full_answer = ""
-        for attempt in range(_MAX_RETRIES):
-            try:
-                full_answer = ""
-                with client.chat.stream(
-                    model=os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
-                    messages=_messages,
-                    temperature=0.1,
-                ) as stream:
-                    for chunk in stream:
-                        delta = chunk.data.choices[0].delta.content
-                        if delta:
-                            full_answer += delta
-                            yield {"type": "token", "content": delta}
-                break  # success — exit retry loop
-            except Exception as exc:
-                if "429" in str(exc) and attempt < _MAX_RETRIES - 1:
-                    wait = 2 ** attempt
-                    logger.warning("Rate-limited (429). Retrying in %ds…", wait)
-                    import time
-                    time.sleep(wait)
-                else:
-                    raise
+        for delta in _stream_chat_with_retry(
+            client,
+            model=os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
+            messages=_messages,
+            temperature=0.1,
+        ):
+            full_answer += delta
+            yield {"type": "token", "content": delta}
 
         # --- 7a. Bounded-agentic audit + revise loop ---
         # The Auditor verifies the draft's legal backbone and names provisions
@@ -732,14 +793,12 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                 }
                 try:
                     _revised = ""
-                    with client.chat.stream(
-                        model=_gen_llm, messages=_revision_messages, temperature=0.1,
-                    ) as _rev_stream:
-                        for _chunk in _rev_stream:
-                            _delta = _chunk.data.choices[0].delta.content
-                            if _delta:
-                                _revised += _delta
-                                yield {"type": "token", "content": _delta}
+                    for _delta in _stream_chat_with_retry(
+                        client, model=_gen_llm, messages=_revision_messages,
+                        temperature=0.1,
+                    ):
+                        _revised += _delta
+                        yield {"type": "token", "content": _delta}
                     _revised = _strip_meta_leak(_revised).strip()
                     if _revised:
                         full_answer = _revised
