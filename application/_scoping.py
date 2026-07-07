@@ -22,7 +22,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from application._routing import _has_obligation_focus
+from application._routing import (
+    _has_broad_survey_focus,
+    _has_cross_reg_focus,
+    _has_obligation_focus,
+    _is_personal_obligation_question,
+)
 from application.contracts import Scenario
 from domain.legislation_catalog import (
     AI_ACT_CELEX,
@@ -148,6 +153,11 @@ def assess_scope(scenario: Scenario) -> ScopingResult:
     * no actor role was detected (``scenario.has_role`` is False);
     * at least one role-partitioned regulation is in scope (to build options);
     * the question is obligation-focused (asks about duties/requirements);
+    * the question is *personal* — it asks about the asker's own duties, not a
+      broad survey ("all obligations for high-risk AI systems") or a
+      cross-framework interaction ("how do MDR and AI Act duties interact,
+      which prevails?"). Those are answered well comprehensively, grouped by
+      role, so narrowing there only withholds a good answer (verified 2026-07);
     * at least two candidate roles genuinely fork the analysis.
     """
     if scenario.route_id in _NO_CLARIFY_ROUTES:
@@ -159,6 +169,16 @@ def assess_scope(scenario: Scenario) -> ScopingResult:
     if not scenario.target_celexes:
         return ScopingResult(False)
     if not _has_obligation_focus(scenario.question):
+        return ScopingResult(False)
+    # Stay silent where a comprehensive, role-structured answer is the right
+    # output and asking would only withhold it: broad enumerations and
+    # cross-framework interaction questions. Only interject when the asker is
+    # asking about their *own* duties without saying who they are.
+    if _has_cross_reg_focus(scenario.question) or _has_broad_survey_focus(
+        scenario.question
+    ):
+        return ScopingResult(False)
+    if not _is_personal_obligation_question(scenario.question):
         return ScopingResult(False)
 
     options = _role_options(set(scenario.target_celexes))

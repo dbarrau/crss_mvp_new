@@ -40,10 +40,10 @@ def _assess(question, **overrides):
 # ---------------------------------------------------------------------------
 
 
-def test_obligation_question_without_role_triggers_clarification():
+def test_personal_obligation_question_without_role_triggers_clarification():
     result = _assess(
-        "What obligations apply to a Class IIb SaMD with continuous learning "
-        "under MDR and the AI Act?"
+        "As a company, what obligations do we have for a Class IIb SaMD with "
+        "continuous learning under MDR and the AI Act?"
     )
     assert result.needs_clarification is True
     assert result.clarification is not None
@@ -52,7 +52,7 @@ def test_obligation_question_without_role_triggers_clarification():
 
 
 def test_clarification_options_are_scoped_to_in_scope_regulations():
-    result = _assess("What obligations apply?", target_celexes={_AI_ACT})
+    result = _assess("What obligations do we have?", target_celexes={_AI_ACT})
     assert result.needs_clarification is True
     values = {o.value for o in result.clarification.options}
     # AI Act roles present; MDR-only roles (user) absent.
@@ -62,7 +62,7 @@ def test_clarification_options_are_scoped_to_in_scope_regulations():
 
 
 def test_options_capped_and_ordered_by_priority():
-    result = _assess("What duties apply?", target_celexes={_AI_ACT, _MDR, _GDPR})
+    result = _assess("What duties do we have?", target_celexes={_AI_ACT, _MDR, _GDPR})
     opts = result.clarification.options
     assert len(opts) <= 6
     # Provider is highest priority and must lead.
@@ -98,6 +98,36 @@ def test_no_clarification_without_obligation_focus():
     assert result.needs_clarification is False
 
 
+def test_no_clarification_for_broad_survey_question():
+    # "All obligations…" wants the whole surface; answered well grouped by role
+    # without narrowing, so asking for a role would only withhold a good answer.
+    result = _assess(
+        "What are all obligations for high-risk AI systems under the AI Act?"
+    )
+    assert result.needs_clarification is False
+
+
+def test_no_clarification_for_cross_framework_interaction_question():
+    # Interaction / "which prevails" questions are role-independent.
+    result = _assess(
+        "How do the serious-incident reporting duties of the AI Act and MDR "
+        "interact, and which prevails?"
+    )
+    assert result.needs_clarification is False
+
+
+def test_no_clarification_for_impersonal_obligation_question():
+    # Impersonal informational phrasing -> comprehensive answer, no clarify.
+    result = _assess("What obligations apply to a high-risk AI system?")
+    assert result.needs_clarification is False
+
+
+def test_second_person_personal_phrasing_fires():
+    # "you/your" is personal framing and should still trigger the ask.
+    result = _assess("What are your obligations for a high-risk AI system?")
+    assert result.needs_clarification is True
+
+
 def test_no_clarification_when_no_regulation_in_scope():
     result = _assess("What obligations apply?", target_celexes=set())
     assert result.needs_clarification is False
@@ -113,7 +143,9 @@ def test_no_clarification_on_role_agnostic_routes():
 
 def test_guidance_only_scope_does_not_fire():
     # MDCG guidance CELEX carries no actor roles -> no real options -> silent.
-    result = _assess("What obligations apply?", target_celexes={"MDCG_2019_11"})
+    # Personal phrasing so the check reaches the options guard, not the
+    # personal-phrasing guard.
+    result = _assess("What obligations do we have?", target_celexes={"MDCG_2019_11"})
     assert result.needs_clarification is False
 
 

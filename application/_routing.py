@@ -72,6 +72,22 @@ _CROSS_REG_Q_RE = re.compile(
     re.I,
 )
 
+# "Personal-obligation" phrasing: the asker is asking about *their own* duties
+# for a specific but unstated actor role — the one case where naming the role
+# changes the answer they need. First/second-person pronouns, or an
+# "as a <non-role entity>" self-identification. Broad informational surveys and
+# cross-framework interaction questions are handled well *comprehensively*
+# (grouped by role) and are deliberately NOT treated as personal here, so the
+# clarify gate stays silent on them (see application/_scoping.assess_scope).
+# ``\bI\b`` is case-sensitive on purpose (the pronoun is capitalised) so it does
+# not fire on a stray lowercase "i"; the rest is case-insensitive via ``(?i:)``.
+_PERSONAL_OBLIGATION_RE = re.compile(
+    r"\bI\b"
+    r"|(?i:\b(?:we|my|our|you|your)\b)"
+    r"|(?i:\bas\s+an?\s+(?:company|organi[sz]ation|business|firm|"
+    r"start-?up|sme|entity|hospital|institution|developer)\b)"
+)
+
 _QUALIFICATION_Q_RE = re.compile(
     r"\b(high-risk|classif(?:y|ication)|qualif(?:y|ication)|"
     r"transition|become|status|substantial\s+modification|"
@@ -193,6 +209,28 @@ def _has_obligation_focus(question: str) -> bool:
 def _has_cross_reg_focus(question: str) -> bool:
     """Return whether the question asks about interplay across frameworks."""
     return bool(_CROSS_REG_Q_RE.search(question))
+
+
+def _has_broad_survey_focus(question: str) -> bool:
+    """Return whether the question asks for a broad/comprehensive enumeration.
+
+    "What are *all* obligations for high-risk AI systems", "list all
+    requirements", "overview of…" — asks for the whole surface, not a
+    personalized answer. Reuses the community-summary signal.
+    """
+    return bool(_COMMUNITY_SUMMARY_Q_RE.search(question))
+
+
+def _is_personal_obligation_question(question: str) -> bool:
+    """Return whether the asker is asking about *their own* duties.
+
+    True for first/second-person or "as a <entity>" framing — the case where a
+    missing actor role genuinely forks the answer the asker needs. False for
+    impersonal informational questions ("what obligations apply to a high-risk
+    AI system"), which the retrieval+synthesis stack answers well comprehensively
+    (grouped by role) without narrowing.
+    """
+    return bool(_PERSONAL_OBLIGATION_RE.search(question))
 
 
 def _has_qualification_focus(question: str) -> bool:
