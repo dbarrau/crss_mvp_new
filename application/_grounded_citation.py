@@ -80,6 +80,7 @@ class ResolveResult:
     unresolved_ids: list[str] = field(default_factory=list)
     deduped_ids: list[str] = field(default_factory=list)
     suppressed_ref_dups: list[str] = field(default_factory=list)
+    global_ref_ids: list[str] = field(default_factory=list)
 
 
 def build_pointer_index(
@@ -124,12 +125,70 @@ def build_pointer_index(
     return index
 
 
+def _render_ref(ref: str, regulation: str) -> str:
+    """Human-readable inline reference from a ``(display_ref, regulation)`` pair.
+
+    This is the ONLY citation form a reader ever sees — an internal node id is
+    never rendered.  Empty when there is no display reference to show.
+    """
+    parts = [ref] if ref else []
+    if regulation:
+        parts.append(regulation)
+    return " ".join(parts) if parts else ""
+
+
 def _render_cite(entry: _Entry) -> str:
     """Human-readable inline reference for a ``[cite:]`` pointer."""
-    parts = [entry.ref] if entry.ref else []
-    if entry.regulation:
-        parts.append(entry.regulation)
-    return " ".join(parts) if parts else ""
+    return _render_ref(entry.ref, entry.regulation)
+
+
+# --- Husk cleanup ------------------------------------------------------------
+# A pointer whose id is unknown even to the global reference map (a paragraph or
+# point the model invented, which exists nowhere) is dropped — but naively
+# returning "" leaves the model's scaffolding behind as "as required by ****",
+# an empty "> " blockquote, or an empty table cell.  Dropped pointers instead
+# emit this private-use sentinel; ``_clean_husks`` then removes the sentinel
+# together with the emphasis/parenthetical wrapper and any dangling connector
+# phrase ("as required by", "set out in", …) that introduced it, so the prose
+# closes up cleanly rather than exposing a broken citation.
+_DROP = "DROP"  # private-use sentinel, never present in real content
+
+_CONNECTOR = (
+    r"(?:as\s+)?(?:required\s+by|set\s+out\s+in|provided\s+for\s+in|"
+    r"referred\s+to\s+in|governed\s+by|implied\s+by|derived\s+from|"
+    r"pursuant\s+to|in\s+accordance\s+with|under|in|see)"
+)
+
+
+def _clean_husks(text: str) -> str:
+    """Remove drop sentinels and the empty markup/connector husks around them."""
+    d = re.escape(_DROP)
+    # 1. sentinel wrapped in bold/italic or parentheses/brackets → strip wrapper
+    text = re.sub(r"\*{1,3}\s*" + d + r"\s*\*{1,3}", _DROP, text)
+    text = re.sub(r"[(\[]\s*" + d + r"\s*[)\]]", "", text)
+    # 2. a leading connector phrase (and optional preceding comma / "and") that
+    #    only introduced the now-dropped reference → remove it with the sentinel;
+    #    repeated so "… in X and Y" with both dropped collapses fully.
+    for _ in range(3):
+        text, n = re.subn(
+            r"(?:[,;:]\s*)?(?:\band\b\s*)?" + _CONNECTOR + r"\s*" + d,
+            "", text, flags=re.I,
+        )
+        if not n:
+            break
+    # 3. any bare sentinel remnant
+    text = text.replace(_DROP, "")
+    # 4. tidy the punctuation / empty wrappers a drop can leave behind
+    text = re.sub(r"\(\s*\)|\[\s*\]|\*\*\s*\*\*|\*\s*\*", "", text)
+    text = re.sub(r"[ \t]+([.,;:)])", r"\1", text)      # space before punctuation
+    text = re.sub(r"([(\[])[ \t]+", r"\1", text)        # space after open bracket
+    text = re.sub(r",\s*([.;:])", r"\1", text)          # orphan comma before stop
+    # 5. drop a blockquote line that lost its only content
+    text = re.sub(r"(?m)^>[ \t]*$\n?", "", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r" +\n", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text
 
 
 # --- Adjacent-reference de-duplication (deterministic backstop) --------------
@@ -179,19 +238,28 @@ def _render_quote(entry: _Entry, char_cap: int = 0) -> str:
 
 
 def resolve_pointers(
-    answer: str, index: dict[str, _Entry]
+    answer: str,
+    index: dict[str, _Entry],
+    fallback_refs: dict[str, tuple[str, str]] | None = None,
 ) -> ResolveResult:
     """Rewrite ``[cite:]``/``[quote:]`` pointers in *answer* using *index*.
 
-    Resolved ``[quote:]`` -> verbatim block; ``[cite:]`` -> human ref.  A pointer
-    whose id is not in the retrieved bag is **dropped** (never rendered as an
-    unsupported quote) and reported in ``unresolved_ids``.
+    Resolved ``[quote:]`` -> verbatim block; ``[cite:]`` -> human ref.  When a
+    pointer's id is not in the retrieved bag but *is* a real provision known to
+    ``fallback_refs`` (the retriever's global ``{id: (ref, regulation)}`` map),
+    its human-readable reference is still rendered — so a real article the model
+    cited but retrieval did not surface reads as "Article 25 EU AI Act", not an
+    empty husk.  Only an id that exists **nowhere** is dropped; the sentinel it
+    leaves is cleaned away (with its "as required by …" scaffolding) so the
+    reader never sees ``****`` or a raw node id.
     """
+    fallback_refs = fallback_refs or {}
     quoted: list[str] = []
     cited: list[str] = []
     unresolved: list[str] = []
     deduped: list[str] = []
     suppressed: list[str] = []
+    global_resolved: list[str] = []
     seen_quotes: set[str] = set()
     char_cap = quote_char_cap()
 
@@ -199,8 +267,18 @@ def resolve_pointers(
         kind, node_id = m.group(1), m.group(2)
         entry = index.get(node_id)
         if entry is None:
-            unresolved.append(node_id)
-            return ""
+            # Not retrieved — try the global reference map before giving up.
+            ref_reg = fallback_refs.get(node_id)
+            if ref_reg is None:
+                unresolved.append(node_id)
+                return _DROP  # exists nowhere → husk-clean the scaffolding
+            ref, reg = ref_reg
+            cited.append(node_id)
+            global_resolved.append(node_id)
+            if _ref_already_in_prose(m.string[: m.start()], ref):
+                suppressed.append(node_id)
+                return ""
+            return _render_ref(ref, reg)
         # Dedupe: a repeat quote of an already-quoted node renders as a cite,
         # so the reader never sees the same verbatim block twice.
         if kind == "quote" and node_id not in seen_quotes:
@@ -217,11 +295,7 @@ def resolve_pointers(
             return ""
         return _render_cite(entry)
 
-    rendered = _POINTER_RE.sub(_sub, answer)
-    # Collapse whitespace artefacts left by dropped pointers.
-    rendered = re.sub(r"[ \t]{2,}", " ", rendered)
-    rendered = re.sub(r" +\n", "\n", rendered)
-    rendered = re.sub(r"\n{3,}", "\n\n", rendered)
+    rendered = _clean_husks(_POINTER_RE.sub(_sub, answer))
     return ResolveResult(
         text=rendered.strip(),
         quoted_ids=quoted,
@@ -229,4 +303,5 @@ def resolve_pointers(
         unresolved_ids=unresolved,
         deduped_ids=deduped,
         suppressed_ref_dups=suppressed,
+        global_ref_ids=global_resolved,
     )

@@ -107,3 +107,63 @@ def test_structured_renders_reference_when_not_in_prose():
     res = render_grounded_answer(ans, _index())
     assert "Article 43 EU AI Act" in res.text
     assert res.suppressed_ref_dups == []
+
+
+# --- global reference-map fallback ------------------------------------------
+
+_GLOBAL = {
+    "32024R1689_art_25": ("Article 25", "EU AI Act"),
+    "32024R1689_art_47": ("Article 47", "EU AI Act"),
+}
+
+
+def test_inline_unretrieved_but_real_provision_renders_human_reference():
+    # art_25 is NOT in the retrieved index, but IS a real provision.
+    res = resolve_pointers(
+        "A modifier may become a provider [cite: 32024R1689_art_25].",
+        _index(), fallback_refs=_GLOBAL,
+    )
+    assert "Article 25 EU AI Act" in res.text
+    assert "32024R1689_art_25" in res.global_ref_ids
+    assert res.unresolved_ids == []
+    assert "DROP" not in res.text
+
+
+def test_structured_unretrieved_but_real_provision_renders_human_reference():
+    ans = GroundedAnswer(
+        body="A modifier may become a provider [[c1]].",
+        citations=[Citation(marker="c1", node_id="32024R1689_art_47", mode="cite")],
+    )
+    res = render_grounded_answer(ans, _index(), fallback_refs=_GLOBAL)
+    assert "Article 47 EU AI Act" in res.text
+    assert "32024R1689_art_47" in res.global_ref_ids
+
+
+# --- husk cleanup for genuinely-nonexistent ids -----------------------------
+
+def test_nonexistent_id_is_dropped_without_empty_husk():
+    # art_23_g is invented — exists in neither the bag nor the global map.
+    res = resolve_pointers(
+        "This obligation ensures traceability, as required by "
+        "**[cite: 32024R1689_art_23_g]**.",
+        _index(), fallback_refs=_GLOBAL,
+    )
+    assert "****" not in res.text                    # no empty bold husk
+    assert "DROP" not in res.text                    # sentinel never leaks
+    assert "32024R1689" not in res.text              # no raw node id
+    assert "32024R1689_art_23_g" in res.unresolved_ids
+    # the dangling "as required by" connector is cleaned; sentence still closes
+    assert "as required by" not in res.text
+    assert res.text.rstrip().endswith("traceability.")
+
+
+def test_empty_blockquote_line_removed_when_only_citation_dropped():
+    res = resolve_pointers(
+        "Heading\n\n> [cite: 32024R1689_art_23_g]\n\nNext paragraph.",
+        _index(), fallback_refs=_GLOBAL,
+    )
+    assert "****" not in res.text
+    assert "DROP" not in res.text
+    # no orphaned "> " line left behind
+    import re as _re
+    assert not _re.search(r"(?m)^>[ \t]*$", res.text)

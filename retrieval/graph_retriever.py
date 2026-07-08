@@ -854,6 +854,42 @@ class GraphRetriever:
 
         return results
 
+    def reference_index(self) -> dict[str, tuple[str, str]]:
+        """Return ``{node_id: (display_ref, regulation)}`` for **every** provision.
+
+        Unlike the per-query retrieved bag, this covers the entire graph, so the
+        citation resolver can render a human-readable reference for a real
+        provision the model cited but that retrieval did not surface (e.g. AI Act
+        Article 25 in an importer-obligations answer).  Ids the model *invents*
+        (a paragraph/point that does not exist) are simply absent here, so they
+        are still dropped rather than laundered into a clean-looking citation.
+
+        Fetched once from Neo4j and cached for the retriever's lifetime.  Node
+        ids are stable internal keys; only the ``(display_ref, regulation)`` pair
+        is ever shown to a reader.
+        """
+        if not hasattr(self, "_reference_index"):
+            with self._driver.session(database=self._db) as s:
+                rows = s.run(
+                    "MATCH (p:Provision) "
+                    "WHERE p.display_ref IS NOT NULL "
+                    "RETURN p.id AS id, p.display_ref AS ref, "
+                    "       p.regulation_id AS reg "
+                    "UNION ALL "
+                    "MATCH (g:Guidance) "
+                    "WHERE g.display_ref IS NOT NULL "
+                    "RETURN g.id AS id, g.display_ref AS ref, "
+                    "       g.regulation_id AS reg"
+                ).data()
+            self._reference_index: dict[str, tuple[str, str]] = {
+                r["id"]: (r["ref"] or "", r["reg"] or "") for r in rows
+            }
+            logger.info(
+                "Loaded %d provision references for citation resolution.",
+                len(self._reference_index),
+            )
+        return self._reference_index
+
     def get_defined_terms_index(self) -> dict[str, str]:
         """Return ``{lowercase_term: term_normalized}`` for all DefinedTerm nodes.
 

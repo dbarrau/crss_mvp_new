@@ -289,13 +289,16 @@ def _grounded_structured() -> bool:
 
 
 def _generate_grounded_answer(
-    client, *, model, messages, provisions, definitions
+    client, *, model, messages, provisions, definitions, fallback_refs=None
 ) -> "RenderResult":
     """Generate a structured GroundedAnswer and render it to markdown.
 
     The model returns prose + a typed ``citations`` channel (no field can hold
     authored quote text); the renderer substitutes verbatim source text / refs
-    from the retrieved bag by node id.  Non-streaming (``chat.parse``).
+    from the retrieved bag by node id.  ``fallback_refs`` is the retriever's
+    global ``{id: (ref, regulation)}`` map, so a real but un-retrieved provision
+    the model cites still renders its human-readable reference.  Non-streaming
+    (``chat.parse``).
     """
     resp = client.chat.parse(
         response_format=GroundedAnswer,
@@ -305,7 +308,7 @@ def _generate_grounded_answer(
     )
     parsed = resp.choices[0].message.parsed
     index = build_pointer_index(provisions, definitions)
-    return render_grounded_answer(parsed, index)
+    return render_grounded_answer(parsed, index, fallback_refs=fallback_refs)
 
 
 # ---------------------------------------------------------------------------
@@ -750,6 +753,12 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                 _history_messages.append({"role": _role, "content": _content})
 
         _structured = _grounded_structured()
+        # Global {id: (ref, regulation)} map so the citation resolver can render
+        # a real but un-retrieved provision the model cites (e.g. AI Act Art 25)
+        # as a human-readable reference instead of an empty husk.  Best-effort:
+        # a retriever double without the method degrades to retrieved-bag only.
+        _ref_index_fn = getattr(retriever, "reference_index", None)
+        _fallback_refs = _ref_index_fn() if callable(_ref_index_fn) else {}
         _messages = [
             {
                 "role": "system",
@@ -785,6 +794,7 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                 _render = _generate_grounded_answer(
                     client, model=_gen_model, messages=_messages,
                     provisions=provisions, definitions=definitions,
+                    fallback_refs=_fallback_refs,
                 )
                 full_answer = _render.text
                 logger.info(
@@ -911,6 +921,7 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                         _rev = _generate_grounded_answer(
                             client, model=_gen_llm, messages=_revision_messages,
                             provisions=provisions, definitions=definitions,
+                            fallback_refs=_fallback_refs,
                         )
                         _revised = _strip_meta_leak(_rev.text).strip()
                         if _revised:
@@ -942,12 +953,14 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
         # provisions.
         if full_answer:
             _resolved = resolve_pointers(
-                full_answer, build_pointer_index(provisions, definitions)
+                full_answer, build_pointer_index(provisions, definitions),
+                fallback_refs=_fallback_refs,
             )
             logger.info(
-                "Grounded citation: resolved %d quote / %d cite pointer(s); "
-                "%d duplicate ref(s) suppressed%s",
+                "Grounded citation: resolved %d quote / %d cite pointer(s) "
+                "(%d via global ref map); %d duplicate ref(s) suppressed%s",
                 len(_resolved.quoted_ids), len(_resolved.cited_ids),
+                len(_resolved.global_ref_ids),
                 len(_resolved.suppressed_ref_dups),
                 (
                     f"; dropped {len(_resolved.unresolved_ids)} unresolved id(s): "

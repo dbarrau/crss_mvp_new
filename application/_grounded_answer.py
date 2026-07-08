@@ -27,10 +27,13 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from application._grounded_citation import (
+    _DROP,
     _Entry,
+    _clean_husks,
     _ref_already_in_prose,
     _render_cite,
     _render_quote,
+    _render_ref,
     build_pointer_index,  # re-exported for callers assembling the index
     quote_char_cap,
 )
@@ -90,17 +93,24 @@ class RenderResult:
     unresolved_ids: list[str] = field(default_factory=list)
     deduped_ids: list[str] = field(default_factory=list)
     suppressed_ref_dups: list[str] = field(default_factory=list)
+    global_ref_ids: list[str] = field(default_factory=list)
 
 
 def render_grounded_answer(
-    answer: GroundedAnswer, index: dict[str, _Entry]
+    answer: GroundedAnswer,
+    index: dict[str, _Entry],
+    fallback_refs: dict[str, tuple[str, str]] | None = None,
 ) -> RenderResult:
     """Substitute ``[[marker]]`` tokens in *answer.body* using its citations.
 
-    A marker with no citation entry, or a citation whose ``node_id`` is not in the
-    retrieved *index*, is **dropped** (never rendered as an unsupported quote) and
-    reported.  ``quote`` → verbatim block from the node; ``cite`` → human ref.
+    A citation whose ``node_id`` is not in the retrieved *index* falls back to
+    ``fallback_refs`` (the retriever's global ``{id: (ref, regulation)}`` map) so
+    a real but un-retrieved provision still renders its human-readable reference.
+    A marker with no citation entry, or a ``node_id`` that exists **nowhere**, is
+    dropped and its empty scaffolding cleaned away — the reader never sees an
+    empty ``****`` husk or a raw internal node id.
     """
+    fallback_refs = fallback_refs or {}
     cite_map = {c.marker: c for c in answer.citations}
     quoted: list[str] = []
     cited: list[str] = []
@@ -108,6 +118,7 @@ def render_grounded_answer(
     unresolved_ids: list[str] = []
     deduped: list[str] = []
     suppressed: list[str] = []
+    global_resolved: list[str] = []
     seen_quotes: set[str] = set()
     char_cap = quote_char_cap()
 
@@ -116,11 +127,21 @@ def render_grounded_answer(
         citation = cite_map.get(marker)
         if citation is None:
             unresolved_markers.append(marker)
-            return ""
+            return _DROP
         entry = index.get(citation.node_id)
         if entry is None:
-            unresolved_ids.append(citation.node_id)
-            return ""
+            # Not retrieved — try the global reference map before giving up.
+            ref_reg = fallback_refs.get(citation.node_id)
+            if ref_reg is None:
+                unresolved_ids.append(citation.node_id)
+                return _DROP
+            ref, reg = ref_reg
+            cited.append(citation.node_id)
+            global_resolved.append(citation.node_id)
+            if _ref_already_in_prose(m.string[: m.start()], ref):
+                suppressed.append(citation.node_id)
+                return ""
+            return _render_ref(ref, reg)
         # Dedupe: a repeat quote of an already-quoted node renders as a cite,
         # so a section quoted for several classes is not dumped verbatim each time.
         if citation.mode == "quote" and citation.node_id not in seen_quotes:
@@ -137,11 +158,7 @@ def render_grounded_answer(
             return ""
         return _render_cite(entry)
 
-    rendered = _MARKER_RE.sub(_sub, answer.body)
-    # Collapse whitespace/markup artefacts left by dropped markers.
-    rendered = re.sub(r"[ \t]{2,}", " ", rendered)
-    rendered = re.sub(r" +\n", "\n", rendered)
-    rendered = re.sub(r"\n{3,}", "\n\n", rendered)
+    rendered = _clean_husks(_MARKER_RE.sub(_sub, answer.body))
     return RenderResult(
         text=rendered.strip(),
         quoted_ids=quoted,
@@ -150,4 +167,5 @@ def render_grounded_answer(
         unresolved_ids=unresolved_ids,
         deduped_ids=deduped,
         suppressed_ref_dups=suppressed,
+        global_ref_ids=global_resolved,
     )
