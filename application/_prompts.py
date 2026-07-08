@@ -5,6 +5,7 @@ the per-request user message and route-specific answer-discipline instructions.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from application._routing import (
@@ -31,7 +32,7 @@ TEXTUAL GROUNDING RULES:
 - NEVER supply regulatory details (paragraph numbers, definitions, subparagraph ordinals, recital numbers, annex rule numbers) from your training memory — these are version-sensitive.
 - If the context lacks a specific detail needed to complete your reasoning, state that the context is insufficient rather than guessing.
 - Use ONLY EU regulatory terminology.
-- Anchor every legal conclusion to the Article/Annex that governs it — describe the mechanism AND name its legal basis via a `[cite: <id>]` pointer (see the GROUNDED CITATION CONTRACT below), never one without the other. In particular, when the analysis turns on one of these recurring mechanisms, cite the governing provision: an actor-status change (e.g. a deployer or distributor that rebrands or substantially modifies a system becoming a provider) → AI Act Article 25; the interaction between AI Act and sectoral (e.g. MDR) serious-incident reporting → AI Act Article 73; a fundamental-rights impact assessment → AI Act Article 27. Cite these only when they are present in the REGULATORY CONTEXT below. NEVER emit URLs or hyperlinks — a `[cite: <id>]` pointer is the only citation form.
+- Anchor every legal conclusion to the Article/Annex that governs it — describe the mechanism AND name its legal basis through an explicit citation (see the citation contract below), never one without the other. In particular, when the analysis turns on one of these recurring mechanisms, cite the governing provision: an actor-status change (e.g. a deployer or distributor that rebrands or substantially modifies a system becoming a provider) → AI Act Article 25; the interaction between AI Act and sectoral (e.g. MDR) serious-incident reporting → AI Act Article 73; a fundamental-rights impact assessment → AI Act Article 27. Cite these only when they are present in the REGULATORY CONTEXT below. NEVER emit URLs or hyperlinks — every citation goes through the citation contract below.
 - Write a self-contained, client-ready compliance analysis: start directly with the substance, with no memo letterhead (no To/From/Date/Subject block) or cover formatting. NEVER refer to the retrieval system or its internals — do not mention "the context", "retrieved text", "the provided sources", the internal positional index (e.g. [3]), or internal section labels. The reader sees only your analysis, not the machinery that produced it.
 
 GROUNDED CITATION CONTRACT (mandatory — overrides any other quoting instruction below):
@@ -128,11 +129,10 @@ enacting terms; never present Annex content in isolation.
 
 Format your answer with:
 1. A direct answer based on the provided context and sound regulatory reasoning
-2. Verbatim text ONLY via a `[quote: <id>]` pointer, per the GROUNDED CITATION \
-CONTRACT above — never type quoted words or a ">" block yourself. Anchor claims \
-with `[cite: <id>]`, which renders as the provision's own Article/Annex number. \
-A faithful paraphrase with a `[cite: <id>]` is far better than forcing a quote; \
-reserve `[quote: <id>]` for the operative clause that does the legal work.
+2. Cite and quote ONLY through the citation contract above — never type quoted \
+words or a ">" block yourself. A faithful paraphrase with an accurate citation \
+is far better than forcing a quote; reserve quotations for the operative clause \
+that does the legal work.
 3. Cross-references that appear explicitly in the context
 
 ECONOMY OF ANALYSIS (mandatory):
@@ -140,12 +140,11 @@ ECONOMY OF ANALYSIS (mandatory):
 decisive analysis, not exhaustive coverage. Spend words on the provisions that \
 determine the outcome; do not walk through every retrieved provision.
 - Lead each issue with its conclusion, then support it briefly.
-- When you quote, point at the node whose OPERATIVE words — the clause that does \
-the legal work — you need (`[quote: <id>]` on the most specific paragraph/point), \
-not whole articles. Grounding comes from an accurate `[cite: <id>]`, not from \
-attaching a quotation to every provision; a faithful paraphrase with a correct \
-`[cite: <id>]` fully grounds a point. Do not force a `[quote: <id>]` where a \
-paraphrase suffices.
+- When you quote, target the most specific node whose OPERATIVE words — the \
+clause that does the legal work — you need (a paragraph/point, not a whole \
+article). Grounding comes from an accurate citation, not from attaching a \
+quotation to every provision; a faithful paraphrase with a correct citation \
+fully grounds a point. Do not force a quotation where a paraphrase suffices.
 - Apply the analytical order ONCE per distinct issue. Do NOT mechanically repeat \
 the same sub-headers (e.g. "Explicitly stated / Inference / Conclusion") for \
 every actor, stage, or minor point; collapse secondary points to a sentence.
@@ -166,6 +165,56 @@ USE OF INTERPRETIVE GUIDANCE (mandatory when guidance is in context):
 - When a cited binding provision carries an attached "[GUIDANCE interprets this]" line in the context, you MUST consume that interpretation rather than ignoring it — tie it to the provision it explains.
 - The rule "defer to the Regulation, present guidance as supportive not determinative" governs HOW you weight guidance against binding text in a conflict; it does NOT license dropping relevant guidance from the answer entirely.
 """
+
+# ---------------------------------------------------------------------------
+# Structured-output mode (grounded generation contract, hard-enforced)
+# ---------------------------------------------------------------------------
+
+# Replaces the inline GROUNDED CITATION CONTRACT block in-place when the answer is
+# generated via structured outputs (chat.parse -> GroundedAnswer). Quotations and
+# citations move out of the prose entirely into the typed `citations` channel,
+# keyed by node id — the enforcement the inline [cite:]/[quote:] pointers could
+# not achieve (mistral-large kept authoring ">" blocks). Appending an override was
+# NOT enough: the base prompt's leftover inline-pointer instructions confused the
+# model into emitting markers with no matching citation → empty "[]" litter and
+# lost citations. So structured_system_prompt() swaps the contract in place AND
+# neutralises the stray references. See docs/grounded_generation_contract.md.
+_STRUCTURED_CONTRACT = """\
+STRUCTURED OUTPUT MODE (mandatory citation contract):
+- You return a GroundedAnswer object: a markdown `body` plus a `citations` list.
+- The `body` is markdown prose. It must contain NO verbatim regulatory text, NO quotation marks around regulatory text, NO ">" blockquotes, and NO URLs. Every quotation and every provision reference is delegated to a `[[marker]]` token.
+- For each reference, add a citation {marker, node_id, mode} and place `[[marker]]` in the body where it belongs:
+    - mode "quote" → the renderer inserts that node's EXACT text. Use this wherever you would otherwise write a provision's words (including after "states:", "provides:", "requires:", "reads:" — never follow these with typed-out text; use a quote marker).
+    - mode "cite"  → the renderer inserts the provision's reference (e.g. "Article 10 MDR 2017/745").
+- EVERY `[[marker]]` in the body MUST have exactly one matching entry in `citations`, and every citation MUST be referenced by exactly one `[[marker]]`. NEVER write empty brackets, a bare `[[...]]` with no citation, or a marker wrapped in extra brackets/parentheses like `[[[m]]]` or `([[m]])` — write the `[[marker]]` on its own.
+- `node_id` is the `id:` on a context block header (e.g. 32017R0745_art_10) or a paragraph's `(id: ...)`. Copy ids exactly; never invent one. Prefer the most specific node (a paragraph/point) for a quote.
+- A quotation's ONLY representation is a mode:"quote" citation — there is no field in which to type quoted words. If the context does not support a point, say so in prose; do not quote around the gap."""
+
+# Matches the whole inline contract block (header through the worked example),
+# up to the next section, so structured mode can replace it wholesale.
+_INLINE_CONTRACT_RE = re.compile(
+    r"GROUNDED CITATION CONTRACT \(mandatory.*?(?=\n\nREGULATORY REASONING)",
+    re.DOTALL,
+)
+
+
+def structured_system_prompt() -> str:
+    """SYSTEM_PROMPT rewritten for the structured generation path (``chat.parse``).
+
+    Swaps the inline GROUNDED CITATION CONTRACT block for the structured contract
+    *in place*. The rest of the prompt refers to "the citation contract"
+    generically (no inline `[cite:]`/`[quote:]` tokens survive to compete with the
+    marker/citations channel — the cause of the empty-"[]" litter), so only this
+    one block differs between modes.
+    """
+    prompt, n = _INLINE_CONTRACT_RE.subn(_STRUCTURED_CONTRACT, SYSTEM_PROMPT, count=1)
+    if n != 1:  # prompt drifted — fail loudly rather than ship a conflicted prompt
+        raise RuntimeError(
+            "structured_system_prompt: inline citation contract block not found; "
+            "the base SYSTEM_PROMPT structure changed."
+        )
+    return prompt
+
 
 # ---------------------------------------------------------------------------
 # Route-specific answer guidance

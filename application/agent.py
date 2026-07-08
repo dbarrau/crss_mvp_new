@@ -108,12 +108,18 @@ from application._context import (                       # noqa: F401
 )
 from application._prompts import (                       # noqa: F401
     SYSTEM_PROMPT,
+    structured_system_prompt,
     _build_route_answer_guidance,
     _build_user_message,
 )
 from application._grounded_citation import (             # noqa: F401
     build_pointer_index,
     resolve_pointers,
+)
+from application._grounded_answer import (               # noqa: F401
+    GroundedAnswer,
+    RenderResult,
+    render_grounded_answer,
 )
 from application._postprocessing import (                # noqa: F401
     _build_uncertainty_banner,
@@ -271,6 +277,34 @@ def _stream_chat_with_retry(client, *, model, messages, temperature):
                 attempt + 1, _LLM_MAX_RETRIES - 1, wait, str(exc)[:160],
             )
             time.sleep(wait)
+
+
+def _grounded_structured() -> bool:
+    """Whether to generate the answer via structured outputs (hard-enforced
+    grounded generation contract).  Opt-in while under validation; the default
+    remains the streaming free-text path.  See docs/grounded_generation_contract.md.
+    """
+    return os.environ.get("CRSS_GROUNDED_STRUCTURED", "0") == "1"
+
+
+def _generate_grounded_answer(
+    client, *, model, messages, provisions, definitions
+) -> "RenderResult":
+    """Generate a structured GroundedAnswer and render it to markdown.
+
+    The model returns prose + a typed ``citations`` channel (no field can hold
+    authored quote text); the renderer substitutes verbatim source text / refs
+    from the retrieved bag by node id.  Non-streaming (``chat.parse``).
+    """
+    resp = client.chat.parse(
+        response_format=GroundedAnswer,
+        model=model,
+        messages=messages,
+        temperature=0.1,
+    )
+    parsed = resp.choices[0].message.parsed
+    index = build_pointer_index(provisions, definitions)
+    return render_grounded_answer(parsed, index)
 
 
 # ---------------------------------------------------------------------------
@@ -688,8 +722,12 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                     _role = "assistant"
                 _history_messages.append({"role": _role, "content": _content})
 
+        _structured = _grounded_structured()
         _messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "system",
+                "content": structured_system_prompt() if _structured else SYSTEM_PROMPT,
+            },
             *_history_messages,
             {
                 "role": "user",
@@ -703,15 +741,52 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
             },
         ]
 
+        _gen_model = os.environ.get("MISTRAL_MODEL", "mistral-large-latest")
         full_answer = ""
-        for delta in _stream_chat_with_retry(
-            client,
-            model=os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
-            messages=_messages,
-            temperature=0.1,
-        ):
-            full_answer += delta
-            yield {"type": "token", "content": delta}
+        if _structured:
+            # Hard-enforced grounded generation: the model returns a GroundedAnswer
+            # (prose + typed citations by node id); quote text is rendered from the
+            # retrieved bag, so authored/fabricated quotes are impossible in this
+            # channel. chat.parse is non-streaming, so the answer is buffered and
+            # emitted as one token event. Any failure falls back to streaming.
+            yield {
+                "type": "step",
+                "id": "generate",
+                "label": "Generating grounded answer (structured)…",
+            }
+            try:
+                _render = _generate_grounded_answer(
+                    client, model=_gen_model, messages=_messages,
+                    provisions=provisions, definitions=definitions,
+                )
+                full_answer = _render.text
+                logger.info(
+                    "Structured grounded answer: %d quote / %d cite marker(s)%s",
+                    len(_render.quoted_ids), len(_render.cited_ids),
+                    (
+                        f"; dropped {len(_render.unresolved_markers)} marker(s) / "
+                        f"{len(_render.unresolved_ids)} id(s)"
+                        if (_render.unresolved_markers or _render.unresolved_ids)
+                        else ""
+                    ),
+                )
+                yield {"type": "token", "content": full_answer}
+            except Exception as _exc:  # noqa: BLE001 — degrade to streaming
+                logger.warning(
+                    "Structured generation failed (%s); falling back to streaming",
+                    _exc,
+                )
+                _structured = False
+                full_answer = ""
+        if not _structured:
+            for delta in _stream_chat_with_retry(
+                client,
+                model=_gen_model,
+                messages=_messages,
+                temperature=0.1,
+            ):
+                full_answer += delta
+                yield {"type": "token", "content": delta}
 
         # --- 7a. Bounded-agentic audit + revise loop ---
         # The Auditor verifies the draft's legal backbone and names provisions
