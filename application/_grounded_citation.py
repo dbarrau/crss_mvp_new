@@ -25,7 +25,17 @@ from typing import Any
 
 # node ids look like "32017R0745_art_10", "32017R0745_010.014", "MDCG_2019_11_s3".
 # Permit word chars plus the '.' and '-' that appear in leaf ids.
-_POINTER_RE = re.compile(r"\[(cite|quote):\s*([A-Za-z0-9_.\-]+)\s*\]")
+#
+# The model emits pointers in two shapes (its output format is not stable): the
+# bare contract form ``[cite: <id>]`` and — despite the "no hyperlinks" rule — a
+# markdown-link form ``[Article 43](cite:<id>)`` that would otherwise leak the
+# internal id as a URL.  One regex catches both; the ``label`` group is the
+# human-readable link text of the second form (empty for the first).
+_POINTER_RE = re.compile(
+    r"\[(?P<label>[^\]\n]*)\]\((?P<lkind>cite|quote):\s*(?P<lid>[A-Za-z0-9_.\-]+)\s*\)"
+    r"|"
+    r"\[(?P<kind>cite|quote):\s*(?P<id>[A-Za-z0-9_.\-]+)\s*\]"
+)
 
 # --- Quote economy ----------------------------------------------------------
 # Structured output moved verbatim expansion out of the model into the renderer,
@@ -142,6 +152,54 @@ def _render_cite(entry: _Entry) -> str:
     return _render_ref(entry.ref, entry.regulation)
 
 
+# --- Fabricated-id canonicalisation -----------------------------------------
+# The ingestion normalizer stores an article as `<celex>_art_23` but re-encodes
+# its *paragraphs* under a different convention: `<celex>_023.001` (zero-padded
+# article, dot, zero-padded paragraph, no `art_` prefix — see the `art_10 →
+# "010.001"` transform in ingestion/parse/normalizer.py).  A model that only sees
+# `art_23` on the article header naturally invents `art_23_1` for paragraph 1,
+# which matches nothing.  This applies the pipeline's own transform so the guess
+# maps back to the real id; the caller still verifies the result exists, so a
+# genuinely invented paragraph maps to nothing and stays dropped (no laundering).
+_FABRICATED_PARA_RE = re.compile(r"^(.+)_art_(\d+)([a-z]?)_(\d+)$")
+
+
+def _canonicalize_id(node_id: str) -> str | None:
+    """Map a fabricated ``…_art_N_M`` paragraph id to the real ``…_0NN.00M``."""
+    m = _FABRICATED_PARA_RE.match(node_id)
+    if not m:
+        return None
+    celex, art, alpha, para = m.groups()
+    return f"{celex}_{int(art):03d}{alpha}.{int(para):03d}"
+
+
+def _resolve_id(
+    node_id: str,
+    index: dict[str, _Entry],
+    fallback_refs: dict[str, tuple[str, str]],
+) -> tuple[str, "_Entry | None", "tuple[str, str] | None"]:
+    """Resolve an id to ``(resolved_id, entry, ref_reg)``.
+
+    Tries, in order: the retrieved *index*; the global *fallback_refs* map; then
+    a canonicalised variant of a fabricated ``_art_N_M`` id against both.  Exactly
+    one of ``entry`` / ``ref_reg`` is set on success; both are ``None`` when the
+    id exists nowhere (→ the caller drops it).
+    """
+    entry = index.get(node_id)
+    if entry is not None:
+        return node_id, entry, None
+    if node_id in fallback_refs:
+        return node_id, None, fallback_refs[node_id]
+    canon = _canonicalize_id(node_id)
+    if canon:
+        canon_entry = index.get(canon)
+        if canon_entry is not None:
+            return canon, canon_entry, None
+        if canon in fallback_refs:
+            return canon, None, fallback_refs[canon]
+    return node_id, None, None
+
+
 # --- Husk cleanup ------------------------------------------------------------
 # A pointer whose id is unknown even to the global reference map (a paragraph or
 # point the model invented, which exists nowhere) is dropped — but naively
@@ -163,6 +221,12 @@ _CONNECTOR = (
 def _clean_husks(text: str) -> str:
     """Remove drop sentinels and the empty markup/connector husks around them."""
     d = re.escape(_DROP)
+    # 0. Defensive backstop: strip any citation-URL syntax that reached the
+    #    output through a path the pointer resolver did not rewrite (e.g. the
+    #    structured body, or an unusual format) so an internal node id can NEVER
+    #    reach the reader.  Keep the human-readable link label; drop the id.
+    text = re.sub(r"\[([^\]\n]*)\]\((?:cite|quote):[^)\n]*\)", r"\1", text)
+    text = re.sub(r"\((?:cite|quote):[^)\n]*\)", "", text)
     # 1. sentinel wrapped in bold/italic or parentheses/brackets → strip wrapper
     text = re.sub(r"\*{1,3}\s*" + d + r"\s*\*{1,3}", _DROP, text)
     text = re.sub(r"[(\[]\s*" + d + r"\s*[)\]]", "", text)
@@ -264,14 +328,21 @@ def resolve_pointers(
     char_cap = quote_char_cap()
 
     def _sub(m: re.Match[str]) -> str:
-        kind, node_id = m.group(1), m.group(2)
-        entry = index.get(node_id)
+        # Either alternative of _POINTER_RE matched; pick the populated groups.
+        if m.group("lid") is not None:
+            kind, raw_id, label = m.group("lkind"), m.group("lid"), m.group("label")
+        else:
+            kind, raw_id, label = m.group("kind"), m.group("id"), None
+        node_id, entry, ref_reg = _resolve_id(raw_id, index, fallback_refs)
         if entry is None:
-            # Not retrieved — try the global reference map before giving up.
-            ref_reg = fallback_refs.get(node_id)
+            # Not in the retrieved bag — a real provision known to the global map
+            # (possibly via canonicalising a fabricated id) renders its reference;
+            # an id that exists nowhere is dropped and husk-cleaned.  For the
+            # markdown-link form we keep its human-readable label rather than a
+            # husk, since the reader loses nothing and no internal id leaks.
             if ref_reg is None:
-                unresolved.append(node_id)
-                return _DROP  # exists nowhere → husk-clean the scaffolding
+                unresolved.append(raw_id)
+                return label if label else _DROP
             ref, reg = ref_reg
             cited.append(node_id)
             global_resolved.append(node_id)

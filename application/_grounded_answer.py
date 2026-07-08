@@ -34,6 +34,7 @@ from application._grounded_citation import (
     _render_cite,
     _render_quote,
     _render_ref,
+    _resolve_id,
     build_pointer_index,  # re-exported for callers assembling the index
     quote_char_cap,
 )
@@ -128,33 +129,36 @@ def render_grounded_answer(
         if citation is None:
             unresolved_markers.append(marker)
             return _DROP
-        entry = index.get(citation.node_id)
+        node_id, entry, ref_reg = _resolve_id(
+            citation.node_id, index, fallback_refs
+        )
         if entry is None:
-            # Not retrieved — try the global reference map before giving up.
-            ref_reg = fallback_refs.get(citation.node_id)
+            # Not in the retrieved bag — a real provision known to the global map
+            # (possibly via canonicalising a fabricated id) renders its reference;
+            # an id that exists nowhere is dropped and husk-cleaned.
             if ref_reg is None:
                 unresolved_ids.append(citation.node_id)
                 return _DROP
             ref, reg = ref_reg
-            cited.append(citation.node_id)
-            global_resolved.append(citation.node_id)
+            cited.append(node_id)
+            global_resolved.append(node_id)
             if _ref_already_in_prose(m.string[: m.start()], ref):
-                suppressed.append(citation.node_id)
+                suppressed.append(node_id)
                 return ""
             return _render_ref(ref, reg)
         # Dedupe: a repeat quote of an already-quoted node renders as a cite,
         # so a section quoted for several classes is not dumped verbatim each time.
-        if citation.mode == "quote" and citation.node_id not in seen_quotes:
-            seen_quotes.add(citation.node_id)
-            quoted.append(citation.node_id)
+        if citation.mode == "quote" and node_id not in seen_quotes:
+            seen_quotes.add(node_id)
+            quoted.append(node_id)
             return _render_quote(entry, char_cap)
         if citation.mode == "quote":
-            deduped.append(citation.node_id)
-        cited.append(citation.node_id)
+            deduped.append(node_id)
+        cited.append(node_id)
         # Drop the visible reference when the model already named this provision
         # in the body prose right before the marker (still recorded above).
         if _ref_already_in_prose(m.string[: m.start()], entry.ref):
-            suppressed.append(citation.node_id)
+            suppressed.append(node_id)
             return ""
         return _render_cite(entry)
 

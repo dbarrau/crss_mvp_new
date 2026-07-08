@@ -157,6 +157,59 @@ def test_nonexistent_id_is_dropped_without_empty_husk():
     assert res.text.rstrip().endswith("traceability.")
 
 
+def test_canonicalizes_fabricated_paragraph_id_to_real_reference():
+    # The model invents `art_23_1` (paragraph 1); the real id is `023.001`.
+    # Canonicalising against the global map recovers a human reference.
+    from application._grounded_citation import _canonicalize_id
+    assert _canonicalize_id("32024R1689_art_23_1") == "32024R1689_023.001"
+    assert _canonicalize_id("32024R1689_art_10a_2") == "32024R1689_010a.002"
+    assert _canonicalize_id("32024R1689_art_23_pt_g") is None  # not a paragraph
+
+    glob = {"32024R1689_023.001": ("Article 23(1)", "EU AI Act")}
+    res = resolve_pointers(
+        "Importers must verify provider compliance [cite: 32024R1689_art_23_1].",
+        _index(), fallback_refs=glob,
+    )
+    assert "Article 23(1) EU AI Act" in res.text
+    assert "32024R1689_023.001" in res.global_ref_ids
+    assert res.unresolved_ids == []
+    assert "DROP" not in res.text
+
+
+def test_markdown_link_citation_resolves_and_never_leaks_id():
+    # The model sometimes wraps the pointer as a markdown link, which would leak
+    # the internal id as a URL. It must resolve to the human reference instead.
+    res = resolve_pointers(
+        "The procedure applies [Article 43](cite:32024R1689_art_43).",
+        _index(),
+    )
+    assert "Article 43 EU AI Act" in res.text
+    assert "32024R1689_art_43" not in res.text        # internal id never shown
+    assert "cite:" not in res.text
+
+
+def test_markdown_link_with_unresolvable_id_keeps_label_not_id():
+    res = resolve_pointers(
+        "See [Article 999](cite:32024R1689_art_999).",
+        _index(),
+    )
+    assert "Article 999" in res.text                  # human label kept
+    assert "32024R1689" not in res.text               # id dropped
+    assert "cite:" not in res.text
+
+
+def test_husk_sweep_strips_leaked_citation_url_from_structured_body():
+    # Defensive backstop: even a raw citation-URL in a body is de-id'd.
+    ans = GroundedAnswer(
+        body="The provider must comply [Article 16](cite:32024R1689_art_16_x).",
+        citations=[],
+    )
+    res = render_grounded_answer(ans, _index())
+    assert "Article 16" in res.text
+    assert "32024R1689" not in res.text
+    assert "cite:" not in res.text
+
+
 def test_empty_blockquote_line_removed_when_only_citation_dropped():
     res = resolve_pointers(
         "Heading\n\n> [cite: 32024R1689_art_23_g]\n\nNext paragraph.",
