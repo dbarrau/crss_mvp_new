@@ -176,6 +176,44 @@ def test_canonicalizes_fabricated_paragraph_id_to_real_reference():
     assert "DROP" not in res.text
 
 
+def test_child_cite_renders_article_anchored_not_bare_paragraph():
+    # A cite to a paragraph node must read "Article 23(1)", not the child's bare
+    # display_ref "Paragraph 1" (which reads like a decontextualised variable).
+    from application._grounded_citation import _human_ref_from_id
+    assert _human_ref_from_id("32024R1689_023.001") == "Article 23(1)"
+    assert _human_ref_from_id("32024R1689_023.001_pt_a") == "Article 23(1)(a)"
+    assert _human_ref_from_id("32024R1689_art_23") == "Article 23"
+    assert _human_ref_from_id("32024R1689_rct_81") is None  # falls back to display_ref
+
+    idx = build_pointer_index([{
+        "article_id": "32024R1689_art_23",
+        "article_ref": "Article 23",
+        "regulation": "EU AI Act",
+        "article_text": "Importer obligations.",
+        "children": [{
+            "id": "32024R1689_023.005",
+            "ref": "Paragraph 5",  # bare, decontextualised
+            "text": "Importers shall keep documentation for 10 years.",
+            "binding_force": "binding",
+        }],
+    }])
+    res = resolve_pointers(
+        "Importers must retain documentation [cite: 32024R1689_023.005].", idx,
+    )
+    assert "Article 23(5) EU AI Act" in res.text
+    assert "Paragraph 5" not in res.text
+
+
+def test_bare_bracket_reference_is_unwrapped():
+    # The model writes "[Article 11]" as an incomplete markdown link; it must
+    # render as plain "Article 11", not literal brackets.
+    res = resolve_pointers(
+        "Technical documentation per [Article 11] and [Annex IV].", _index(),
+    )
+    assert "Article 11" in res.text and "[Article 11]" not in res.text
+    assert "Annex IV" in res.text and "[Annex IV]" not in res.text
+
+
 def test_markdown_link_citation_resolves_and_never_leaks_id():
     # The model sometimes wraps the pointer as a markdown link, which would leak
     # the internal id as a URL. It must resolve to the human reference instead.

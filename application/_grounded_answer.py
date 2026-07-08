@@ -29,9 +29,9 @@ from pydantic import BaseModel, Field
 from application._grounded_citation import (
     _DROP,
     _Entry,
+    _cite_ref,
     _clean_husks,
     _ref_already_in_prose,
-    _render_cite,
     _render_quote,
     _render_ref,
     _resolve_id,
@@ -140,12 +140,13 @@ def render_grounded_answer(
                 unresolved_ids.append(citation.node_id)
                 return _DROP
             ref, reg = ref_reg
+            disp = _cite_ref(node_id, ref)
             cited.append(node_id)
             global_resolved.append(node_id)
-            if _ref_already_in_prose(m.string[: m.start()], ref):
+            if _ref_already_in_prose(m.string[: m.start()], disp):
                 suppressed.append(node_id)
                 return ""
-            return _render_ref(ref, reg)
+            return _render_ref(disp, reg)
         # Dedupe: a repeat quote of an already-quoted node renders as a cite,
         # so a section quoted for several classes is not dumped verbatim each time.
         if citation.mode == "quote" and node_id not in seen_quotes:
@@ -155,12 +156,13 @@ def render_grounded_answer(
         if citation.mode == "quote":
             deduped.append(node_id)
         cited.append(node_id)
-        # Drop the visible reference when the model already named this provision
-        # in the body prose right before the marker (still recorded above).
-        if _ref_already_in_prose(m.string[: m.start()], entry.ref):
+        # Article-anchored reference ("Article 23(1)"), not the child's bare
+        # display_ref; drop it when the prose already named the provision.
+        disp = _cite_ref(node_id, entry.ref)
+        if _ref_already_in_prose(m.string[: m.start()], disp):
             suppressed.append(node_id)
             return ""
-        return _render_cite(entry)
+        return _render_ref(disp, entry.regulation)
 
     rendered = _clean_husks(_MARKER_RE.sub(_sub, answer.body))
     return RenderResult(

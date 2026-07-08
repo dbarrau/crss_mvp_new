@@ -173,6 +173,49 @@ def _canonicalize_id(node_id: str) -> str | None:
     return f"{celex}_{int(art):03d}{alpha}.{int(para):03d}"
 
 
+# --- Contextualised references from the node id ------------------------------
+# A child node's own display_ref is decontextualised — "Paragraph 1", "Point (a)"
+# — which reads like an internal label ("paragraph 1 of *what*?").  The node id,
+# however, encodes the full path deterministically (`…_023.001_pt_a` IS Article
+# 23(1)(a)), so we derive a proper, article-anchored reference from it and prefer
+# that over the bare display_ref whenever the id matches a known structural shape.
+_ID_POINT_RE = re.compile(r"_(\d{3})([a-z]?)\.(\d{3})([a-z]?)_pt_([A-Za-z0-9]+)$")
+_ID_PARA_RE = re.compile(r"_(\d{3})([a-z]?)\.(\d{3})([a-z]?)$")
+_ID_ARTICLE_RE = re.compile(r"_art_(\d+)([a-z]?)$")
+_ID_ANNEX_RE = re.compile(r"_anx_([IVXLC]+)$")
+
+
+def _human_ref_from_id(node_id: str) -> str | None:
+    """Derive an article-anchored human reference from a structural node id.
+
+    ``…_023.001`` → "Article 23(1)"; ``…_023.001_pt_a`` → "Article 23(1)(a)";
+    ``…_art_23`` → "Article 23"; ``…_anx_IV`` → "Annex IV".  Returns ``None`` for
+    ids whose shape is not recognised (recitals, chapters, guidance sections), so
+    the caller falls back to the stored display_ref.
+    """
+    m = _ID_POINT_RE.search(node_id)
+    if m:
+        art, aa, para, pa, pt = m.groups()
+        return f"Article {int(art)}{aa}({int(para)}{pa})({pt})"
+    m = _ID_PARA_RE.search(node_id)
+    if m:
+        art, aa, para, pa = m.groups()
+        return f"Article {int(art)}{aa}({int(para)}{pa})"
+    m = _ID_ARTICLE_RE.search(node_id)
+    if m:
+        art, aa = m.groups()
+        return f"Article {int(art)}{aa}"
+    m = _ID_ANNEX_RE.search(node_id)
+    if m:
+        return f"Annex {m.group(1)}"
+    return None
+
+
+def _cite_ref(node_id: str, display_ref: str) -> str:
+    """Best human reference for a citation: article-anchored id form, else display_ref."""
+    return _human_ref_from_id(node_id) or display_ref
+
+
 def _resolve_id(
     node_id: str,
     index: dict[str, _Entry],
@@ -227,6 +270,15 @@ def _clean_husks(text: str) -> str:
     #    reach the reader.  Keep the human-readable link label; drop the id.
     text = re.sub(r"\[([^\]\n]*)\]\((?:cite|quote):[^)\n]*\)", r"\1", text)
     text = re.sub(r"\((?:cite|quote):[^)\n]*\)", "", text)
+    # 0b. Unwrap bare bracketed references the model wrote as incomplete markdown
+    #     links (e.g. "[Article 11]", "[Annex IV]" with no target) so they read as
+    #     plain references, not broken links.  Scoped to reference-like content so
+    #     genuine bracketed text is untouched; never matches a "[[marker]]".
+    text = re.sub(
+        r"(?<!\[)\[((?:Article|Annex|Section|Paragraph|Point|Chapter|Recital|Title)"
+        r"[^\]\n\[]{0,48})\](?!\])",
+        r"\1", text,
+    )
     # 1. sentinel wrapped in bold/italic or parentheses/brackets → strip wrapper
     text = re.sub(r"\*{1,3}\s*" + d + r"\s*\*{1,3}", _DROP, text)
     text = re.sub(r"[(\[]\s*" + d + r"\s*[)\]]", "", text)
@@ -344,12 +396,13 @@ def resolve_pointers(
                 unresolved.append(raw_id)
                 return label if label else _DROP
             ref, reg = ref_reg
+            disp = _cite_ref(node_id, ref)
             cited.append(node_id)
             global_resolved.append(node_id)
-            if _ref_already_in_prose(m.string[: m.start()], ref):
+            if _ref_already_in_prose(m.string[: m.start()], disp):
                 suppressed.append(node_id)
                 return ""
-            return _render_ref(ref, reg)
+            return _render_ref(disp, reg)
         # Dedupe: a repeat quote of an already-quoted node renders as a cite,
         # so the reader never sees the same verbatim block twice.
         if kind == "quote" and node_id not in seen_quotes:
@@ -359,12 +412,14 @@ def resolve_pointers(
         if kind == "quote":
             deduped.append(node_id)
         cited.append(node_id)
-        # Drop the visible reference when the model already named this provision
-        # in the prose right before the pointer (still recorded above).
-        if _ref_already_in_prose(m.string[: m.start()], entry.ref):
+        # Render an article-anchored reference ("Article 23(1)"), not the child's
+        # bare display_ref ("Paragraph 1").  Drop it when the model already named
+        # this provision in the prose right before the pointer (still recorded).
+        disp = _cite_ref(node_id, entry.ref)
+        if _ref_already_in_prose(m.string[: m.start()], disp):
             suppressed.append(node_id)
             return ""
-        return _render_cite(entry)
+        return _render_ref(disp, entry.regulation)
 
     rendered = _clean_husks(_POINTER_RE.sub(_sub, answer))
     return ResolveResult(
