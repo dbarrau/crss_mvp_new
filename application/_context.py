@@ -296,6 +296,12 @@ def _format_one_provision(index: int, p: dict, role: str) -> str:
         f"[{index}] {p.get('article_ref', 'Unknown')} \u2014 {regulation}"
         f"{celex_badge}{layer_tag}{force_badge}{role_badge}"
     )
+    # Stable node id the model points at under the grounded-citation contract
+    # (see docs/grounded_generation_contract.md). This is the *only* citable key \u2014
+    # never display_ref, which is None/non-unique on many nodes.
+    article_id = p.get("article_id", "")
+    if article_id:
+        header += f"\n    id: {article_id}"
     path = p.get("article_path", "")
     if path:
         header += f"\n    Path: {path}"
@@ -313,6 +319,8 @@ def _format_one_provision(index: int, p: dict, role: str) -> str:
     matched_lines: list[str] = []
     for c in children:
         ref = c.get("ref") or c.get("kind", "")
+        cid = c.get("id") or ""
+        id_tag = f" (id: {cid})" if cid else ""
         is_match = bool(matched_leaf and c.get("id") == matched_leaf)
         limit = _CHILD_MATCHED_CHARS if is_match else _CHILD_CHARS
         text = (c.get("raw_text") or c.get("text") or "")
@@ -325,9 +333,9 @@ def _format_one_provision(index: int, p: dict, role: str) -> str:
                 text = cut
         if text:
             if is_match:
-                matched_lines.append(f"  [\u2605 MATCHED] {ref}: {text}")
+                matched_lines.append(f"  [\u2605 MATCHED] {ref}{id_tag}: {text}")
             else:
-                child_lines.append(f"  {ref}: {text}")
+                child_lines.append(f"  {ref}{id_tag}: {text}")
     # Keep the matched leaf plus the leading children; the rolled-up body above
     # already summarises the provision, so a long tail of child paragraphs is
     # largely redundant and was the dominant source of context bloat (a single
