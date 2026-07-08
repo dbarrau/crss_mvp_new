@@ -861,9 +861,16 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                     sufficiency=sufficiency,
                     mentioned_regs=mentioned_regs,
                 )
+                # The revision MUST use the same generation mode as the initial
+                # answer: a structured answer revised via free-text streaming
+                # reintroduces the very defects structured mode removes (inline
+                # cites, misattribution) and can truncate mid-stream (observed on
+                # HQ_001 only with audit on). So in structured mode the revision
+                # regenerates through chat.parse + render too.
                 _revision_messages = _build_revision_messages(
                     question, audit_context, findings, full_answer,
-                    system_prompt=SYSTEM_PROMPT, user_message=_revision_user,
+                    system_prompt=structured_system_prompt() if _structured else SYSTEM_PROMPT,
+                    user_message=_revision_user,
                 )
                 # Signal the UI to clear the prior draft and stream the revision
                 # fresh, so the user sees continuous output instead of a frozen
@@ -873,14 +880,23 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                     "label": f"Revising answer with audit findings (pass {_audit_i + 1})…",
                 }
                 try:
-                    _revised = ""
-                    for _delta in _stream_chat_with_retry(
-                        client, model=_gen_llm, messages=_revision_messages,
-                        temperature=0.1,
-                    ):
-                        _revised += _delta
-                        yield {"type": "token", "content": _delta}
-                    _revised = _strip_meta_leak(_revised).strip()
+                    if _structured:
+                        _rev = _generate_grounded_answer(
+                            client, model=_gen_llm, messages=_revision_messages,
+                            provisions=provisions, definitions=definitions,
+                        )
+                        _revised = _strip_meta_leak(_rev.text).strip()
+                        if _revised:
+                            yield {"type": "token", "content": _revised}
+                    else:
+                        _revised = ""
+                        for _delta in _stream_chat_with_retry(
+                            client, model=_gen_llm, messages=_revision_messages,
+                            temperature=0.1,
+                        ):
+                            _revised += _delta
+                            yield {"type": "token", "content": _delta}
+                        _revised = _strip_meta_leak(_revised).strip()
                     if _revised:
                         full_answer = _revised
                         audited = True
