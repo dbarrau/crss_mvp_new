@@ -79,6 +79,7 @@ class ResolveResult:
     cited_ids: list[str] = field(default_factory=list)
     unresolved_ids: list[str] = field(default_factory=list)
     deduped_ids: list[str] = field(default_factory=list)
+    suppressed_ref_dups: list[str] = field(default_factory=list)
 
 
 def build_pointer_index(
@@ -131,6 +132,40 @@ def _render_cite(entry: _Entry) -> str:
     return " ".join(parts) if parts else ""
 
 
+# --- Adjacent-reference de-duplication (deterministic backstop) --------------
+# The prompt tells the model the citation owns the provision reference, so it
+# should not also name the Article/Annex in prose.  That holds most of the time;
+# the residual case is a model that writes "…as required by Article 43 [cite:…]"
+# anyway, whose rendered cite then repeats "Article 43".  When the same reference
+# already sits in the prose immediately before the pointer, the render paths drop
+# the pointer's visible copy so the reference shows once (the pointer is still
+# recorded in ``cited_ids`` for the audit trail).  Conservative by design: only a
+# near, whole-token match suppresses; anything else renders normally.
+_REF_WINDOW = 48  # chars of preceding prose scanned for a duplicate reference
+
+
+def _norm_ref(text: str) -> str:
+    """Lowercase, drop markdown emphasis, fold the dash family, collapse spaces."""
+    text = text.replace("*", "").replace("_", " ")
+    for dash in ("‐", "‑", "‒", "–", "—", "−"):
+        text = text.replace(dash, "-")
+    return " ".join(text.lower().split())
+
+
+def _ref_already_in_prose(preceding: str, ref: str) -> bool:
+    """True when *ref* is already named at the tail of the *preceding* prose.
+
+    Whole-token match (a trailing negative lookahead) so "Article 4" does not
+    match inside "Article 43".  Scans only the last ``_REF_WINDOW`` chars, so a
+    far-away mention of the same article does not trigger suppression.
+    """
+    if not ref:
+        return False
+    tail = _norm_ref(preceding[-_REF_WINDOW:])
+    pattern = re.escape(_norm_ref(ref)) + r"(?![0-9a-z])"
+    return re.search(pattern, tail) is not None
+
+
 def _render_quote(entry: _Entry, char_cap: int = 0) -> str:
     """Verbatim block for a ``[quote:]`` pointer, capped to *char_cap* chars.
 
@@ -156,6 +191,7 @@ def resolve_pointers(
     cited: list[str] = []
     unresolved: list[str] = []
     deduped: list[str] = []
+    suppressed: list[str] = []
     seen_quotes: set[str] = set()
     char_cap = quote_char_cap()
 
@@ -174,6 +210,11 @@ def resolve_pointers(
         if kind == "quote":
             deduped.append(node_id)
         cited.append(node_id)
+        # Drop the visible reference when the model already named this provision
+        # in the prose right before the pointer (still recorded above).
+        if _ref_already_in_prose(m.string[: m.start()], entry.ref):
+            suppressed.append(node_id)
+            return ""
         return _render_cite(entry)
 
     rendered = _POINTER_RE.sub(_sub, answer)
@@ -187,4 +228,5 @@ def resolve_pointers(
         cited_ids=cited,
         unresolved_ids=unresolved,
         deduped_ids=deduped,
+        suppressed_ref_dups=suppressed,
     )

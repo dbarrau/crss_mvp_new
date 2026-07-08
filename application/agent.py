@@ -789,9 +789,9 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                 full_answer = _render.text
                 logger.info(
                     "Structured grounded answer: %d quote / %d cite marker(s); "
-                    "%d duplicate quote(s) downgraded%s",
+                    "%d duplicate quote(s) downgraded; %d duplicate ref(s) suppressed%s",
                     len(_render.quoted_ids), len(_render.cited_ids),
-                    len(_render.deduped_ids),
+                    len(_render.deduped_ids), len(_render.suppressed_ref_dups),
                     (
                         f"; dropped {len(_render.unresolved_markers)} marker(s) / "
                         f"{len(_render.unresolved_ids)} id(s)"
@@ -945,8 +945,10 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                 full_answer, build_pointer_index(provisions, definitions)
             )
             logger.info(
-                "Grounded citation: resolved %d quote / %d cite pointer(s)%s",
+                "Grounded citation: resolved %d quote / %d cite pointer(s); "
+                "%d duplicate ref(s) suppressed%s",
                 len(_resolved.quoted_ids), len(_resolved.cited_ids),
+                len(_resolved.suppressed_ref_dups),
                 (
                     f"; dropped {len(_resolved.unresolved_ids)} unresolved id(s): "
                     f"{_resolved.unresolved_ids[:10]}"

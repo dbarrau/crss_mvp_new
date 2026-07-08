@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 
 from application._grounded_citation import (
     _Entry,
+    _ref_already_in_prose,
     _render_cite,
     _render_quote,
     build_pointer_index,  # re-exported for callers assembling the index
@@ -88,6 +89,7 @@ class RenderResult:
     unresolved_markers: list[str] = field(default_factory=list)
     unresolved_ids: list[str] = field(default_factory=list)
     deduped_ids: list[str] = field(default_factory=list)
+    suppressed_ref_dups: list[str] = field(default_factory=list)
 
 
 def render_grounded_answer(
@@ -105,6 +107,7 @@ def render_grounded_answer(
     unresolved_markers: list[str] = []
     unresolved_ids: list[str] = []
     deduped: list[str] = []
+    suppressed: list[str] = []
     seen_quotes: set[str] = set()
     char_cap = quote_char_cap()
 
@@ -127,6 +130,11 @@ def render_grounded_answer(
         if citation.mode == "quote":
             deduped.append(citation.node_id)
         cited.append(citation.node_id)
+        # Drop the visible reference when the model already named this provision
+        # in the body prose right before the marker (still recorded above).
+        if _ref_already_in_prose(m.string[: m.start()], entry.ref):
+            suppressed.append(citation.node_id)
+            return ""
         return _render_cite(entry)
 
     rendered = _MARKER_RE.sub(_sub, answer.body)
@@ -141,4 +149,5 @@ def render_grounded_answer(
         unresolved_markers=unresolved_markers,
         unresolved_ids=unresolved_ids,
         deduped_ids=deduped,
+        suppressed_ref_dups=suppressed,
     )
