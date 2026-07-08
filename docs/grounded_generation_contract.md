@@ -147,6 +147,32 @@ rendered as an unsupported quote.
 5. **Streaming decision** (buffer vs. resolve-inline) — deferred; the un-rendered
    stream is already safe (pointers, not fabricated quotes).
 
+## Outcome (implemented)
+
+Both enforcement forms were built and validated live (mistral-large):
+
+- **Inline pointers** (`CRSS_...` default streaming path, `_grounded_citation`):
+  `[cite:]` converts well *only* with a few-shot example (without it the model
+  emits 0 pointers and fabricates EUR-Lex URLs); `[quote:]` does **not** convert —
+  the model still authors `>` blocks, so the faithfulness net still redacts them
+  and the `[…]` holes persist. Prompt-only enforcement is insufficient for the
+  quote half.
+- **Structured output** (`CRSS_GROUNDED_STRUCTURED=1`, `_grounded_answer`,
+  `chat.parse` → `GroundedAnswer`): eliminates the whole failure class — 0
+  model-authored quotes/URLs in body, 0 `[…]` holes, 0 hallucinated-id litter
+  (bad ids dropped cleanly). Requires `structured_system_prompt()` to swap the
+  inline contract *in place* (a mere appended override left competing inline-
+  pointer instructions that produced empty `[]` litter + lost citations).
+
+**New failure mode it exposed — over-quoting.** Once quoting is free (point at a
+node), the model quotes whole sections, sometimes the same node several times: one
+MDCG answer rendered 21 quote citations → 271 blockquote lines, `sub_rule_11a`
+quoted 3×. Faithful, but a verbatim data-dump, not analysis. Hard enforcement
+traded *fabrication* for *gluttony*. The next step is a **deterministic economy
+guard** in the renderer (dedupe repeated quote ids; cap/truncate an over-long
+quoted node; prefer leaf paragraphs over section-level nodes) — structural, in
+keeping with "enforce, don't exhort".
+
 ## Non-goals
 
 - No retrieval-coverage changes (retrieval was not the problem).
