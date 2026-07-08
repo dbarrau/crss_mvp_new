@@ -138,6 +138,46 @@ def _extract_inline_refs(provisions: list[dict]) -> list[str]:
     return list(found)
 
 
+def _collect_cites_targets(
+    provisions: list[dict],
+    already_ids: set[str],
+    celex_filter: set[str] | None = None,
+) -> list[str]:
+    """Collect node ids of CITES-edge targets not yet in the retrieved bag.
+
+    The retriever resolves each provision's CITES edges into
+    ``cited_provisions`` (with the cross-regulation subset also in
+    ``cross_reg_cited``), each carrying the target's stable, unique node
+    ``id``.  Those targets render only as short snippets *without* an ``id:``
+    line, so the model cannot cite them under the grounded-citation contract —
+    and, needing to name a cross-referenced article (e.g. AI Act Art 43), it
+    may fabricate a node id instead.  Returning their ids lets the pointer-
+    expansion stage promote them to first-class *citable* provisions.
+
+    Cross-regulation targets are ordered first (they are the more decisive
+    links, mirroring ``_format_one_provision``'s cross-ref ordering), then
+    internal cites.  De-duplicated, preserving that priority order, and
+    excluding anything already in ``already_ids``.
+
+    When ``celex_filter`` is set (a scope-restricted question), targets in
+    other regulations are dropped — mirroring the reverse cross-reg expansion,
+    which is likewise skipped under scope — so out-of-scope regs cannot starve
+    the in-scope cross-references out of the bounded promotion budget.
+    """
+    xreg: dict[str, None] = {}       # ordered set: cross-regulation targets
+    internal: dict[str, None] = {}   # ordered set: same-regulation targets
+    for p in provisions:
+        cross_ids = {c.get("id") for c in (p.get("cross_reg_cited") or [])}
+        for c in p.get("cited_provisions") or []:
+            cid = c.get("id")
+            if not cid or cid in already_ids:
+                continue
+            if celex_filter and not any(cid.startswith(cx) for cx in celex_filter):
+                continue
+            (xreg if cid in cross_ids else internal).setdefault(cid, None)
+    return list(xreg) + [cid for cid in internal if cid not in xreg]
+
+
 # ---------------------------------------------------------------------------
 # Definition formatting
 # ---------------------------------------------------------------------------

@@ -100,6 +100,7 @@ from application._context import (                       # noqa: F401
     _GUIDANCE_CELEX_PREFIXES,
     _normalize_ref,
     _extract_inline_refs,
+    _collect_cites_targets,
     _format_definitions,
     _format_context,
     _trim_provisions_to_budget,
@@ -563,15 +564,40 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
             return
 
         # --- 5. Pointer expansion ---
-        inline_refs = _extract_inline_refs(provisions)
-        if inline_refs:
-            pointer_provisions = retriever.retrieve_by_refs(
-                inline_refs, celex_filter=target_celexes,
-            )
-            if pointer_provisions:
-                seen_ids = {p["article_id"] for p in provisions}
-                added = 0
-                for p in pointer_provisions:
+        # Promote cross-referenced provisions to first-class *citable* nodes so
+        # the model has a real node id to point at instead of fabricating one
+        # (the failure behind the [...] holes / invented node ids). Two sources,
+        # precise first:
+        #   (a) CITES graph edges the retriever already resolved into
+        #       `cited_provisions` — reliable, unique node ids;
+        #   (b) a regex fallback over prose for references not modeled as edges.
+        # Both are bounded by _MAX_POINTER_REFS and marked `_pointer_expansion`
+        # so they render with an `id:` line and a provenance tag.
+        seen_ids = {p["article_id"] for p in provisions}
+        added = 0
+        inline_refs: list[str] = []  # populated by the textual fallback below
+
+        # (a) CITES-edge promotion — by node id, so display_ref ambiguity can't
+        # land the promotion on the wrong provision.
+        cites_targets = _collect_cites_targets(
+            provisions, seen_ids, celex_filter=target_celexes,
+        )
+        if cites_targets:
+            for p in retriever.retrieve_by_ids(cites_targets[:_MAX_POINTER_REFS]):
+                if p["article_id"] not in seen_ids:
+                    p["_pointer_expansion"] = True
+                    provisions.append(p)
+                    seen_ids.add(p["article_id"])
+                    added += 1
+
+        # (b) Textual-ref fallback — fills the remaining budget for references
+        # mentioned in prose but not modeled as CITES edges.
+        if added < _MAX_POINTER_REFS:
+            inline_refs = _extract_inline_refs(provisions)
+            if inline_refs:
+                for p in retriever.retrieve_by_refs(
+                    inline_refs, celex_filter=target_celexes,
+                ):
                     if p["article_id"] not in seen_ids:
                         p["_pointer_expansion"] = True
                         provisions.append(p)
@@ -579,19 +605,20 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                         added += 1
                         if added >= _MAX_POINTER_REFS:
                             break
-                if added:
-                    logger.info(
-                        "Pointer expansion: %s → added %d provision(s) (total %d).",
-                        inline_refs[:5], added, len(provisions),
-                    )
-                    yield {
-                        "type": "step",
-                        "id": "pointers",
-                        "label": (
-                            f"Cross-reference expansion: {added} additional "
-                            f"provision(s) pulled in via inline references"
-                        ),
-                    }
+
+        if added:
+            logger.info(
+                "Pointer expansion: added %d cross-referenced provision(s) "
+                "(total %d).", added, len(provisions),
+            )
+            yield {
+                "type": "step",
+                "id": "pointers",
+                "label": (
+                    f"Cross-reference expansion: {added} additional "
+                    f"provision(s) promoted to citable context"
+                ),
+            }
 
         # --- 6. Assemble context ---
         audit_trace = _build_audit_trace(

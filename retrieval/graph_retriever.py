@@ -1010,6 +1010,37 @@ ORDER BY d.celex, d.term_normalized
 
         return results
 
+    def retrieve_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
+        """Direct lookup + graph expansion of provisions by exact node id.
+
+        Unlike :meth:`retrieve_by_refs`, which matches the non-unique
+        ``display_ref``, this resolves the stable, unique node ``id``.  It is
+        therefore the safe way to promote CITES-edge targets — whose ids the
+        graph has already resolved into ``cited_provisions`` — into first-class
+        citable provisions, without risking the display_ref ambiguity that
+        would let a promotion land on the wrong node.
+
+        Returns the same expanded shape as :meth:`retrieve` (children,
+        cross-references, interpretive links included), de-duplicated and with a
+        neutral score so callers can order/append them as low-priority context.
+        """
+        seen: set[str] = set()
+        unique: list[str] = []
+        for i in ids:
+            if i and i not in seen:
+                seen.add(i)
+                unique.append(i)
+        if not unique:
+            return []
+
+        with self._driver.session(database=self._db) as s:
+            results = s.run(_EXPAND_CYPHER, ids=unique).data()
+
+        for r in results:
+            r["score"] = 0.0
+            r["matched_leaf_id"] = None
+        return results
+
     def retrieve_by_roles(
         self,
         role_specs: list[tuple[str, str]],
