@@ -111,6 +111,10 @@ from application._prompts import (                       # noqa: F401
     _build_route_answer_guidance,
     _build_user_message,
 )
+from application._grounded_citation import (             # noqa: F401
+    build_pointer_index,
+    resolve_pointers,
+)
 from application._postprocessing import (                # noqa: F401
     _build_uncertainty_banner,
     _soften_categorical_language,
@@ -806,6 +810,30 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                 except Exception as _exc:
                     logger.warning("Audit revision skipped: %s", _exc)
                     break
+
+        # --- 7b. Resolve grounded-citation pointers (deterministic) ---
+        # The model emits [cite: <id>] / [quote: <id>] pointers (GROUNDED CITATION
+        # CONTRACT in _prompts.py); resolve them to human refs / verbatim source
+        # text before verification. Resolved [quote:] text is copied from the
+        # pointed node, so it cannot be fabricated by construction; any residual
+        # model-authored ">" quote is still caught by the faithfulness net below
+        # (the "net backstop" strategy \u2014 see docs/grounded_generation_contract.md).
+        # The index is built after the audit loop so it covers audit-added
+        # provisions.
+        if full_answer:
+            _resolved = resolve_pointers(
+                full_answer, build_pointer_index(provisions, definitions)
+            )
+            logger.info(
+                "Grounded citation: resolved %d quote / %d cite pointer(s)%s",
+                len(_resolved.quoted_ids), len(_resolved.cited_ids),
+                (
+                    f"; dropped {len(_resolved.unresolved_ids)} unresolved id(s): "
+                    f"{_resolved.unresolved_ids[:10]}"
+                    if _resolved.unresolved_ids else ""
+                ),
+            )
+            full_answer = _resolved.text
 
         # --- 7c\u20137e. Post-generation verification (deterministic) ---
         # One stage over the retrieved evidence: citation-scope note (C4) \u2192
