@@ -168,10 +168,24 @@ Both enforcement forms were built and validated live (mistral-large):
 node), the model quotes whole sections, sometimes the same node several times: one
 MDCG answer rendered 21 quote citations → 271 blockquote lines, `sub_rule_11a`
 quoted 3×. Faithful, but a verbatim data-dump, not analysis. Hard enforcement
-traded *fabrication* for *gluttony*. The next step is a **deterministic economy
-guard** in the renderer (dedupe repeated quote ids; cap/truncate an over-long
-quoted node; prefer leaf paragraphs over section-level nodes) — structural, in
-keeping with "enforce, don't exhort".
+traded *fabrication* for *gluttony*.
+
+*Root cause (not a mysterious bug):* structured output moved verbatim expansion
+out of the model into the renderer, which **hid the cost of quoting from the
+model** — in free-text it felt every quoted character and self-limited; now it
+emits a tiny pointer and never sees the 4,800-char expansion. Economy of quoting
+rides on the same text volume as fidelity, so it had to move to the renderer too;
+we'd moved fidelity and left economy behind. **Whoever owns expansion owns
+economy** — so the guard *completes* the migration rather than patching a symptom.
+
+**Economy guard (implemented, `_grounded_citation`).** Deterministic, applied by
+both render paths: (1) **dedupe** — a repeat quote of an already-quoted node
+renders as a cite (pure defect fix); (2) **sentence-aware cap** — a soft backstop
+truncating an over-long single quote at a sentence boundary, `CRSS_QUOTE_CHAR_CAP`
+(default 600, 0 disables). Live effect on the MDCG answer: 271 → 50 blockquote
+lines (5 duplicates downgraded, 8 quotes capped), no fabrication reintroduced. The
+char cap is the one avowed backstop; the deeper leaf-granularity fix (expose only
+leaf ids as quotable in `_context.py`) remains available if needed.
 
 ## Non-goals
 

@@ -761,8 +761,10 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                 )
                 full_answer = _render.text
                 logger.info(
-                    "Structured grounded answer: %d quote / %d cite marker(s)%s",
+                    "Structured grounded answer: %d quote / %d cite marker(s); "
+                    "%d duplicate quote(s) downgraded%s",
                     len(_render.quoted_ids), len(_render.cited_ids),
+                    len(_render.deduped_ids),
                     (
                         f"; dropped {len(_render.unresolved_markers)} marker(s) / "
                         f"{len(_render.unresolved_ids)} id(s)"

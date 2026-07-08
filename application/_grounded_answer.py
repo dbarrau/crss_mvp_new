@@ -31,6 +31,7 @@ from application._grounded_citation import (
     _render_cite,
     _render_quote,
     build_pointer_index,  # re-exported for callers assembling the index
+    quote_char_cap,
 )
 
 __all__ = [
@@ -86,6 +87,7 @@ class RenderResult:
     cited_ids: list[str] = field(default_factory=list)
     unresolved_markers: list[str] = field(default_factory=list)
     unresolved_ids: list[str] = field(default_factory=list)
+    deduped_ids: list[str] = field(default_factory=list)
 
 
 def render_grounded_answer(
@@ -102,6 +104,9 @@ def render_grounded_answer(
     cited: list[str] = []
     unresolved_markers: list[str] = []
     unresolved_ids: list[str] = []
+    deduped: list[str] = []
+    seen_quotes: set[str] = set()
+    char_cap = quote_char_cap()
 
     def _sub(m: re.Match[str]) -> str:
         marker = m.group(1)
@@ -113,9 +118,14 @@ def render_grounded_answer(
         if entry is None:
             unresolved_ids.append(citation.node_id)
             return ""
-        if citation.mode == "quote":
+        # Dedupe: a repeat quote of an already-quoted node renders as a cite,
+        # so a section quoted for several classes is not dumped verbatim each time.
+        if citation.mode == "quote" and citation.node_id not in seen_quotes:
+            seen_quotes.add(citation.node_id)
             quoted.append(citation.node_id)
-            return _render_quote(entry)
+            return _render_quote(entry, char_cap)
+        if citation.mode == "quote":
+            deduped.append(citation.node_id)
         cited.append(citation.node_id)
         return _render_cite(entry)
 
@@ -130,4 +140,5 @@ def render_grounded_answer(
         cited_ids=cited,
         unresolved_markers=unresolved_markers,
         unresolved_ids=unresolved_ids,
+        deduped_ids=deduped,
     )

@@ -18,6 +18,7 @@ nodes — the citation-ambiguity trap).  Fully deterministic; no LLM, no I/O.
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -25,6 +26,40 @@ from typing import Any
 # node ids look like "32017R0745_art_10", "32017R0745_010.014", "MDCG_2019_11_s3".
 # Permit word chars plus the '.' and '-' that appear in leaf ids.
 _POINTER_RE = re.compile(r"\[(cite|quote):\s*([A-Za-z0-9_.\-]+)\s*\]")
+
+# --- Quote economy ----------------------------------------------------------
+# Structured output moved verbatim expansion out of the model into the renderer,
+# which hid the cost of quoting from the model — so it over-quotes (whole sections,
+# duplicated).  Economy of quoting now belongs wherever expansion belongs (here),
+# not to the model.  Two deterministic levers, applied by both render paths:
+#   * dedupe   — a repeated quote of an already-quoted node renders as a cite;
+#   * char cap — a soft backstop truncating an over-long single quote at a
+#                sentence boundary.  0 disables.  See docs/grounded_generation_contract.md.
+_DEFAULT_QUOTE_CHAR_CAP = 600
+
+
+def quote_char_cap() -> int:
+    """Per-quote character cap (soft economy backstop); 0 disables. Env-tunable."""
+    try:
+        return max(0, int(os.environ.get("CRSS_QUOTE_CHAR_CAP", _DEFAULT_QUOTE_CHAR_CAP)))
+    except (TypeError, ValueError):
+        return _DEFAULT_QUOTE_CHAR_CAP
+
+
+def _cap_quote_text(text: str, char_cap: int) -> str:
+    """Truncate an over-long quote to a leading excerpt at a sentence boundary.
+
+    Backstop only — deduping and pointing at leaf paragraphs are the primary
+    economy levers; this catches the residual whole-section quote.
+    """
+    text = text.strip()
+    if char_cap <= 0 or len(text) <= char_cap:
+        return text
+    cut = text[:char_cap]
+    boundary = cut.rfind(". ")
+    if boundary > char_cap // 2:
+        cut = cut[: boundary + 1]
+    return cut.rstrip() + " […]"
 
 
 @dataclass(frozen=True)
@@ -43,6 +78,7 @@ class ResolveResult:
     quoted_ids: list[str] = field(default_factory=list)
     cited_ids: list[str] = field(default_factory=list)
     unresolved_ids: list[str] = field(default_factory=list)
+    deduped_ids: list[str] = field(default_factory=list)
 
 
 def build_pointer_index(
@@ -95,16 +131,16 @@ def _render_cite(entry: _Entry) -> str:
     return " ".join(parts) if parts else ""
 
 
-def _render_quote(entry: _Entry) -> str:
-    """Verbatim block for a ``[quote:]`` pointer.
+def _render_quote(entry: _Entry, char_cap: int = 0) -> str:
+    """Verbatim block for a ``[quote:]`` pointer, capped to *char_cap* chars.
 
     Empty-text nodes (e.g. a structural ancestor pointed at by mistake) fall back
     to their reference so the answer never shows an empty blockquote.
     """
     if not entry.text:
-        ref = _render_cite(entry)
-        return ref
-    return "> " + entry.text.replace("\n", "\n> ")
+        return _render_cite(entry)
+    text = _cap_quote_text(entry.text, char_cap)
+    return "> " + text.replace("\n", "\n> ")
 
 
 def resolve_pointers(
@@ -119,6 +155,9 @@ def resolve_pointers(
     quoted: list[str] = []
     cited: list[str] = []
     unresolved: list[str] = []
+    deduped: list[str] = []
+    seen_quotes: set[str] = set()
+    char_cap = quote_char_cap()
 
     def _sub(m: re.Match[str]) -> str:
         kind, node_id = m.group(1), m.group(2)
@@ -126,9 +165,14 @@ def resolve_pointers(
         if entry is None:
             unresolved.append(node_id)
             return ""
-        if kind == "quote":
+        # Dedupe: a repeat quote of an already-quoted node renders as a cite,
+        # so the reader never sees the same verbatim block twice.
+        if kind == "quote" and node_id not in seen_quotes:
+            seen_quotes.add(node_id)
             quoted.append(node_id)
-            return _render_quote(entry)
+            return _render_quote(entry, char_cap)
+        if kind == "quote":
+            deduped.append(node_id)
         cited.append(node_id)
         return _render_cite(entry)
 
@@ -142,4 +186,5 @@ def resolve_pointers(
         quoted_ids=quoted,
         cited_ids=cited,
         unresolved_ids=unresolved,
+        deduped_ids=deduped,
     )
