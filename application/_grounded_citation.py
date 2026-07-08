@@ -216,6 +216,35 @@ def _cite_ref(node_id: str, display_ref: str) -> str:
     return _human_ref_from_id(node_id) or display_ref
 
 
+# --- Reference bolding -------------------------------------------------------
+# References are the model's own prose now (no cite pointers), and the model will
+# not bold them (measured 0/24 even under an explicit mandate — its prior treats
+# article references as plain citations).  So the render layer does it: bold every
+# provision reference deterministically.  Skips heading lines (already emphasised)
+# and blockquote lines (verbatim quoted law, which must not be altered), and never
+# double-bolds one already wrapped in ``**``.
+_BOLD_REF_RE = re.compile(
+    r"(?<!\*)\b("
+    r"Articles?\s+\d+[a-z]?(?:\s*\(\d+[a-z]?\))*"        # Article 23, Article 23(1)(a)
+    r"(?:\s*[–—-]\s*\(\d+[a-z]?\))?"                      # …(6)–(7) range tail
+    r"|Annex(?:es)?\s+[IVXLC]+(?:\s*\(\d+\))?"            # Annex IV, Annex IV(2)
+    r"|Recitals?\s+\d+"                                    # Recital 81
+    r")(?!\*)"
+)
+
+
+def _bold_references(text: str) -> str:
+    """Bold every provision reference in *text* (skipping headings / quotes)."""
+    out: list[str] = []
+    for line in text.split("\n"):
+        stripped = line.lstrip()
+        if stripped.startswith("#") or stripped.startswith(">"):
+            out.append(line)          # heading or verbatim quote — leave as-is
+            continue
+        out.append(_BOLD_REF_RE.sub(r"**\1**", line))
+    return "\n".join(out)
+
+
 def _resolve_id(
     node_id: str,
     index: dict[str, _Entry],

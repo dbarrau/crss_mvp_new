@@ -11,11 +11,10 @@ import pytest
 from application._prompts import SYSTEM_PROMPT, structured_system_prompt
 
 
-def test_structured_prompt_has_no_inline_pointer_tokens():
+def test_structured_prompt_has_no_inline_reference_contract():
     sp = structured_system_prompt()
-    assert "[cite: <id>]" not in sp
     assert "[quote: <id>]" not in sp
-    assert "GROUNDED CITATION CONTRACT" not in sp
+    assert "REFERENCES & QUOTATIONS" not in sp
 
 
 def test_structured_prompt_defines_the_marker_contract():
@@ -36,10 +35,12 @@ def test_structured_prompt_preserves_shared_domain_rules():
         assert section in sp
 
 
-def test_inline_prompt_still_uses_the_inline_contract():
-    # The default streaming path is unchanged: it keeps the inline pointer contract.
-    assert "GROUNDED CITATION CONTRACT" in SYSTEM_PROMPT
-    assert "[cite: <id>]" in SYSTEM_PROMPT
+def test_inline_prompt_uses_bold_prose_refs_and_quote_pointer_only():
+    # The default path: references are bold prose (no cite pointers/node ids);
+    # only verbatim quotes use a [quote: id] pointer.
+    assert "REFERENCES & QUOTATIONS" in SYSTEM_PROMPT
+    assert "[quote: <id>]" in SYSTEM_PROMPT
+    assert "[cite:" not in SYSTEM_PROMPT
 
 
 def test_structured_prompt_raises_if_base_contract_block_missing(monkeypatch):

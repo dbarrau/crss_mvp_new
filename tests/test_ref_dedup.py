@@ -204,6 +204,23 @@ def test_child_cite_renders_article_anchored_not_bare_paragraph():
     assert "Paragraph 5" not in res.text
 
 
+def test_bold_references_bolds_prose_and_skips_headings_and_quotes():
+    from application._grounded_citation import _bold_references
+    # prose, parenthetical and table refs get bolded
+    assert _bold_references("ran assessment (Article 43).") == "ran assessment (**Article 43**)."
+    assert _bold_references("Under Article 23(5), keep docs.") == "Under **Article 23(5)**, keep docs."
+    assert _bold_references("| x | Article 23(5) |") == "| x | **Article 23(5)** |"
+    # already-bold is not double-bolded
+    assert _bold_references("see **Article 47** here") == "see **Article 47** here"
+    # headings and verbatim quote lines are left untouched
+    assert _bold_references("### Part 1 (Article 23(1))") == "### Part 1 (Article 23(1))"
+    assert _bold_references("> Importers shall ensure Article 16 is met.") == \
+        "> Importers shall ensure Article 16 is met."
+    # ranges and annexes/recitals
+    assert _bold_references("Article 23(6)–(7) and Annex IV and Recital 81") == \
+        "**Article 23(6)–(7)** and **Annex IV** and **Recital 81**"
+
+
 def test_bare_bracket_reference_is_unwrapped():
     # The model writes "[Article 11]" as an incomplete markdown link; it must
     # render as plain "Article 11", not literal brackets.

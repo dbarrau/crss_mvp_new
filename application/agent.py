@@ -116,6 +116,7 @@ from application._prompts import (                       # noqa: F401
 from application._grounded_citation import (             # noqa: F401
     build_pointer_index,
     resolve_pointers,
+    _bold_references,
 )
 from application._grounded_answer import (               # noqa: F401
     GroundedAnswer,
@@ -818,6 +819,13 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                 _structured = False
                 full_answer = ""
         if not _structured:
+            # Buffered generation: accumulate the full draft WITHOUT streaming raw
+            # tokens to the reader. References are bold prose (nothing to resolve),
+            # but a `[quote: id]` pointer must never appear raw mid-stream — so the
+            # draft is assembled here and only the resolved, clean answer is shown,
+            # once, via the final 'done' event. The 'generating' ticker covers the
+            # wait. (Keeps token streaming off by design — see the buffered-render
+            # decision in docs/grounded_generation_contract.md.)
             for delta in _stream_chat_with_retry(
                 client,
                 model=_gen_model,
@@ -825,7 +833,6 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                 temperature=0.1,
             ):
                 full_answer += delta
-                yield {"type": "token", "content": delta}
 
         # --- 7a. Bounded-agentic audit + revise loop ---
         # The Auditor verifies the draft's legal backbone and names provisions
@@ -988,6 +995,10 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
             question=retrieval_question,
         )
         full_answer = _verification.answer
+        # Bold provision references deterministically — the model writes them as
+        # plain prose and will not bold them itself. Runs after verification so
+        # faithfulness matched against clean text; skips verbatim quote lines.
+        full_answer = _bold_references(full_answer)
         confidence = _verification.confidence
         yield {
             "type": "confidence",
