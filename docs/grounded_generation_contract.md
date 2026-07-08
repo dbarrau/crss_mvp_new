@@ -111,6 +111,42 @@ resolve pointers to quotes in a final pass; (C) resolve pointers inline as they
 stream. (B)/(C) become viable precisely because the un-rendered form is already
 safe. Decide when building.
 
+## Pointer syntax (decided)
+
+The pointer **key is the node ID**, never the display ref. Retrieved provisions
+carry a stable `article_id` (`32017R0745_art_10`) and each child a stable `id`
+(`32017R0745_010.014`); `display_ref` is `None`/non-unique on many nodes — using
+it as the key would reinherit the exact citation-ambiguity failure documented
+elsewhere. Two pointer forms the model may emit:
+
+- `[cite: <node_id>]` — attach a claim to a provision. Renders to the
+  human-readable ref ("Article 10 MDR 2017/745"). No verbatim text.
+- `[quote: <node_id>]` — request the verbatim text of that node. The renderer
+  substitutes the node's exact stored text (block for a passage). The model never
+  types the quoted words.
+
+An unresolved pointer (id not in the retrieved bag) is dropped with a note — never
+rendered as an unsupported quote.
+
+## Implementation stages
+
+1. **Resolver (this commit) — deterministic, LLM-free, fully unit-tested.**
+   `build_pointer_index(provisions, definitions)` → `{node_id: {text, ref,
+   regulation, binding_force}}`; `resolve_pointers(answer, index)` → rewrites
+   `[cite:]`/`[quote:]` and reports unresolved ids. This is the inverse of the
+   faithfulness check and can be validated with plain dict fixtures, before any
+   prompt change.
+2. **Context vocabulary.** Render `id: <node_id>` in each `_format_one_provision`
+   header so the model can see the key to point at.
+3. **Prompt contract.** Replace the "quote verbatim where you can" instruction in
+   `_prompts.py` with the pointer contract: emit `[cite:]`/`[quote:]`, never place
+   source text in quotation marks.
+4. **Wire the render step** into `_postprocessing.py` (resolve before the answer
+   is finalised); demote `verify.py` faithfulness to the net over the rendered
+   answer.
+5. **Streaming decision** (buffer vs. resolve-inline) — deferred; the un-rendered
+   stream is already safe (pointers, not fabricated quotes).
+
 ## Non-goals
 
 - No retrieval-coverage changes (retrieval was not the problem).
