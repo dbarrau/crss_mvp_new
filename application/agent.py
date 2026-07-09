@@ -819,13 +819,14 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                 _structured = False
                 full_answer = ""
         if not _structured:
-            # Buffered generation: accumulate the full draft WITHOUT streaming raw
-            # tokens to the reader. References are bold prose (nothing to resolve),
-            # but a `[quote: id]` pointer must never appear raw mid-stream — so the
-            # draft is assembled here and only the resolved, clean answer is shown,
-            # once, via the final 'done' event. The 'generating' ticker covers the
-            # wait. (Keeps token streaming off by design — see the buffered-render
-            # decision in docs/grounded_generation_contract.md.)
+            # Stream the draft as it is written so the reader gets immediate
+            # feedback. These 'draft' tokens are shown in a secondary, clearly
+            # in-progress preview (small, scrollable — NOT the final answer
+            # bubble); the resolved, clean answer replaces them via the final
+            # 'done' event. References are bold prose (nothing to resolve); a raw
+            # `[quote: id]` pointer is stripped from the preview client-side, and
+            # is resolved to a blockquote in the final answer. See the
+            # buffered-vs-streaming note in docs/grounded_generation_contract.md.
             for delta in _stream_chat_with_retry(
                 client,
                 model=_gen_model,
@@ -833,6 +834,7 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                 temperature=0.1,
             ):
                 full_answer += delta
+                yield {"type": "draft", "content": delta}
 
         # --- 7a. Bounded-agentic audit + revise loop ---
         # The Auditor verifies the draft's legal backbone and names provisions
@@ -940,7 +942,7 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                             temperature=0.1,
                         ):
                             _revised += _delta
-                            yield {"type": "token", "content": _delta}
+                            yield {"type": "draft", "content": _delta}
                         _revised = _strip_meta_leak(_revised).strip()
                     if _revised:
                         full_answer = _revised

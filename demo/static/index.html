@@ -333,6 +333,35 @@
     border-color: var(--primary-light);
     box-shadow: 0 0 0 3px rgba(69,90,100,0.08);
   }
+  /* Final-answer bubble stays hidden until the resolved answer arrives, so the
+     live draft (shown in the panel below) is never mistaken for the final one. */
+  .msg.agent.pending { display: none; }
+  /* Live draft preview inside the reasoning panel — deliberately small + muted */
+  .reason-draft {
+    margin-top: 8px;
+    border-top: 1px dashed #c7d2e0;
+    padding-top: 8px;
+  }
+  .reason-draft-label {
+    font-size: 0.68rem;
+    font-style: italic;
+    color: var(--text-muted);
+    opacity: 0.85;
+    margin-bottom: 4px;
+  }
+  .reason-draft-body {
+    font-size: 0.72rem;
+    line-height: 1.45;
+    color: #5a6572;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 160px;
+    overflow-y: auto;
+    background: #e8eef5;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
   .reasoning-panel ul {
     list-style: none;
     margin: 6px 0 0 0;
@@ -411,6 +440,70 @@
     background: rgba(255,255,255,0.18);
     margin: 0 4px;
   }
+
+  /* ── Prototype disclaimer bar (always visible) ── */
+  .disclaimer-bar {
+    flex-shrink: 0;
+    background: #fff3cd;
+    border-bottom: 1px solid #e6d28a;
+    color: #6b5900;
+    font-size: 0.76rem;
+    line-height: 1.4;
+    padding: 7px 24px;
+    text-align: center;
+  }
+  .disclaimer-bar strong { font-weight: 700; }
+
+  /* ── Per-answer feedback widget ── */
+  .feedback {
+    align-self: flex-start;
+    max-width: 78%;
+    margin-top: -8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+  .feedback .fb-row { display: flex; align-items: center; gap: 8px; }
+  .fb-btn {
+    background: #fff;
+    border: 1px solid #d1d9e6;
+    border-radius: 6px;
+    padding: 3px 10px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .fb-btn:hover { background: #eef2f8; }
+  .fb-btn.selected { border-color: var(--primary); background: #eef2f8; font-weight: 600; }
+  .fb-btn.up.selected { color: #2a8a4c; border-color: #2a8a4c; }
+  .fb-btn.down.selected { color: #b3261e; border-color: #b3261e; }
+  .fb-comment {
+    display: none;
+    gap: 6px;
+  }
+  .fb-comment.show { display: flex; }
+  .fb-comment input {
+    flex: 1;
+    border: 1px solid #d1d9e6;
+    border-radius: 6px;
+    padding: 5px 9px;
+    font-size: 0.82rem;
+    font-family: inherit;
+    outline: none;
+  }
+  .fb-comment input:focus { border-color: var(--primary-light); }
+  .fb-comment button {
+    background: var(--primary);
+    color: #fff8e1;
+    border: none;
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+  .fb-thanks { color: #2a8a4c; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -431,6 +524,10 @@
     </button>
   </div>
 </header>
+
+<div class="disclaimer-bar">
+  <strong>Prototype — not legal advice.</strong> CRSS is a system under active development. Outputs are not regulatory guidance and have not been reviewed by any notified body or competent authority. Always verify with a qualified professional before relying on them.
+</div>
 
 <div id="chat">
   <div class="welcome" id="welcome">
@@ -472,6 +569,11 @@ const welcome = document.getElementById('welcome');
 let debugMode = false;
 let busy = false;
 const conversationHistory = [];  // {role, content} — raw text
+
+// One id per page load, groups a tester's turns in the pilot log.
+const SESSION_ID = (window.crypto && crypto.randomUUID)
+  ? crypto.randomUUID()
+  : 'sess-' + Date.now() + '-' + Math.random().toString(16).slice(2);
 
 // ── Corpus pills: sourced from the catalog via /api/legislation, never hardcoded
 //    (the static markup is only a fallback if the fetch fails). ──
@@ -532,7 +634,10 @@ function createReasoningPanel() {
   details.innerHTML =
     '<summary><span class="summary-spinner"></span>' +
     '<span class="summary-text">Analysing your question…</span></summary>' +
-    '<ul id="reason-steps"></ul>';
+    '<ul id="reason-steps"></ul>' +
+    '<div id="reason-draft" class="reason-draft" hidden>' +
+    '<div class="reason-draft-label">Drafting (live) — the polished answer will appear below when ready</div>' +
+    '<div class="reason-draft-body"></div></div>';
   chat.appendChild(details);
   chat.scrollTop = chat.scrollHeight;
   return details;
@@ -673,14 +778,19 @@ async function sendQuestion() {
     // Reasoning panel (always created; open only when debug is on)
     const reasonPanel = createReasoningPanel();
     const stepsList = reasonPanel.querySelector('#reason-steps');
+    const draftBox = reasonPanel.querySelector('#reason-draft');
+    const draftBody = draftBox.querySelector('.reason-draft-body');
 
-    // Empty agent bubble — will fill as tokens arrive
+    // Final-answer bubble — stays hidden until the resolved answer arrives, so
+    // the reader never mistakes the live draft (shown in the reasoning panel)
+    // for the finished analysis.
     const agentBubble = document.createElement('div');
-    agentBubble.className = 'msg agent stream-cursor';
+    agentBubble.className = 'msg agent pending';
     chat.appendChild(agentBubble);
     chat.scrollTop = chat.scrollHeight;
 
     let fullAnswer = '';
+    let draftText = '';
     let streamError = null;
     let renderScheduled = false;
     let currentRunningStepId = null;
@@ -725,7 +835,7 @@ async function sendQuestion() {
       const res = await fetch('/api/ask/stream', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({question: q, k: k, history: conversationHistory.slice(0, -1)}),
+        body: JSON.stringify({question: q, k: k, history: conversationHistory.slice(0, -1), session_id: SESSION_ID}),
       });
 
       if (!res.ok) {
@@ -774,45 +884,53 @@ async function sendQuestion() {
 
           } else if (event.type === 'generating') {
             markRunningDone();
-            // Collapse the detailed list once drafting starts, but keep the live
-            // summary line (with spinner + elapsed timer) visible so progress is
-            // always shown during the slow time-to-first-token wait.
-            if (!debugMode) reasonPanel.removeAttribute('open');
+            // Keep the panel OPEN so the live draft is visible, and reveal the
+            // draft preview box. The final-answer bubble stays hidden until 'done'.
+            reasonPanel.setAttribute('open', '');
+            draftBox.hidden = false;
             firstTokenSeen = false;
             startGenTicker('Drafting the answer…');
             smartScroll();
 
-          } else if (event.type === 'revising') {
-            // Audit found gaps and is regenerating. Keep the live status visible
-            // (this is the slow phase users were getting no feedback on), then
-            // fade out the draft smoothly before the revision streams in fresh.
-            firstTokenSeen = false;
-            startGenTicker(event.label || 'Revising the answer with audit findings…');
-            agentBubble.classList.add('revising-fade');
-            setTimeout(() => {
-              fullAnswer = '';
-              agentBubble.innerHTML = '';
-              agentBubble.classList.remove('revising-fade');
-              agentBubble.classList.add('stream-cursor');
-              smartScroll();
-            }, 250); // matches transition duration
-
-          } else if (event.type === 'token') {
-            // First token landed — stop the elapsed ticker and show the draft.
+          } else if (event.type === 'draft') {
+            // Live draft tokens — shown small + scrollable INSIDE the reasoning
+            // panel, never in the final-answer bubble, so the reader never takes
+            // the in-progress draft for the finished analysis. Raw [quote: id] /
+            // [cite: id] pointers are stripped here; they resolve in the final answer.
             if (!firstTokenSeen) {
               firstTokenSeen = true;
               stopGenTicker();
               setPanelStatus(reasonPanel, 'Writing the answer…', true);
+              draftBox.hidden = false;
             }
+            draftText += event.content;
+            draftBody.textContent = draftText.replace(/\[(?:quote|cite):\s*[^\]]+\]/g, '…');
+            draftBox.scrollTop = draftBox.scrollHeight;  // follow the newest text
+            smartScroll();
+
+          } else if (event.type === 'revising') {
+            // Audit is regenerating: clear the draft preview and stream the
+            // revision in fresh (the final bubble is still hidden).
+            firstTokenSeen = false;
+            startGenTicker(event.label || 'Revising the answer with audit findings…');
+            draftText = '';
+            draftBody.textContent = '';
+            smartScroll();
+
+          } else if (event.type === 'token') {
+            // Structured mode delivers the whole (already clean) answer in one
+            // token event — render it straight into the final bubble.
+            if (!firstTokenSeen) { firstTokenSeen = true; stopGenTicker(); }
+            agentBubble.classList.remove('pending');
             fullAnswer += event.content;
-            // Render markdown progressively — batched via rAF for smoothness
             scheduleMarkdownRender();
 
           } else if (event.type === 'done') {
             markRunningDone();
             stopGenTicker();
             fullAnswer = event.answer || fullAnswer;
-            agentBubble.classList.remove('stream-cursor');
+            draftBox.hidden = true;              // retire the live draft
+            agentBubble.classList.remove('pending', 'stream-cursor');
             agentBubble.classList.add('md-ready');
             agentBubble.innerHTML = marked.parse(fullAnswer);
 
@@ -834,6 +952,7 @@ async function sendQuestion() {
               `Reasoning complete — ${stepCount} step${stepCount !== 1 ? 's' : ''}`, false);
             if (!debugMode) reasonPanel.removeAttribute('open');
             conversationHistory.push({role: 'agent', content: fullAnswer});
+            if (event.interaction_id) addFeedbackWidget(agentBubble, event.interaction_id);
             enableExportButtons();
             chat.scrollTop = chat.scrollHeight;
 
@@ -881,15 +1000,16 @@ async function sendQuestion() {
     const res = await fetch('/api/ask', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({question: q, k: k, history: conversationHistory.slice(0, -1)}),
+      body: JSON.stringify({question: q, k: k, history: conversationHistory.slice(0, -1), session_id: SESSION_ID}),
     });
     removeTyping();
     const data = await res.json();
     if (data.error) {
       addMessage('agent', '<em>Error: ' + escapeHtml(data.error) + '</em>');
     } else {
-      addMessage('agent', marked.parse(data.answer));
+      const bubble = addMessage('agent', marked.parse(data.answer));
       conversationHistory.push({role: 'agent', content: data.answer});
+      if (data.interaction_id) addFeedbackWidget(bubble, data.interaction_id);
       enableExportButtons();
     }
   } catch (err) {
@@ -900,6 +1020,59 @@ async function sendQuestion() {
   busy = false;
   sendBtn.disabled = false;
   input.focus();
+}
+
+// ── Per-answer feedback widget ──
+function addFeedbackWidget(bubble, interactionId) {
+  const fb = document.createElement('div');
+  fb.className = 'feedback';
+  fb.innerHTML =
+    '<div class="fb-row">' +
+      '<span>Was this answer helpful?</span>' +
+      '<button class="fb-btn up" title="Helpful">👍</button>' +
+      '<button class="fb-btn down" title="Not helpful">👎</button>' +
+    '</div>' +
+    '<div class="fb-comment">' +
+      '<input type="text" placeholder="Optional: what was right or wrong?" maxlength="2000">' +
+      '<button class="fb-send">Submit</button>' +
+    '</div>';
+  // Insert right after the answer bubble.
+  bubble.insertAdjacentElement('afterend', fb);
+
+  const upBtn   = fb.querySelector('.fb-btn.up');
+  const downBtn = fb.querySelector('.fb-btn.down');
+  const commentRow = fb.querySelector('.fb-comment');
+  const commentInput = fb.querySelector('.fb-comment input');
+  const sendBtn = fb.querySelector('.fb-send');
+  let rating = null;
+
+  function select(r) {
+    rating = r;
+    upBtn.classList.toggle('selected', r === 'up');
+    downBtn.classList.toggle('selected', r === 'down');
+    commentRow.classList.add('show');
+    commentInput.focus();
+    sendFeedback(interactionId, rating, '');  // capture the vote immediately
+  }
+  upBtn.addEventListener('click', () => select('up'));
+  downBtn.addEventListener('click', () => select('down'));
+
+  sendBtn.addEventListener('click', () => {
+    if (!rating) return;
+    sendFeedback(interactionId, rating, commentInput.value);
+    fb.innerHTML = '<div class="fb-row fb-thanks">Thanks — feedback recorded.</div>';
+  });
+  commentInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); sendBtn.click(); }
+  });
+}
+
+function sendFeedback(interactionId, rating, comment) {
+  fetch('/api/feedback', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({interaction_id: interactionId, rating, comment, session_id: SESSION_ID}),
+  }).catch(() => { /* feedback is best-effort; never block the UI */ });
 }
 
 // ── Export helper ──
