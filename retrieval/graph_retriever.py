@@ -128,7 +128,7 @@ WITH art, parents,
        raw_text: leaf.text,
        ref: leaf.display_ref,
        binding_force: leaf.binding_force
-     })[..25] AS children
+     })[..60] AS children
 
 // Sibling expansion for Guidance nodes: when a guidance_paragraph is
 // retrieved, also pull its siblings under the same parent so both the

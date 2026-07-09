@@ -7,8 +7,19 @@ definition lookup results.  No LLM calls; no retriever I/O.
 from __future__ import annotations
 
 import os
+import re
 
 from application._config import _BODY_LIMIT, _INLINE_REF_RE
+
+
+def _natural_key(s: str) -> list:
+    """Sort key that orders node ids by document position, numeric-aware.
+
+    Splits into digit / non-digit runs so ``…_anx_III_2`` sorts before
+    ``…_anx_III_10`` and ``1_a`` before ``1_b`` — keeping points and their
+    sub-items in reading order (the retrieval ``collect()`` loses that order).
+    """
+    return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", s or "")]
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -353,10 +364,24 @@ def _format_one_provision(index: int, p: dict, role: str) -> str:
     # Child provisions — use raw provision text so paragraph numbers are
     # unambiguous (e.g. "4.   'active device' means..."), without the
     # repeated ancestry prefix that obscures the numbering.
-    children = p.get("children") or []
+    # Render children in DOCUMENT ORDER: the retrieval Cypher's collect() does not
+    # preserve order, so a large structured provision (e.g. Annex III's 8 points ×
+    # lettered sub-items) would otherwise arrive scrambled and be sampled wrong.
+    # The child id encodes ordinal + parentage (…_anx_III_1_a), so a natural sort
+    # restores "point 1, 1(a), 1(b), 1(c), point 2, …".
+    children = sorted(
+        p.get("children") or [], key=lambda c: _natural_key(c.get("id") or "")
+    )
     matched_leaf = p.get("matched_leaf_id")
-    child_lines: list[str] = []
-    matched_lines: list[str] = []
+    # When this provision is the DIRECT SUBJECT of a structural lookup, render
+    # every child so a "what does X list?" question is answered completely.
+    # Peripheral (cross-referenced / pointer-expanded) provisions stay capped so
+    # the prompt does not re-inflate — the reason for _MAX_CHILD_LINES.
+    full_children = bool(
+        p.get("_direct_ref_match") and not p.get("_pointer_expansion")
+    )
+    rendered: list[str] = []       # every child line, in document order
+    matched_lines: list[str] = []  # matched leaf(s), for the capped path
     for c in children:
         ref = c.get("ref") or c.get("kind", "")
         cid = c.get("id") or ""
@@ -371,16 +396,21 @@ def _format_one_provision(index: int, p: dict, role: str) -> str:
                 text = cut[:last_period + 1]
             else:
                 text = cut
-        if text:
-            if is_match:
-                matched_lines.append(f"  [\u2605 MATCHED] {ref}{id_tag}: {text}")
-            else:
-                child_lines.append(f"  {ref}{id_tag}: {text}")
-    # Keep the matched leaf plus the leading children; the rolled-up body above
-    # already summarises the provision, so a long tail of child paragraphs is
-    # largely redundant and was the dominant source of context bloat (a single
-    # article with ~27 children rendered to ~25 KB). See _MAX_CHILD_LINES.
-    child_lines = (matched_lines + child_lines)[:_MAX_CHILD_LINES]
+        if not text:
+            continue
+        line = f"  {'[\u2605 MATCHED] ' if is_match else ''}{ref}{id_tag}: {text}"
+        rendered.append(line)
+        if is_match:
+            matched_lines.append(line)
+    if full_children:
+        child_lines = rendered                       # complete, in document order
+    else:
+        # Keep the matched leaf plus the leading children; the rolled-up body
+        # already summarises the provision, so a long tail is largely redundant
+        # and was the dominant source of context bloat. See _MAX_CHILD_LINES.
+        seen = set(matched_lines)
+        tail = [ln for ln in rendered if ln not in seen]
+        child_lines = (matched_lines + tail)[:_MAX_CHILD_LINES]
 
     # Cross-referenced provisions (separate internal vs cross-regulation).
     # Cross-regulation citations are more decisive than internal ones, so they
