@@ -341,9 +341,17 @@ def _build_revision_messages(
         "backbone, correct the initial actor status FIRST if it was wrong, and "
         "ground every legal fact in the context. Keep the revision TIGHT — fix "
         "the flagged backbone without inflating length; a senior reviewer prefers "
-        "decisive analysis over exhaustive coverage. Do NOT reference this review, "
-        "the audit, any 'directive' or 'findings', or the fact that the answer "
-        "was revised — write as if producing the final answer directly.\n\n"
+        "decisive analysis over exhaustive coverage.\n"
+        "GROUNDING IS BINDING IN THIS REWRITE (do not relax it to 'fix' a gap): "
+        "obey REFERENCES & QUOTATIONS exactly — every quotation is a `[quote: id]` "
+        "pointer, NEVER text you type; references are bold prose. If closing the "
+        "flagged backbone would require a provision that is NOT in the context "
+        "below, state that the context is insufficient for that point — do NOT "
+        "quote or reconstruct its wording from memory. A correct paraphrase with a "
+        "bold reference fully grounds a point; do not add a quotation to force one.\n"
+        "Do NOT reference this review, the audit, any 'directive' or 'findings', or "
+        "the fact that the answer was revised — write as if producing the final "
+        "answer directly.\n\n"
     )
     return [
         {"role": "system", "content": system_prompt},

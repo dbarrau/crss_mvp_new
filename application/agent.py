@@ -881,7 +881,13 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                     existing_ids=existing_ids,
                     max_add=_max_gap_refs(),
                 )
-                if not new_provs and not findings["issues"]:
+                # Material-gap gate: a revision earns its cost only by re-grounding
+                # on NEW evidence. When gap-retrieval adds nothing, regenerating
+                # over identical context cannot improve grounding and empirically
+                # reintroduces quotes typed from memory — the audit-on/off A/B
+                # showed audit net-negative (fabricated quotes 2→11), driven by
+                # exactly these no-new-evidence rewrites. Skip them.
+                if not new_provs:
                     break
                 if new_provs:
                     for _p in new_provs:
