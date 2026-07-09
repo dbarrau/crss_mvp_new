@@ -96,6 +96,14 @@ _NEAR_RE = re.compile(r"Wording check\*\*\s*[—\-]\s*(\d+)\s+quote", re.I)
 _CASE_TIMEOUT_S = int(os.environ.get("CRSS_EVAL_CASE_TIMEOUT", "300"))
 _timed_out_flag = {"v": False}
 
+# A full 32-case run hammers the Mistral API back-to-back; the tail cases
+# accumulate rate-limit backoff and a case that finishes in ~70-100s in isolation
+# can stall past the timeout (or return empty on a transient 5xx). Those are
+# harness-throughput artifacts, not answer-quality failures — so retry a
+# failed/empty/timed-out case once after a cooldown that lets the backoff clear.
+_MAX_ATTEMPTS = int(os.environ.get("CRSS_EVAL_ATTEMPTS", "2"))
+_RETRY_PAUSE_S = int(os.environ.get("CRSS_EVAL_RETRY_PAUSE", "45"))
+
 
 class _CaseTimeout(Exception):
     pass
@@ -248,12 +256,12 @@ def main() -> int:
                 {"label": args.label, "judge_model": args.judge_model,
                  "partial": True, "results": results}, indent=2))
 
-    results = []
-    for case in cases:
+    def _attempt_case(case: dict) -> dict:
+        """One attempt at a case under the wall-clock timeout."""
         _timed_out_flag["v"] = False
         signal.alarm(_CASE_TIMEOUT_S)
         try:
-            r = _run_case(
+            return _run_case(
                 case, retriever, rubric,
                 k=args.k, judge_model=args.judge_model, judge_runs=args.judge_runs,
                 answer_override=answer_override,
@@ -263,12 +271,33 @@ def main() -> int:
             if not _timed_out_flag["v"]:
                 r["reliance"] = "(error)"
                 r["judge_text"] = f"ERROR: {exc}"
-            print(f"  {case['id']}  {r['reliance'].upper()} — {r['judge_text'][:80]}", flush=True)
+            return r
+        finally:
+            signal.alarm(0)
+
+    def _case_ok(r: dict) -> bool:
+        # A real result has a graded score AND a non-empty answer. A timeout /
+        # transient error / empty answer is a throughput artifact worth retrying.
+        return r.get("score") is not None and r.get("answer_chars", 0) > 0
+
+    results = []
+    for case in cases:
+        r = _attempt_case(case)
+        attempts_used = 1
+        while not _case_ok(r) and attempts_used < _MAX_ATTEMPTS:
+            print(f"  {case['id']}  {r['reliance'].upper()} on attempt {attempts_used} "
+                  f"— retrying after {_RETRY_PAUSE_S}s cooldown "
+                  f"(likely API backoff, not a quality failure)", flush=True)
+            time.sleep(_RETRY_PAUSE_S)
+            r = _attempt_case(case)
+            attempts_used += 1
+        r["attempts"] = attempts_used
+        if not _case_ok(r):
+            print(f"  {case['id']}  {r['reliance'].upper()} — {r['judge_text'][:80]} "
+                  f"(after {attempts_used} attempt(s))", flush=True)
             results.append(r)
             _flush_partial()
             continue
-        finally:
-            signal.alarm(0)
         results.append(r)
         _flush_partial()
         score_str = f"{r['score']}" if r["score"] is not None else "PARSE_FAIL"
