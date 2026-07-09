@@ -42,6 +42,7 @@ from application.agent import ask_stream, ask_with_trace
 from domain.legislation_catalog import LEGISLATION
 from domain.mdcg_catalog import MDCG_DOCUMENTS
 from export import generate_markdown
+from logging_store import log_feedback, log_interaction, new_interaction_id
 from retrieval.graph_retriever import GraphRetriever
 
 # ---------------------------------------------------------------------------
@@ -74,15 +75,35 @@ def api_ask():
         k = 20
 
     history = _parse_history(body)
+    session_id = _session_id(body)
+    interaction_id = new_interaction_id()
 
     try:
         result = ask_with_trace(question, retriever, k=k, history=history)
+        log_interaction(
+            interaction_id=interaction_id,
+            session_id=session_id,
+            question=question,
+            answer=result["answer"],
+            k=k,
+            history_len=len(history or []),
+        )
         return jsonify({
             "answer": result["answer"],
             "audit_trace": result.get("audit_trace"),
+            "interaction_id": interaction_id,
         })
     except Exception as exc:
         logging.exception("Error in ask_with_trace()")
+        log_interaction(
+            interaction_id=interaction_id,
+            session_id=session_id,
+            question=question,
+            answer="",
+            k=k,
+            history_len=len(history or []),
+            error=str(exc),
+        )
         return jsonify({"error": str(exc)}), 500
 
 
@@ -101,14 +122,40 @@ def api_ask_stream():
         k = 20
 
     history = _parse_history(body)
+    session_id = _session_id(body)
+    interaction_id = new_interaction_id()
 
     def generate():
+        # Capture what flows past so the turn can be logged for pilot review.
+        answer = ""
+        confidence: dict | None = None
+        error: str | None = None
         try:
             for event in ask_stream(question, retriever, k=k, history=history):
+                if event.get("type") == "confidence":
+                    confidence = {"score": event.get("score"), "level": event.get("level")}
+                elif event.get("type") == "done":
+                    answer = event.get("answer") or answer
+                    # Hand the client the id it needs to attach feedback.
+                    event = {**event, "interaction_id": interaction_id}
+                elif event.get("type") == "error":
+                    error = event.get("message")
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as exc:
             logging.exception("Error in ask_stream()")
+            error = str(exc)
             yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+        finally:
+            log_interaction(
+                interaction_id=interaction_id,
+                session_id=session_id,
+                question=question,
+                answer=answer,
+                k=k,
+                confidence=confidence,
+                history_len=len(history or []),
+                error=error,
+            )
 
     return Response(
         stream_with_context(generate()),
@@ -185,6 +232,29 @@ def api_legislation():
 # ---------------------------------------------------------------------------
 # Export endpoints
 # ---------------------------------------------------------------------------
+
+def _session_id(body: dict) -> str | None:
+    """A client-generated id grouping one tester's turns; optional."""
+    sid = body.get("session_id")
+    return sid.strip() if isinstance(sid, str) and sid.strip() else None
+
+
+@app.route("/api/feedback", methods=["POST"])
+def api_feedback():
+    """Record a tester's thumbs up/down + optional comment for an answer."""
+    body = request.get_json(silent=True) or {}
+    interaction_id = (body.get("interaction_id") or "").strip()
+    rating = (body.get("rating") or "").strip().lower()
+    if not interaction_id or rating not in ("up", "down"):
+        return jsonify({"error": "interaction_id and rating ('up'|'down') are required"}), 400
+    log_feedback(
+        interaction_id=interaction_id,
+        session_id=_session_id(body),
+        rating=rating,
+        comment=body.get("comment"),
+    )
+    return jsonify({"ok": True})
+
 
 def _parse_history(body: dict) -> list[dict[str, str]] | None:
     """Extract and validate the conversation history from a request body."""
