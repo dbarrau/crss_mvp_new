@@ -28,6 +28,7 @@ from domain.ontology.actor_roles import (
     DERIVED_ROLE_SPECS,
     EXACT_LEGAL_ROLE_SPECS,
     ROLE_SOURCE_TYPE_DEFINED_TERM,
+    STANDALONE_ROLE_SPECS,
     normalize_role_term,
 )
 from infrastructure.graphdb.neo4j.loader import _normalize_neo4j_uri
@@ -89,6 +90,11 @@ def _build_role_regex(term: str) -> re.Pattern:
 
 def _first_sentence(text: str) -> str:
     normalized = text.replace("\xa0", " ").strip()
+    # Skip a leading paragraph/point enumeration marker ("1.", "(1)", "(a)"):
+    # flattened article bodies start with the first paragraph's number, so the
+    # naive [.;] split returned the literal "1." as the whole first sentence
+    # and the actor-role check could never fire for numbered articles.
+    normalized = re.sub(r"^(?:\d{1,3}\.|\(\d{1,3}\)|\([a-z]{1,2}\))\s+", "", normalized)
     match = re.split(r"(?<=[.;])\s+", normalized, maxsplit=1)
     return match[0][:400] if match else normalized[:400]
 
@@ -207,6 +213,37 @@ def _augment_with_derived_roles(actor_terms: list[dict[str, Any]]) -> list[dict[
         celex_terms.append(derived_row)
         augmented.append(derived_row)
 
+    return augmented
+
+
+def _augment_with_standalone_roles(actor_terms: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Append curated roles for regulations that define no terms of their own.
+
+    Implementing acts (e.g. CIR 2026/977) inherit the basic act's definitions,
+    so ``_select_actor_terms`` — which is driven entirely by DefinedTerm nodes
+    — yields nothing for them and the regulation ends up with zero ActorRole
+    nodes.  Unlike ``DERIVED_ROLE_SPECS``, these specs require no exemplar
+    DefinedTerm in the same celex and no composite membership: the spec itself
+    is the authority.  The standard obligation heuristic then links the
+    regulation's actor-addressed provisions as for any other role.
+    """
+    augmented = [dict(row) for row in actor_terms]
+    present = {(row["celex"], row["term_normalized"]) for row in augmented}
+    for (celex, term_normalized), spec in STANDALONE_ROLE_SPECS.items():
+        if (celex, term_normalized) in present:
+            continue
+        augmented.append({
+            "defined_term_id": None,
+            "term": spec["term"],
+            "category": "standalone",
+            "term_normalized": term_normalized,
+            "celex": celex,
+            "regulation": spec.get("regulation"),
+            "source_provision_id": None,
+            "definition_text": "",
+            "source_type": spec["source_type"],
+            "basis_note": spec["basis_note"],
+        })
     return augmented
 
 
@@ -470,7 +507,9 @@ def link_roles(dry_run: bool = False) -> dict[str, int]:
     try:
         with driver.session(database=database) as session:
             defined_terms = _load_defined_terms(session)
-            actor_terms = _augment_with_derived_roles(_select_actor_terms(defined_terms))
+            actor_terms = _augment_with_standalone_roles(
+                _augment_with_derived_roles(_select_actor_terms(defined_terms))
+            )
             provisions = _load_provisions(session)
 
             roles = _build_actor_roles(actor_terms)

@@ -3,9 +3,11 @@ from domain.legislation_catalog import (
     AI_ACT_CELEX,
     IVDR_CELEX,
     GDPR_CELEX,
+    CIR_CELEX,
 )
 from canonicalization.role_linker import (
     _augment_with_derived_roles,
+    _augment_with_standalone_roles,
     _build_actor_roles,
     _build_equivalent_edges,
     _build_includes_edges,
@@ -342,6 +344,68 @@ def test_augment_with_derived_roles_adds_helper_roles_for_present_celexes():
         "product_manufacturer",
         "article_22_person",
     }
+
+
+def test_augment_with_standalone_roles_covers_definition_less_regulations():
+    """CIR 2026/977 defines no terms of its own (definitions inherited from
+    MDR/IVDR), so DefinedTerm-driven selection yields nothing for it — the
+    standalone specs must materialize its roles regardless."""
+    augmented = _augment_with_standalone_roles([])
+
+    cir_rows = {row["term_normalized"]: row for row in augmented if row["celex"] == CIR_CELEX}
+    assert {"manufacturer", "notified_body"} <= set(cir_rows)
+    assert cir_rows["notified_body"]["source_type"] == "standalone_curated"
+    assert cir_rows["notified_body"]["defined_term_id"] is None
+
+
+def test_standalone_roles_do_not_duplicate_existing_terms():
+    existing = [{
+        "defined_term_id": "dt_x",
+        "term": "manufacturer",
+        "category": "actor",
+        "term_normalized": "manufacturer",
+        "celex": CIR_CELEX,
+        "regulation": None,
+        "source_provision_id": None,
+        "definition_text": "",
+    }]
+    augmented = _augment_with_standalone_roles(existing)
+    manufacturer_rows = [
+        row for row in augmented
+        if row["celex"] == CIR_CELEX and row["term_normalized"] == "manufacturer"
+    ]
+    assert len(manufacturer_rows) == 1
+    assert manufacturer_rows[0]["defined_term_id"] == "dt_x"
+
+
+def test_standalone_role_obligation_edges_link_cir_notified_body_duties():
+    """The standard obligation heuristic must link CIR provisions addressed
+    to the standalone notified-body role ('The notified body shall…') — also
+    when the flattened article body opens with a paragraph marker ('1. '),
+    which used to make the first-sentence check see only the literal '1.'."""
+    actor_terms = _augment_with_standalone_roles([])
+    provisions = [
+        {
+            "id": f"{CIR_CELEX}_art_2",
+            "celex": CIR_CELEX,
+            "kind": "article",
+            "title": "Timelines",
+            "text": "1. The notified body shall complete the conformity assessment within the timelines set out in the Annex.",
+            "display_ref": "Article 2",
+        },
+        {
+            "id": f"{CIR_CELEX}_art_9",
+            "celex": CIR_CELEX,
+            "kind": "article",
+            "title": "Entry into force and application",
+            "text": "This Regulation shall enter into force on the twentieth day following that of its publication.",
+            "display_ref": "Article 9",
+        },
+    ]
+    edges = _build_obligation_edges(actor_terms, provisions)
+    linked = {(e["provision_id"], e["role_id"]) for e in edges}
+    assert (f"{CIR_CELEX}_art_2", f"{CIR_CELEX}::role::notified_body") in linked
+    assert not any(pid == f"{CIR_CELEX}_art_9" for pid, _ in linked)
 
 
 def test_build_actor_roles_marks_derived_helpers_with_source_type():

@@ -18,8 +18,14 @@ def normalize_role_term(term: str) -> str:
 
 
 ROLE_MAPPING_KIND_RETRIEVAL_ANALOGY = "retrieval_analogy"
+# Same role term carried into an implementing act whose definitions are
+# inherited from the basic act — legal identity, not mere analogy.
+ROLE_MAPPING_KIND_IMPLEMENTING_ACT = "implementing_act_identity"
 ROLE_SOURCE_TYPE_DEFINED_TERM = "defined_term"
 ROLE_SOURCE_TYPE_DERIVED = "derived_role"
+# Curated role with no DefinedTerm node of its own in that regulation
+# (e.g. an implementing regulation that inherits the basic act's definitions).
+ROLE_SOURCE_TYPE_STANDALONE = "standalone_curated"
 
 
 # ---------------------------------------------------------------------------
@@ -45,12 +51,15 @@ CANONICAL_ACTOR_ROLES: dict[str, frozenset[str]] = {
     "deployer": frozenset({"32024R1689"}),
     "operator": frozenset({"32024R1689"}),
     "product manufacturer": frozenset({"32024R1689"}),
-    "manufacturer": frozenset({"32024R1689", "32017R0745", "32017R0746"}),
+    "manufacturer": frozenset({"32024R1689", "32017R0745", "32017R0746", "32026R0977"}),
     "authorised representative": frozenset({"32024R1689", "32017R0745", "32017R0746"}),
     "importer": frozenset({"32024R1689", "32017R0745", "32017R0746"}),
     "distributor": frozenset({"32024R1689", "32017R0745", "32017R0746"}),
     "user": frozenset({"32017R0745", "32017R0746"}),
-    "notified body": frozenset({"32017R0745", "32017R0746"}),
+    # notified body: defined in MDR/IVDR/AI-Act (DefinedTerm category 'body',
+    # promoted via EXACT_LEGAL_ROLE_SPECS) and an obligation-bearer in CIR
+    # 2026/977 (standalone; the CIR inherits the MDR/IVDR definitions).
+    "notified body": frozenset({"32017R0745", "32017R0746", "32024R1689", "32026R0977"}),
     "controller": frozenset({"32016R0679"}),
     "processor": frozenset({"32016R0679"}),
     "supervisory authority": frozenset({"32016R0679"}),
@@ -74,6 +83,55 @@ EXACT_LEGAL_ROLE_SPECS: dict[tuple[str, str], dict[str, str]] = {
         "term": "user",
         "basis_note": "IVDR Article 2 definition of user",
         "source_type": ROLE_SOURCE_TYPE_DEFINED_TERM,
+    },
+    # Notified bodies are classified category='body' by the parser heuristic,
+    # so they were never promoted — leaving the ENTITY_SYNONYMS "notified
+    # body" mapping dead and their substantial obligation sets (MDR/IVDR
+    # Annex VII, MDR Arts 44-46, AI Act Arts 31-34) unlinked.
+    ("32017R0745", "notified_body"): {
+        "term": "notified body",
+        "basis_note": "MDR Article 2(42) definition of notified body",
+        "source_type": ROLE_SOURCE_TYPE_DEFINED_TERM,
+    },
+    ("32017R0746", "notified_body"): {
+        "term": "notified body",
+        "basis_note": "IVDR Article 2(34) definition of notified body",
+        "source_type": ROLE_SOURCE_TYPE_DEFINED_TERM,
+    },
+    ("32024R1689", "notified_body"): {
+        "term": "notified body",
+        "basis_note": "AI Act Article 3(22) definition of notified body",
+        "source_type": ROLE_SOURCE_TYPE_DEFINED_TERM,
+    },
+}
+
+
+# Roles that exist in a regulation without any DefinedTerm node of their own —
+# implementing acts inherit the basic act's definitions, so the parser finds
+# no "'X' means…" point to extract. The role_linker materializes these as
+# ActorRole nodes directly; the standard obligation heuristic then links the
+# regulation's actor-addressed provisions ("The notified body shall…") as for
+# any other role. Without this, an implementing regulation has zero ActorRole
+# nodes and the role-obligation channel is silently empty for it.
+STANDALONE_ROLE_SPECS: dict[tuple[str, str], dict[str, str]] = {
+    ("32026R0977", "manufacturer"): {
+        "term": "manufacturer",
+        "source_type": ROLE_SOURCE_TYPE_STANDALONE,
+        "basis_note": (
+            "CIR 2026/977 implements MDR/IVDR notified-body (re)certification "
+            "procedures; 'manufacturer' is inherited from MDR Article 2(30) / "
+            "IVDR Article 2(23)."
+        ),
+    },
+    ("32026R0977", "notified_body"): {
+        "term": "notified body",
+        "source_type": ROLE_SOURCE_TYPE_STANDALONE,
+        "basis_note": (
+            "CIR 2026/977 addresses its procedural obligations (quotations, "
+            "timelines, re-certification decisions) primarily to notified "
+            "bodies; the term is inherited from MDR Article 2(42) / IVDR "
+            "Article 2(34)."
+        ),
     },
 }
 
@@ -105,11 +163,13 @@ ENTITY_SYNONYMS: dict[str, list[tuple[str, str]]] = {
         ("manufacturer", "32024R1689"),
         ("manufacturer", "32017R0745"),
         ("manufacturer", "32017R0746"),
+        ("manufacturer", "32026R0977"),
     ],
     "manufacturers": [
         ("manufacturer", "32024R1689"),
         ("manufacturer", "32017R0745"),
         ("manufacturer", "32017R0746"),
+        ("manufacturer", "32026R0977"),
     ],
     "authorised representative": [
         ("authorised representative", "32024R1689"),
@@ -153,8 +213,18 @@ ENTITY_SYNONYMS: dict[str, list[tuple[str, str]]] = {
     ],
     "user": [("user", "32017R0745"), ("user", "32017R0746")],
     "users": [("user", "32017R0745"), ("user", "32017R0746")],
-    "notified body": [("notified body", "32017R0745"), ("notified body", "32017R0746")],
-    "notified bodies": [("notified body", "32017R0745"), ("notified body", "32017R0746")],
+    "notified body": [
+        ("notified body", "32017R0745"),
+        ("notified body", "32017R0746"),
+        ("notified body", "32024R1689"),
+        ("notified body", "32026R0977"),
+    ],
+    "notified bodies": [
+        ("notified body", "32017R0745"),
+        ("notified body", "32017R0746"),
+        ("notified body", "32024R1689"),
+        ("notified body", "32026R0977"),
+    ],
     # GDPR actors. These ActorRole nodes are materialized automatically (their
     # Article 4 definitions contain "natural or legal person" -> category=actor),
     # so the only gap was query-time routing to them. "data controller" /
@@ -232,6 +302,49 @@ CROSS_REG_EQUIVALENCES: list[tuple[tuple[str, str], tuple[str, str], dict[str, s
             "basis_note": "Medical AI product supply chain",
             "mapping_kind": ROLE_MAPPING_KIND_RETRIEVAL_ANALOGY,
             "scope": "medical_device_supply_chain",
+            "confidence": "curated",
+        },
+    ),
+    # CIR 2026/977 inherits the MDR/IVDR definitions, so its roles are the
+    # same legal persons — a question seeded on the MDR/IVDR role should also
+    # surface the implementing regulation's procedural obligations.
+    (
+        ("manufacturer", "32026R0977"),
+        ("manufacturer", "32017R0745"),
+        {
+            "basis_note": "CIR 2026/977 implements MDR; identical manufacturer role",
+            "mapping_kind": ROLE_MAPPING_KIND_IMPLEMENTING_ACT,
+            "scope": "notified_body_certification",
+            "confidence": "curated",
+        },
+    ),
+    (
+        ("manufacturer", "32026R0977"),
+        ("manufacturer", "32017R0746"),
+        {
+            "basis_note": "CIR 2026/977 implements IVDR; identical manufacturer role",
+            "mapping_kind": ROLE_MAPPING_KIND_IMPLEMENTING_ACT,
+            "scope": "notified_body_certification",
+            "confidence": "curated",
+        },
+    ),
+    (
+        ("notified body", "32026R0977"),
+        ("notified body", "32017R0745"),
+        {
+            "basis_note": "CIR 2026/977 implements MDR; identical notified body role",
+            "mapping_kind": ROLE_MAPPING_KIND_IMPLEMENTING_ACT,
+            "scope": "notified_body_certification",
+            "confidence": "curated",
+        },
+    ),
+    (
+        ("notified body", "32026R0977"),
+        ("notified body", "32017R0746"),
+        {
+            "basis_note": "CIR 2026/977 implements IVDR; identical notified body role",
+            "mapping_kind": ROLE_MAPPING_KIND_IMPLEMENTING_ACT,
+            "scope": "notified_body_certification",
             "confidence": "curated",
         },
     ),

@@ -829,10 +829,14 @@ _GDPR_CROSS_REG_EDGES: list[LegalReasoningEdge] = [
 #
 # The role_linker canonicalization step creates OBLIGATION_OF edges from
 # a heuristic: actor term appears in the first sentence of a provision AND
-# the provision contains "shall".  This works well for High-Risk AI articles
-# (9–17) and for some GPAI articles (53, 55, Annex XII) but misses provisions
-# where the actor term is structurally implicit or where the provision is an
-# Annex rather than an Article.
+# the provision contains "shall".  This works for MDR/IVDR/GDPR, whose
+# obligations are actor-addressed ("The manufacturer shall…"), but the AI Act
+# phrases its core high-risk requirements system-directed ("High-risk AI
+# systems shall…"), attaching them to the provider only through the
+# Article 16(a) bridge — so the heuristic misses the entire Chapter III
+# Section 2 requirements chain, the provider's conformity/post-market
+# articles, and provisions where the actor term is structurally implicit or
+# where the provision is an Annex rather than an Article.
 #
 # This section encodes the missing edges as curated facts.  They are loaded
 # by scripts/load_legal_reasoning_chains.py alongside the LegalReasoningEdges.
@@ -957,8 +961,243 @@ _GPAI_OBLIGATION_OF_PATCHES: list[CuratedObligationEdge] = [
     ),
 ]
 
+# ---------------------------------------------------------------------------
+# High-risk AI system obligation patches (AI Act Chapter III)
+#
+# The Section 2 requirements (Articles 8–15) are drafted system-directed
+# ("High-risk AI systems shall…"); Article 16(a) is the bridge that makes the
+# provider responsible for ensuring compliance with every one of them.  The
+# role_linker heuristic cannot see that bridge, so — verified against the live
+# graph — Articles 8–15 carried no OBLIGATION_OF edge at all, and the
+# provider's own Section 3 duties (17–22) and conformity/post-market chain
+# (43, 47–49, 52, 72, 73) were likewise unlinked.  The deployer FRIA
+# (Article 27) and the authorised representative's mandate (Article 22(3))
+# were missing for the same structural reasons.
+# ---------------------------------------------------------------------------
+
+_HR_BRIDGE = (
+    "Drafted system-directed ('High-risk AI systems shall…'); binds the "
+    "provider through Article 16(a), which requires providers to ensure their "
+    "high-risk AI systems comply with the Section 2 requirements."
+)
+
+_HIGH_RISK_OBLIGATION_OF_PATCHES: list[CuratedObligationEdge] = [
+    # ── Section 2 requirements → provider (via the Article 16(a) bridge) ──
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 8", role_term="provider",
+        rationale=(
+            "Article 8 requires high-risk AI systems to comply with the Section 2 "
+            "requirements taking their intended purpose into account. " + _HR_BRIDGE
+        ),
+    ),
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 9", role_term="provider",
+        rationale=(
+            "Article 9 mandates a risk management system established, implemented, "
+            "documented and maintained over the high-risk AI system's lifecycle. "
+            + _HR_BRIDGE
+        ),
+    ),
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 10", role_term="provider",
+        rationale=(
+            "Article 10 sets data and data-governance requirements for training, "
+            "validation and testing data sets of high-risk AI systems. " + _HR_BRIDGE
+        ),
+    ),
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 11", role_term="provider",
+        rationale=(
+            "Article 11 requires technical documentation conforming to Annex IV, "
+            "drawn up before placing on the market and kept up to date. " + _HR_BRIDGE
+        ),
+    ),
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 12", role_term="provider",
+        rationale=(
+            "Article 12 requires high-risk AI systems to technically allow automatic "
+            "recording of events (logs) over their lifetime. " + _HR_BRIDGE
+        ),
+    ),
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 13", role_term="provider",
+        rationale=(
+            "Article 13 requires transparency towards deployers: operation "
+            "sufficiently transparent to interpret output, with instructions for "
+            "use per Article 13(3). " + _HR_BRIDGE
+        ),
+    ),
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 14", role_term="provider",
+        rationale=(
+            "Article 14 requires high-risk AI systems to be designed for effective "
+            "human oversight, including appropriate human-machine interface tools. "
+            + _HR_BRIDGE
+        ),
+    ),
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 15", role_term="provider",
+        rationale=(
+            "Article 15 requires an appropriate level of accuracy, robustness and "
+            "cybersecurity, consistent throughout the lifecycle. " + _HR_BRIDGE
+        ),
+    ),
+
+    # ── Section 3 provider duties the heuristic missed ─────────────────────
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 17", role_term="provider",
+        rationale=(
+            "Article 17 requires providers of high-risk AI systems to put a quality "
+            "management system in place, documented in written policies, procedures "
+            "and instructions, covering the aspects listed in Article 17(1)."
+        ),
+    ),
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 18", role_term="provider",
+        rationale=(
+            "Article 18 requires providers to keep the technical documentation, QMS "
+            "documentation, notified-body decisions and EU declaration of conformity "
+            "at the disposal of national competent authorities for 10 years."
+        ),
+    ),
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 19", role_term="provider",
+        rationale=(
+            "Article 19 requires providers to keep the automatically generated logs "
+            "(Article 12) under their control for a period appropriate to the "
+            "intended purpose, at least six months."
+        ),
+    ),
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 20", role_term="provider",
+        rationale=(
+            "Article 20 requires providers who consider or have reason to consider a "
+            "marketed high-risk AI system non-conforming to immediately take "
+            "corrective actions (withdraw, disable, recall) and inform the "
+            "distribution chain and authorities."
+        ),
+    ),
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 21", role_term="provider",
+        rationale=(
+            "Article 21 requires providers, upon reasoned request of a competent "
+            "authority, to supply all information and documentation necessary to "
+            "demonstrate conformity, and to give access to logs."
+        ),
+    ),
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 22", role_term="provider",
+        rationale=(
+            "Article 22(1) requires providers established in third countries to "
+            "appoint, by written mandate, an authorised representative established "
+            "in the Union before making a high-risk AI system available."
+        ),
+    ),
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 22",
+        role_term="authorised_representative",
+        rationale=(
+            "Article 22(3) defines the authorised representative's mandated tasks: "
+            "verify the EU declaration of conformity and technical documentation, "
+            "keep them at the authorities' disposal, provide information on request, "
+            "and cooperate with competent authorities; Article 22(4) requires "
+            "terminating the mandate on non-compliance."
+        ),
+    ),
+
+    # ── Conformity chain → provider ────────────────────────────────────────
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 43", role_term="provider",
+        rationale=(
+            "Article 43 sets the conformity assessment procedures the provider must "
+            "follow before placing a high-risk AI system on the market (internal "
+            "control per Annex VI or notified-body assessment per Annex VII), and "
+            "requires a new assessment on substantial modification. Bridged by "
+            "Article 16(f)."
+        ),
+    ),
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 47", role_term="provider",
+        rationale=(
+            "Article 47 requires the provider to draw up a written, machine-readable "
+            "EU declaration of conformity for each high-risk AI system and keep it "
+            "for 10 years. Bridged by Article 16(g)."
+        ),
+    ),
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 48", role_term="provider",
+        rationale=(
+            "Article 48 governs affixing of the CE marking (physically or digitally) "
+            "to high-risk AI systems, their packaging or documentation. Bridged by "
+            "Article 16(h)."
+        ),
+    ),
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 49", role_term="provider",
+        rationale=(
+            "Article 49(1)–(2) requires providers (or authorised representatives) to "
+            "register themselves and their Annex III high-risk AI systems in the EU "
+            "database before placing on the market or putting into service. Bridged "
+            "by Article 16(i)."
+        ),
+    ),
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 49", role_term="deployer",
+        rationale=(
+            "Article 49(3)–(4) requires deployers that are public authorities, Union "
+            "institutions or persons acting on their behalf to register themselves "
+            "and the use of Annex III high-risk AI systems in the EU database."
+        ),
+    ),
+
+    # ── GPAI notification gate → provider ──────────────────────────────────
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 52", role_term="provider",
+        rationale=(
+            "Article 52(1) requires providers whose general-purpose AI model meets "
+            "the Article 51 systemic-risk condition to notify the Commission without "
+            "delay and in any event within two weeks; Article 52(2) allows "
+            "presenting arguments against the classification."
+        ),
+    ),
+
+    # ── Post-market duties → provider ──────────────────────────────────────
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 72", role_term="provider",
+        rationale=(
+            "Article 72 requires providers to establish and document a post-market "
+            "monitoring system proportionate to the AI technology's risks, based on "
+            "a plan per Article 72(3), actively collecting lifetime performance data."
+        ),
+    ),
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 73", role_term="provider",
+        rationale=(
+            "Article 73 requires providers to report serious incidents of high-risk "
+            "AI systems to the market surveillance authorities, with deadlines "
+            "graduated by severity (15 days general, 10 days death, 2 days "
+            "widespread infringement), and to perform investigations and corrective "
+            "action."
+        ),
+    ),
+
+    # ── Deployer duties the heuristic missed ───────────────────────────────
+    CuratedObligationEdge(
+        celex="32024R1689", provision_ref="Article 27", role_term="deployer",
+        rationale=(
+            "Article 27 requires deployers that are bodies governed by public law, "
+            "private operators providing public services, or operators deploying "
+            "Annex III point 5(b)/(c) systems to perform a fundamental rights "
+            "impact assessment before first use and notify the market surveillance "
+            "authority of the outcome."
+        ),
+    ),
+]
+
 # All curated obligation patches (extend as coverage gaps are identified)
-_ALL_OBLIGATION_PATCHES: list[CuratedObligationEdge] = _GPAI_OBLIGATION_OF_PATCHES
+_ALL_OBLIGATION_PATCHES: list[CuratedObligationEdge] = (
+    _GPAI_OBLIGATION_OF_PATCHES + _HIGH_RISK_OBLIGATION_OF_PATCHES
+)
 
 
 # ---------------------------------------------------------------------------
