@@ -31,7 +31,11 @@ def test_api_ask_returns_answer_and_audit_trace(monkeypatch):
     response = client.post("/api/ask", json={"question": "What is a provider?", "k": 4})
 
     assert response.status_code == 200
-    assert response.get_json() == {
+    payload = response.get_json()
+    # The pilot-logging layer stamps a fresh interaction_id per request; the
+    # test only pins the answer/trace contract, not the generated id.
+    assert payload.pop("interaction_id", None)
+    assert payload == {
         "answer": "Answer for: What is a provider?",
         "audit_trace": {
             "route": {"id": "definition_lookup"},
