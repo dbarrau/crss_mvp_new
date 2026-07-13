@@ -138,6 +138,24 @@ _GUIDANCE_KINDS: frozenset[str] = frozenset({
 # Allowed base labels for node identity (prevent Cypher injection)
 _ALLOWED_BASE_LABELS: frozenset[str] = frozenset({"Provision", "Guidance"})
 
+# Non-operative regulation kinds → binding_force 'interpretive'.  Recitals,
+# citations ("Having regard to…") and the preamble aid interpretation of the
+# enacting terms but impose no obligations (settled CJEU position: a recital
+# cannot derogate from an operative provision).  Marking them 'binding'
+# overstated their authority everywhere binding_force is consumed (context
+# badges, confidence scoring, audit trace).
+_INTERPRETIVE_KINDS: frozenset[str] = frozenset({
+    "recital", "citation", "preamble",
+})
+
+
+def _default_binding_force(kind: str) -> str:
+    if kind in _GUIDANCE_KINDS:
+        return "non_binding"
+    if kind in _INTERPRETIVE_KINDS:
+        return "interpretive"
+    return "binding"
+
 
 def _base_label_for(provisions: list[dict]) -> str:
     """Return 'Guidance' if this file contains guidance nodes, else 'Provision'."""
@@ -462,6 +480,10 @@ class RegulationGraphLoader:
                 return f"Section {number}"
             if kind == "article" and number:
                 return f"Article {number}"
+            if kind == "recital" and number:
+                return f"Recital {number}"
+            if kind == "citation" and number:
+                return f"Citation {number}"
             if kind == "paragraph" and number:
                 return f"Paragraph {number}"
             if kind == "subparagraph" and number:
@@ -493,10 +515,123 @@ class RegulationGraphLoader:
                 return text[:80]
             return kind or ""
 
+        # Deep-node kinds whose local ref ("Paragraph 1", "Point (b)", "Annex
+        # bullet") is massively duplicated across the regulation.  These get a
+        # fully qualified legal citation as display_ref instead — "Article
+        # 5(4), point (a)", "Annex VIII, Chapter III, point 6.1" — so the ref
+        # that reaches rendered context, citations and evals is unambiguous.
+        # (Node *ids* keep the EUR-Lex anchor convention: stable internal keys.)
+        _ARTICLE_DEEP_KINDS = frozenset({
+            "paragraph", "subparagraph", "point", "roman_item",
+        })
+        _ANNEX_DEEP_KINDS = frozenset({
+            "annex_chapter", "annex_part", "annex_section", "annex_subsection",
+            "annex_point", "annex_subpoint", "annex_bullet",
+        })
+
+        def qualified_ref(p: dict) -> str | None:
+            """Fully qualified citation for deep nodes; None for the rest.
+
+            Article family walks the ancestor chain and composes the standard
+            EU citation form; the annex family relies on the fact that annex
+            item numbers are cumulative-dotted ("6.1.2.1"), so the deepest
+            numbered component identifies the item within its annex(+chapter/
+            part). Unnumbered dash items are cited as indents, per OJ style.
+            """
+            kind = p.get("kind", "")
+            if kind not in _ARTICLE_DEEP_KINDS and kind not in _ANNEX_DEEP_KINDS:
+                return None
+            chain = [
+                by_id[anc_id]
+                for anc_id in (p.get("path") or [])
+                if anc_id in by_id
+            ] + [p]
+
+            if kind in _ARTICLE_DEEP_KINDS:
+                ref: str | None = None
+                for node in chain:
+                    k, num = node.get("kind", ""), node.get("number")
+                    if k == "article" and num:
+                        ref = f"Article {num}"
+                    elif ref is None:
+                        continue
+                    elif k == "paragraph" and num:
+                        ref += f"({num})"
+                    elif k == "subparagraph" and num:
+                        ref += f", subparagraph {num}"
+                    elif k in ("point", "roman_item") and num:
+                        # Nested letters/romans chain onto the first point:
+                        # "Article 5(4), point (a)(i)".
+                        ref = (
+                            ref + f"({num})"
+                            if ", point (" in ref
+                            else ref + f", point ({num})"
+                        )
+                return ref
+
+            annex = chapter = part = None
+            tails: list[tuple[str, str]] = []     # [(label, number), ...]
+            subpoints: list[str] = []
+
+            def _push_tail(label: str, num: str) -> None:
+                # A cumulative-dotted number ("6.1.2") supersedes the shallower
+                # component it extends ("6.1"); an unrelated number (AI Act
+                # Annex VIII: Section A → point 1) keeps both, since dropping
+                # the section would collapse Sections A/B/C's identically
+                # numbered points into one ambiguous ref.
+                while tails and num.startswith(tails[-1][1] + "."):
+                    tails.pop()
+                tails.append((label, num))
+                subpoints.clear()
+
+            for node in chain:
+                k, num = node.get("kind", ""), node.get("number")
+                if k == "annex" and num:
+                    annex = f"Annex {num}"
+                elif k == "annex_chapter" and num:
+                    chapter = f"Chapter {num}"
+                elif k == "annex_part" and num:
+                    part = f"Part {num}"
+                elif k == "annex_section" and num:
+                    _push_tail("Section", num)
+                elif k in ("annex_subsection", "annex_point") and num:
+                    _push_tail("point", num)
+                elif k == "annex_subpoint" and num:
+                    subpoints.append(num)
+            if annex is None:
+                return None
+            out = [annex]
+            if chapter:
+                out.append(chapter)
+            if part:
+                out.append(part)
+            for i, (label, num) in enumerate(tails):
+                suffix = (
+                    "".join(f"({s})" for s in subpoints)
+                    if i == len(tails) - 1
+                    else ""
+                )
+                out.append(f"{label} {num}{suffix}")
+            if not tails and subpoints:
+                out.append("point " + "".join(f"({s})" for s in subpoints))
+            ref = ", ".join(out)
+            if kind == "annex_bullet":
+                # Unnumbered dash item — OJ citation style calls these indents.
+                parent = by_id.get(p.get("parent_id") or "")
+                ordinal = None
+                if parent:
+                    children = parent.get("children") or []
+                    if p.get("id") in children:
+                        ordinal = children.index(p["id"]) + 1
+                ref += f", indent {ordinal}" if ordinal else ", indent"
+            return ref
+
         for prov in provisions:
             raw_path = prov.get("path", []) or []
 
             # Build a human-readable path from structural ancestors plus self
+            # (path segments keep the *local* refs — the path itself already
+            # provides the context a qualified ref would repeat).
             segments: list[str] = []
             for anc_id in raw_path:
                 anc = by_id.get(anc_id)
@@ -506,9 +641,10 @@ class RegulationGraphLoader:
                 if ref:
                     segments.append(ref)
 
-            self_ref = canonical_ref(prov)
-            if self_ref:
-                segments.append(self_ref)
+            local_ref = canonical_ref(prov)
+            if local_ref:
+                segments.append(local_ref)
+            self_ref = qualified_ref(prov) or local_ref
 
             nodes.append({
                 "id":              prov["id"],
@@ -517,7 +653,7 @@ class RegulationGraphLoader:
                 "lang":            prov.get("lang", "EN"),
                 "binding_force":   prov.get(
                     "binding_force",
-                    "non_binding" if prov.get("kind", "") in _GUIDANCE_KINDS else "binding",
+                    _default_binding_force(prov.get("kind", "")),
                 ),
                 "source_type":     prov.get(
                     "source_type",

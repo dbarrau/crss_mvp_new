@@ -201,9 +201,10 @@ def _legal_force_distribution(provisions: list[dict]) -> dict[str, int]:
     """Count provisions by binding_force value."""
     counts = Counter(p.get("binding_force") or "unknown" for p in provisions)
     return {
-        "binding":     counts.get("binding", 0),
-        "non_binding": counts.get("non_binding", 0),
-        "unknown":     counts.get("unknown", 0),
+        "binding":      counts.get("binding", 0),
+        "non_binding":  counts.get("non_binding", 0),
+        "interpretive": counts.get("interpretive", 0),
+        "unknown":      counts.get("unknown", 0),
     }
 
 

@@ -341,6 +341,10 @@ def _format_one_provision(index: int, p: dict, role: str) -> str:
         force_badge = " [BINDING]"
     elif _force == "non_binding":
         force_badge = " [NON-BINDING GUIDANCE]"
+    elif _force == "interpretive":
+        # Recitals / citations / preamble: aid interpretation of the enacting
+        # terms but impose no obligations — must not be cited as the legal basis.
+        force_badge = " [INTERPRETIVE — NOT OPERATIVE]"
     else:
         force_badge = ""
     header = (

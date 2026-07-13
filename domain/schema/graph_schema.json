@@ -76,8 +76,8 @@
         "source": {"type": "string"},
         "binding_force": {
           "type": ["null", "string"],
-          "enum": [null, "binding", "non_binding"],
-          "description": "Explicit legal force of the provision source"
+          "enum": [null, "binding", "non_binding", "interpretive"],
+          "description": "Explicit legal force of the provision source. 'interpretive' marks non-operative regulation text (recitals, citations, preamble) that aids interpretation but imposes no obligations."
         },
         "source_type": {
           "type": ["null", "string"],
