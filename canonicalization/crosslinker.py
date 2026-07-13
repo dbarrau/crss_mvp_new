@@ -56,6 +56,11 @@ def discover_resolvable_refs() -> list[dict[str, Any]]:
     whose ``number`` maps to a CELEX ID we have loaded.
 
     Scans both ``data/legislation/`` and ``data/guidance/`` directories.
+
+    Each resolvable relation also carries ``_source_text`` — the source
+    provision's full analysable text — so document-level references can be
+    narrowed to the specific articles/annexes that text explicitly names
+    (see :func:`narrow_document_ref`).
     """
     results: list[dict[str, Any]] = []
     dirs_to_scan: list[tuple[Path, str]] = []
@@ -70,6 +75,10 @@ def discover_resolvable_refs() -> list[dict[str, Any]]:
         with open(parsed, encoding="utf-8") as f:
             data = json.load(f)
         source_celex = data.get("celex_id", celex_dir.name)
+        text_by_id = {
+            p.get("id"): (p.get("text_for_analysis") or p.get("text") or "")
+            for p in data.get("provisions", [])
+        }
         for rel in data.get("relations", []):
             if rel.get("type") != "CITES_EXTERNAL":
                 continue
@@ -84,7 +93,8 @@ def discover_resolvable_refs() -> list[dict[str, Any]]:
             else:
                 results.append({**rel, "_resolution": "resolvable",
                                 "_source_family": source_family,
-                                "_target_celex": target_celex})
+                                "_target_celex": target_celex,
+                                "_source_text": text_by_id.get(rel.get("source"), "")})
     return results
 
 
@@ -201,6 +211,163 @@ def build_alternative_ids(celex: str, parts: dict[str, str]) -> list[str]:
         alternatives.append(f"{celex}_art_{article}_pt_{para}")
 
     return alternatives
+
+
+# ---------------------------------------------------------------------------
+# 3b. Narrow document-level references using the source node's own text
+# ---------------------------------------------------------------------------
+# A third of INTERPRETS edges used to land on `<celex>_document` husk nodes
+# (text_for_analysis IS NULL), which every retrieval query filters out — the
+# edge existed but could never surface anything. The extraction often caught
+# only the bare regulation name ("Regulation (EU) 2017/745") even though the
+# same guidance paragraph explicitly names the provision it discusses
+# ("implementing rules in Annex VIII of Regulation (EU) 2017/745").
+#
+# Narrowing is deliberately conservative: a provision mention counts only when
+# the text *explicitly binds* it to the target regulation ("Article N of the
+# MDR", "AI Act Annex III") — a bare "Annex VIII" in a dual-MDR/IVDR guidance
+# must not be attributed by guess. When nothing binds, the document-level
+# fallback stays (harmless, and still correct provenance).
+
+# Short-name aliases per CELEX, used in running text instead of the formal
+# "Regulation (EU) N" citation. Extend when a new regulation is catalogued.
+_SHORT_REG_ALIASES: dict[str, tuple[str, ...]] = {
+    "32017R0745": ("MDR",),
+    "32017R0746": ("IVDR",),
+    "32024R1689": ("AI Act", "AIA"),
+    "32016R0679": ("GDPR",),
+}
+
+# An article/annex fragment as it appears in running text.  Kept aligned with
+# what parse_ref_text can decompose.
+_NARROW_PROV_FRAG = r"Articles?\s+\d+(?:\(\d+\))?|Annex\s+(?:[IVX]+|\d+)"
+
+
+def _alias_pattern(celex: str) -> str:
+    """Regex alternation matching every way *celex* is named in running text."""
+    number = LEGISLATION.get(celex, {}).get("number", "")
+    aliases = [re.escape(a) for a in _SHORT_REG_ALIASES.get(celex, ())]
+    if number:
+        # Matches both "Regulation (EU) 2017/745" and the bare "2017/745"
+        # (as in "per MDR 2017/745"); the optional formal prefix is part of
+        # the *usage* patterns below, not the alias itself.
+        aliases.append(re.escape(number))
+    return "|".join(aliases)
+
+
+def narrow_document_ref(source_text: str, target_celex: str) -> list[dict[str, str]]:
+    """Extract provision parts explicitly bound to *target_celex* in the text.
+
+    Returns a list of ``parse_ref_text``-style part dicts, deduplicated by the
+    provision ID they would produce.  Empty when the text never binds a
+    provision mention to this regulation — callers then keep the document-level
+    fallback edge.
+    """
+    if not source_text:
+        return []
+    alias = _alias_pattern(target_celex)
+    if not alias:
+        return []
+
+    fragments: list[str] = []
+    # "Article 6(1) of Regulation (EU) 2024/1689" / "Annex VIII of the MDR"
+    for m in re.finditer(
+        rf"({_NARROW_PROV_FRAG})\s+(?:of|to|under)\s+(?:the\s+)?"
+        rf"(?:Regulation\s+\(EU\)\s+(?:No\s+)?)?(?:{alias})\b",
+        source_text,
+        re.IGNORECASE,
+    ):
+        fragments.append(m.group(1))
+    # "MDR Article 120" / "AI Act Annex III" (optionally comma-separated)
+    for m in re.finditer(
+        rf"(?:{alias})\s*,?\s+({_NARROW_PROV_FRAG})",
+        source_text,
+        re.IGNORECASE,
+    ):
+        fragments.append(m.group(1))
+
+    parts_list: list[dict[str, str]] = []
+    seen_ids: set[str] = set()
+    for fragment in fragments:
+        parts = parse_ref_text(fragment)
+        if not parts:
+            continue
+        target_id = build_target_id(target_celex, parts)
+        if target_id and target_id not in seen_ids:
+            seen_ids.add(target_id)
+            parts_list.append(parts)
+    return parts_list
+
+
+# A guidance paragraph that attributes a quoted definition to a regulation
+# ("According to Regulation (EU) 2017/745 – MDR, “Intended purpose” means …")
+# is interpreting that regulation's *definition provision*, even though it
+# never names the article. The quoted term is looked up in the graph's own
+# DefinedTerm index for the target regulation, which resolves it to the exact
+# defining provision (e.g. 32017R0745 Article 2 point) — deterministic, no
+# guessing. Terms that don't match a DefinedTerm leave the edge untouched.
+_DEFN_QUOTE_RE = re.compile(
+    r"[\"'“‘]([^\"'“”‘’]{2,60})[\"'”’]\s+means\b",
+    re.IGNORECASE,
+)
+
+
+def _load_defined_term_map(session) -> dict[tuple[str, str], str]:
+    """Return ``{(celex, term_lower): defining_provision_id}`` from Neo4j."""
+    rows = session.run(
+        "MATCH (d:DefinedTerm)-[:DEFINED_BY]->(p:Provision) "
+        "RETURN d.celex AS celex, d.term AS term, p.id AS pid"
+    ).data()
+    return {
+        (r["celex"], (r["term"] or "").strip().lower()): r["pid"]
+        for r in rows
+        if r["celex"] and r["term"] and r["pid"]
+    }
+
+
+def narrow_definition_quotes(
+    candidate_edges: list[dict[str, Any]],
+    term_map: dict[tuple[str, str], str],
+) -> tuple[list[dict[str, Any]], set[str], int]:
+    """Narrow document-level edges whose source text quotes a defined term.
+
+    Returns ``(edges, added_target_ids, narrowed_count)``.  Only edges still
+    pointing at a ``*_document`` husk are considered; each quoted term that
+    resolves in *term_map* for the edge's target regulation replaces the husk
+    edge with an edge to the defining provision (the husk stays as fallback,
+    so a stale term id degrades to exactly the old behaviour).  Strips the
+    bookkeeping keys (``_source_text``/``_target_celex``) from every edge so
+    they never travel to the write batch.
+    """
+    out: list[dict[str, Any]] = []
+    added: set[str] = set()
+    narrowed_count = 0
+    for edge in candidate_edges:
+        text = edge.pop("_source_text", "")
+        target_celex = edge.pop("_target_celex", None)
+        if not text or not target_celex or not edge["target"].endswith("_document"):
+            out.append(edge)
+            continue
+        provision_ids: list[str] = []
+        seen: set[str] = set()
+        for m in _DEFN_QUOTE_RE.finditer(text):
+            pid = term_map.get((target_celex, m.group(1).strip().lower()))
+            if pid and pid not in seen:
+                seen.add(pid)
+                provision_ids.append(pid)
+        if not provision_ids:
+            out.append(edge)
+            continue
+        narrowed_count += len(provision_ids)
+        for pid in provision_ids:
+            added.add(pid)
+            out.append({
+                **edge,
+                "target": pid,
+                "fallback": edge["target"],
+                "narrowed_from_document": True,
+            })
+    return out, added, narrowed_count
 
 
 # ---------------------------------------------------------------------------
@@ -377,14 +544,44 @@ def crosslink(dry_run: bool = False, cleanup: bool = False) -> dict[str, int]:
         else:
             doc_target = f"{target_celex}_document"
             document_targets.add(doc_target)
-            candidate_edges.append({
-                "source": source,
-                "target": doc_target,
-                "fallback": None,
-                "ref_text": ref_text,
-                "rel_type": rel_type,
-                "source_family": rel.get("_source_family"),
-            })
+            # The extraction caught only the bare regulation name.  Try to
+            # narrow to the provisions the source's own text explicitly binds
+            # to this regulation; each narrowed edge keeps the document node
+            # as its fallback, so a narrowed target that fails verification
+            # degrades to exactly the old behaviour.
+            narrowed_parts = narrow_document_ref(
+                rel.get("_source_text", ""), target_celex,
+            )
+            if narrowed_parts:
+                for parts in narrowed_parts:
+                    narrowed_id = build_target_id(target_celex, parts)
+                    provision_targets.add(narrowed_id)
+                    alts = build_alternative_ids(target_celex, parts)
+                    provision_targets.update(alts)
+                    candidate_edges.append({
+                        "source": source,
+                        "target": narrowed_id,
+                        "alternatives": alts,
+                        "fallback": doc_target,
+                        "ref_text": ref_text,
+                        "rel_type": rel_type,
+                        "source_family": rel.get("_source_family"),
+                        "narrowed_from_document": True,
+                    })
+            else:
+                candidate_edges.append({
+                    "source": source,
+                    "target": doc_target,
+                    "fallback": None,
+                    "ref_text": ref_text,
+                    "rel_type": rel_type,
+                    "source_family": rel.get("_source_family"),
+                    # Bookkeeping for the definition-quote narrowing pass,
+                    # which needs the graph's DefinedTerm index and therefore
+                    # runs inside the session; stripped before writing.
+                    "_source_text": rel.get("_source_text", ""),
+                    "_target_celex": target_celex,
+                })
 
     # Connect to Neo4j, verify targets, write edges
     uri = _normalize_neo4j_uri(os.environ.get("NEO4J_URI", "bolt://localhost:7687"))
@@ -395,6 +592,7 @@ def crosslink(dry_run: bool = False, cleanup: bool = False) -> dict[str, int]:
     driver = GraphDatabase.driver(uri, auth=(user, password))
     provision_matched = 0
     document_fallback = 0
+    narrowed_matched = 0
     written = {"cites": 0, "interprets": 0}
 
     try:
@@ -411,6 +609,19 @@ def crosslink(dry_run: bool = False, cleanup: bool = False) -> dict[str, int]:
                 if reset_count:
                     logger.info("Cleared %d stale crosslinker materialized edges.", reset_count)
 
+            # Second narrowing tier: document-level edges whose source text
+            # quotes a defined term are re-pointed at the defining provision.
+            term_map = _load_defined_term_map(session)
+            candidate_edges, defn_targets, defn_narrowed = narrow_definition_quotes(
+                candidate_edges, term_map,
+            )
+            provision_targets |= defn_targets
+            if defn_narrowed:
+                logger.info(
+                    "Definition-quote narrowing: %d document-level edge(s) "
+                    "re-pointed at defining provisions.", defn_narrowed,
+                )
+
             all_targets = provision_targets | document_targets
             existing = session.execute_read(verify_targets, all_targets)
 
@@ -418,6 +629,8 @@ def crosslink(dry_run: bool = False, cleanup: bool = False) -> dict[str, int]:
             for edge in candidate_edges:
                 if edge["target"] in existing:
                     provision_matched += 1
+                    if edge.get("narrowed_from_document"):
+                        narrowed_matched += 1
                     final_edges.append(edge)
                     continue
                 # Try alternative IDs (e.g. point-format for definitions)
@@ -428,6 +641,8 @@ def crosslink(dry_run: bool = False, cleanup: bool = False) -> dict[str, int]:
                         break
                 if alt_hit:
                     provision_matched += 1
+                    if edge.get("narrowed_from_document"):
+                        narrowed_matched += 1
                     final_edges.append({**edge, "target": alt_hit})
                 elif edge["fallback"] and edge["fallback"] in existing:
                     logger.debug(
@@ -456,6 +671,7 @@ def crosslink(dry_run: bool = False, cleanup: bool = False) -> dict[str, int]:
 
     summary = {
         "provision_level": provision_matched,
+        "narrowed_from_document": narrowed_matched,
         "document_level": document_fallback,
         "cites_written": written["cites"] if not dry_run else 0,
         "interprets_written": written["interprets"] if not dry_run else 0,
@@ -467,6 +683,7 @@ def crosslink(dry_run: bool = False, cleanup: bool = False) -> dict[str, int]:
 
     print("\n=== Crosslinker Summary ===")
     print(f"  {'Resolved (provision-level):':<40} {provision_matched:>4}")
+    print(f"  {'  of which narrowed from doc-level:':<40} {narrowed_matched:>4}")
     print(f"  {'Resolved (document-level fallback):':<40} {document_fallback:>4}")
     print(f"  {'CITES written:':<40} {summary['cites_written']:>4}")
     print(f"  {'INTERPRETS written:':<40} {summary['interprets_written']:>4}")
