@@ -34,14 +34,19 @@ def test_family_union_grounds_descendant_keyed_source():
     assert report.verified_count == 1
 
 
-def test_family_union_still_flags_cross_family_misattribution():
-    """Recital 44 text cited as Article 5 (the one TRUE misattribution in the
-    forensics) must still flag."""
+def test_family_union_still_flags_cross_operative_family_misattribution():
+    """A quote whose text lives in a different *operative* article than the one
+    cited still flags. (Recital-only grounding is handled separately — a recital
+    reciting a rule is not proof of displacement; see the recital test below.)"""
+    art15 = (
+        "High-risk AI systems shall achieve an appropriate level of accuracy, "
+        "robustness and cybersecurity throughout their lifecycle."
+    )
     provisions = [
         {"article_ref": "Article 5", "article_text": "Prohibited practices text."},
-        {"article_ref": "Recital 44", "article_text": _RECITAL_44},
+        {"article_ref": "Article 15", "article_text": art15},
     ]
-    answer = f"**Article 5** states: “{_RECITAL_44.rstrip('.')}”"
+    answer = f"**Article 5** states: “{art15.rstrip('.')}”"
     report = check_faithfulness(answer, provisions)
     assert report.misattributed_count == 1
 
@@ -86,6 +91,47 @@ def test_truncated_cited_source_does_not_flag_without_displacement_proof():
     report = check_faithfulness(answer, provisions)
     assert report.misattributed_count == 0
     assert report.unverified_count == 0
+
+
+def test_recital_grounding_is_not_displacement_proof():
+    """v4 residuals (HQ_006, HQ_027): verbatim operative-article text, correctly
+    cited, grounded ONLY in a recital because the cited article's retrieved copy
+    was truncated. A recital recites the rule its article enacts — it is not a
+    different provision, so it must not prove displacement."""
+    art25_1c = (
+        "modifies the intended purpose of an AI system, including a "
+        "general-purpose AI system, which has not been classified as high-risk "
+        "and has already been placed on the market, in such a manner that the "
+        "AI system concerned becomes a high-risk AI system."
+    )
+    provisions = [
+        # Cited article present but its retrieved copy is truncated (lacks (1)(c))
+        {"article_ref": "Article 25", "article_text": "Article 25(1): a distributor, importer, deployer..."},
+        # The quote's only complete copy is in the reciting recital
+        {"article_ref": "Recital 84", "article_text": "Whereas " + art25_1c},
+    ]
+    answer = f"Under **Article 25(1)(c)**, a third party that “{art25_1c.rstrip('.')}” becomes a provider."
+    report = check_faithfulness(answer, provisions)
+    assert report.misattributed_count == 0
+    assert report.unverified_count == 0
+
+
+def test_genuine_operative_displacement_still_flags():
+    """The fix must not blind the guard: text cited as Article 9 that actually
+    lives in a different *operative* article (Article 15) still flags."""
+    provisions = [
+        {"article_ref": "Article 9", "article_text": "A risk management system shall be established."},
+        {"article_ref": "Article 15", "article_text": (
+            "High-risk AI systems shall achieve an appropriate level of accuracy, "
+            "robustness and cybersecurity throughout their lifecycle."
+        )},
+    ]
+    answer = (
+        "Under **Article 9**, “High-risk AI systems shall achieve an appropriate "
+        "level of accuracy, robustness and cybersecurity throughout their lifecycle.”"
+    )
+    report = check_faithfulness(answer, provisions)
+    assert report.misattributed_count == 1
 
 
 def test_nearest_label_extraction():

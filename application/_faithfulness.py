@@ -348,6 +348,11 @@ def _base_ref_family(ref: str) -> str:
     return ref
 
 
+def _is_recital_family(ref: str) -> bool:
+    """True when a source ref is a recital (non-operative preamble text)."""
+    return _base_ref_family(ref).lower().startswith("recital")
+
+
 def _article_ref_parent_chain(ref: str) -> list[str]:
     """Return progressively broader parent refs for an Article citation.
 
@@ -574,12 +579,24 @@ def _structural_verdict(
             # your citation" is not evidence of a wrong cite — observed:
             # verbatim IVDR Article 48(7) text, correctly cited, flagged
             # because Article 48's capped source text stopped before (7).
-            # Flag only when a *different* keyed family positively grounds
+            # Flag only when a *different operative* family positively grounds
             # the quote — that is the exact claim the ATTRIBUTION FLAG makes.
+            #
+            # Recital families are excluded from the displacement proof: a
+            # recital recites the rule its operative article enacts, so a
+            # recital grounding an Article/Annex citation is the same rule
+            # seen through its non-operative preamble, not a relocation to a
+            # different provision (observed: verbatim Article 5(1)(f) and
+            # Article 25(1)(c) text, correctly cited, grounded only in
+            # Recital 44 / Recital 84 because the cited article's retrieved
+            # copy was truncated). Container/chapter nodes need no exclusion —
+            # their display_ref does not match the citation grammar, so they
+            # are unkeyed and never enter this per-family adjudication.
             other_family_grounds = any(
                 grounding_verdict(quote.text, src) != "absent"
                 for ref, src in source_map.items()
                 if _base_ref_family(ref) != family
+                and not _is_recital_family(ref)
             )
             if other_family_grounds:
                 return "misattributed"
