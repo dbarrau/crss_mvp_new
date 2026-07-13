@@ -51,6 +51,64 @@ _RULE_LABEL_PATTERN = re.compile(
 _CONTEXT_INDEX_PATTERN = re.compile(r"\[\d{1,3}\]\s?")
 
 # ---------------------------------------------------------------------------
+# Jurisdiction guard (deterministic)
+#
+# The system prompt instructs the model to decline non-EU law, but a direct
+# user demand ("what are our FDA duties?") reliably overrides that instruction
+# — observed: an answer with nine 21-CFR citations typed from training memory
+# despite the rule. Foreign statutory citations are never legitimate output
+# (the corpus is EU-only, so they are unverifiable by construction), and the
+# citation grammar of US law is distinctive enough to detect deterministically.
+# Same philosophy as the faithfulness net: don't trust the instruction, verify.
+#
+# Deliberately narrow: only *statutory-citation* patterns trigger. A bare
+# mention of "FDA" or "510(k)" must NOT — saying "FDA clearance confers no EU
+# conformity" is a correct and necessary statement.
+# ---------------------------------------------------------------------------
+
+_FOREIGN_LAW_CITATION_PATTERN = re.compile(
+    r"\b\d+\s*C\.?F\.?R\.?\b"          # "21 CFR", "21 C.F.R."
+    r"|\bC\.?F\.?R\.?\s*(?:Part\b|§)"  # "CFR Part 803", "CFR §"
+    r"|\b\d+\s*U\.?S\.?C\.?\b"         # "42 USC"
+    r"|\bU\.?S\.?C\.?\s*§"
+    r"|\bFD&C\s+Act\b"
+    r"|\bMedWatch\b"
+    r"|\bFederal\s+Register\b"
+    r"|\bPremarket\s+Approval\s*\(PMA\)"
+)
+
+_JURISDICTION_WARNING = (
+    "> ⚠ **JURISDICTION FLAG** — {n} statement(s) citing non-EU law (e.g. US "
+    "CFR/FDA material) were removed from this answer. This system's corpus "
+    "covers EU regulations only; requirements of other jurisdictions cannot "
+    "be verified here and should be confirmed with qualified local counsel."
+)
+
+
+def _strip_foreign_law_citations(answer: str) -> tuple[str, int]:
+    """Remove lines citing non-EU statutory material; return (answer, n_removed).
+
+    Removal is line-grained: CRSS answers are line-structured markdown
+    (bullets, table rows, short paragraphs), and any line leaning on a foreign
+    statute is out-of-scope in its entirety. When lines are removed, a loud
+    warning block is prepended, mirroring the faithfulness-flag UX.
+    """
+    lines = answer.splitlines()
+    kept: list[str] = []
+    removed = 0
+    for line in lines:
+        if _FOREIGN_LAW_CITATION_PATTERN.search(line):
+            removed += 1
+            continue
+        kept.append(line)
+    if not removed:
+        return answer, 0
+    cleaned = "\n".join(kept)
+    warning = _JURISDICTION_WARNING.format(n=removed)
+    return f"{warning}\n\n{cleaned}", removed
+
+
+# ---------------------------------------------------------------------------
 # Post-processing functions
 # ---------------------------------------------------------------------------
 

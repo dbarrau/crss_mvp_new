@@ -35,13 +35,16 @@ from dataclasses import dataclass
 from typing import Any
 
 from application._faithfulness import (
+    build_repair_note,
     build_warning_block,
     check_faithfulness,
     faithfulness_mode,
     out_of_scope_citation_refs,
     remove_unverified_quotes,
+    repair_and_redact,
 )
 from application._confidence import compute_confidence
+from application._postprocessing import _strip_foreign_law_citations
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +108,7 @@ def _apply_faithfulness(
     definitions: list[dict],
     *,
     faith_mode: int,
+    question: str | None = None,
 ) -> tuple[str, Any | None]:
     """C1/C2 — redact ungrounded/displaced quotes and append a warning block.
 
@@ -117,12 +121,29 @@ def _apply_faithfulness(
         return answer, None
     report = None
     try:
-        report = check_faithfulness(answer, provisions, definitions)
+        report = check_faithfulness(answer, provisions, definitions, question=question)
         if not report.ok or report.near_verbatim:
-            # Redact only genuinely divergent quotes (near-verbatim ones are
-            # grounded and stay); surface both tiers in the block.
-            answer = remove_unverified_quotes(answer, report)
-            block = build_warning_block(report)
+            # Repair first: verification already located the true source text
+            # (near-verbatim) and the true provision (misattributed), so most
+            # offending quotes can be corrected deterministically instead of
+            # excised. Only the unrepairable remainder is redacted + flagged.
+            # Disable with CRSS_QUOTE_REPAIR=0 (falls back to redact-only).
+            if os.environ.get("CRSS_QUOTE_REPAIR", "1") != "0":
+                answer, residual, repair_notes = repair_and_redact(
+                    answer, report, provisions, definitions
+                )
+                note = build_repair_note(repair_notes)
+                if note:
+                    answer = f"{answer}\n\n{note}"
+                block = build_warning_block(residual)
+                if repair_notes:
+                    logger.info(
+                        "Quote repair: %d repaired, %d still removed.",
+                        len(repair_notes), len(residual.removed),
+                    )
+            else:
+                answer = remove_unverified_quotes(answer, report)
+                block = build_warning_block(report)
             if block:
                 # Append (not prepend) so the substantive answer leads. A loud
                 # verification banner at the *top* framed the whole answer as
@@ -178,9 +199,21 @@ def verify_answer(
         mentioned_regs=mentioned_regs,
     )
 
+    # Jurisdiction guard: strip foreign statutory citations the model typed
+    # from training memory. The prompt-level rule alone does not hold against
+    # a direct user demand for e.g. FDA duties (observed: nine 21-CFR cites in
+    # one answer with the rule active). Disable with CRSS_JURISDICTION_GUARD=0.
+    if os.environ.get("CRSS_JURISDICTION_GUARD", "1") != "0":
+        answer, _foreign_removed = _strip_foreign_law_citations(answer)
+        if _foreign_removed:
+            logger.info(
+                "Jurisdiction guard: removed %d line(s) citing non-EU law.",
+                _foreign_removed,
+            )
+
     faith_mode = faithfulness_mode(os.environ.get("CRSS_FAITHFULNESS_CHECK", "1"))
     answer, faith_report = _apply_faithfulness(
-        answer, provisions, definitions, faith_mode=faith_mode
+        answer, provisions, definitions, faith_mode=faith_mode, question=question
     )
 
     # Confidence reads the single pre-redaction faithfulness report: it reflects

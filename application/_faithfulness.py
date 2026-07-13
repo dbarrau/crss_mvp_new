@@ -324,6 +324,30 @@ def _normalize_ref(ref: str) -> str:
     return ref
 
 
+def _base_ref_family(ref: str) -> str:
+    """Collapse a citation ref to its base provision family.
+
+    ``Article 5(1)(f)`` → ``Article 5``; ``Annex IX, Chapter I, point 3.5`` →
+    ``Annex IX``; ``Recital 44`` → ``Recital 44``. Sources and citations that
+    share a family refer to the same base provision at different depths —
+    ancestor, descendant or sibling — and must adjudicate as one unit: the
+    guard's old ancestor-only walk false-flagged verbatim Article 5(1)(f) text
+    whenever the bag's source entry was keyed at a different depth than the
+    answer's citation label.
+    """
+    ref = _normalize_ref(ref)
+    m = re.match(r"^(Article\s+\d+[a-z]?)", ref, flags=re.IGNORECASE)
+    if m:
+        return _normalize_ref(m.group(1))
+    m = re.match(r"^(Annex\s+[IVXLC]+)", ref, flags=re.IGNORECASE)
+    if m:
+        return _normalize_ref(m.group(1))
+    m = re.match(r"^(Recital\s+\d+)", ref, flags=re.IGNORECASE)
+    if m:
+        return _normalize_ref(m.group(1))
+    return ref
+
+
 def _article_ref_parent_chain(ref: str) -> list[str]:
     """Return progressively broader parent refs for an Article citation.
 
@@ -453,18 +477,44 @@ def _distinct_source_count(quote_norm: str, sources: list[str]) -> int:
     return count
 
 
+# Any label a quote can be attributed to. Adjudicable labels (Article/Annex/
+# Recital) are resolvable against retrieved sources; blocker labels (guidance
+# section numbers, MDCG document ids, bare point numbers) are citation forms
+# the source map cannot key, so a quote attributed to one must NOT be
+# adjudicated at all — the old behaviour fell through to an *earlier, unrelated*
+# Article match in the window and false-flagged guidance-cited quotes.
+_ATTRIBUTION_LABEL_RE = re.compile(
+    r"(?P<cite>Article\s+\d+[a-z]?(?:\(\d+\))?(?:\([a-z]\))?"
+    r"|Annex\s+[IVXLC]+(?:,\s*(?:Chapter|Part|Section|point)\s+[\w.()]+)*"
+    r"|Recital\s+\d+)"
+    r"|(?P<blocker>MDCG\s*\d{4}[‑–-]\d+|Section\s+\d[\w.]*|point\s+\d[\w.]*)",
+    re.IGNORECASE,
+)
+
+
 def _nearest_citation_ref(answer: str, quote_start: int) -> str | None:
-    """Return the citation ref immediately preceding a quote, if any.
+    """Return the adjudicable citation ref immediately preceding a quote.
 
     Scans the ``_ATTRIBUTION_WINDOW`` characters before the quote for the last
-    ``Article X`` / ``Annex Y`` reference — the label the quote is attributed to.
+    attribution label. Returns the normalized ref when that label is an
+    Article/Annex/Recital; returns None both when there is no label and when
+    the nearest label is a non-adjudicable form (guidance section, MDCG id) —
+    in the latter case the quote is attributed to a source the map cannot
+    resolve, and adjudicating it against some earlier Article ref in the
+    window would be a false flag.
     """
     lo = max(0, quote_start - _ATTRIBUTION_WINDOW)
     window = answer[lo:quote_start]
-    matches = list(_CITATION_REF_RE.finditer(window))
+    matches = list(_ATTRIBUTION_LABEL_RE.finditer(window))
     if not matches:
         return None
-    return _normalize_ref(matches[-1].group(1))
+    last = matches[-1]
+    if last.group("blocker"):
+        return None
+    # Compound annex labels ("Annex IX, Chapter I, point 3.5") resolve at the
+    # family level; extract the plain head the source map is keyed by.
+    head = _CITATION_REF_RE.search(last.group("cite"))
+    return _normalize_ref(head.group(1)) if head else None
 
 
 def _resolve_cited_source(cited_ref: str, source_map: dict[str, str]) -> str | None:
@@ -502,11 +552,23 @@ def _structural_verdict(
         return "concatenated"
     cited = _nearest_citation_ref(answer, quote.start)
     if cited:
-        src = _resolve_cited_source(cited, source_map)
-        # Flag only when we actually hold the cited source and the quote is
-        # absent from it — if the cited provision was never retrieved we cannot
-        # adjudicate attribution, so we stay silent (no false flag).
-        if src is not None and grounding_verdict(quote.text, src) == "absent":
+        # Adjudicate against the cited provision's whole *family* — every
+        # retrieved source keyed at any depth of the same base provision
+        # (ancestor, descendant or sibling). Sources are keyed by whatever
+        # depth the retrieval anchored ("Article 5" vs "Article 5(1)"), and
+        # the answer cites at yet another depth; the old ancestor-only walk
+        # false-flagged verbatim Article 5(1)(f) text whenever those depths
+        # disagreed. Silent when no family source was retrieved (cannot
+        # adjudicate — no false flag).
+        family = _base_ref_family(cited)
+        family_sources = [
+            src for ref, src in source_map.items()
+            if _base_ref_family(ref) == family
+        ]
+        if family_sources and all(
+            grounding_verdict(quote.text, src) == "absent"
+            for src in family_sources
+        ):
             return "misattributed"
     return None
 
@@ -559,6 +621,7 @@ def check_faithfulness(
     answer: str,
     provisions: list[dict[str, Any]],
     definitions: list[dict[str, Any]] | None = None,
+    question: str | None = None,
 ) -> FaithfulnessReport:
     """Verify every long verbatim quote in *answer* against the full context.
 
@@ -566,17 +629,26 @@ def check_faithfulness(
     that quotes drawn from formal definitions or interpretive guidance verify
     correctly.  Returns a :class:`FaithfulnessReport`.  Quotes below the length
     threshold are silently dropped (not counted as verified or unverified).
+
+    When *question* is provided, quotes grounded in the question itself are
+    exempt: the model restating the user's scenario in quote marks ("assists
+    radiologists in detecting lung nodules") is not a claim about legal text,
+    and flagging it as a fabricated regulatory quote was a false positive.
     """
     quotes = extract_quotes(answer)
     if not quotes:
         return FaithfulnessReport(total_quotes=0)
     corpus = _build_corpus(provisions, definitions)
     sources, source_map = _build_sources(provisions, definitions)
+    question_norm = _normalize(question) if question else ""
     verified: list[Quote] = []
     near_verbatim: list[Quote] = []
     unverified: list[Quote] = []
     misattributed: list[Quote] = []
     for q in quotes:
+        if question_norm and grounding_verdict(q.text, question_norm) != "absent":
+            verified.append(q)   # scenario echo, not a regulatory quote
+            continue
         verdict = grounding_verdict(q.text, corpus)
         if verdict == "absent":
             # Genuine fabrication: not grounded anywhere.  Structural guards
@@ -676,6 +748,266 @@ def remove_unverified_quotes(answer: str, report: FaithfulnessReport) -> str:
     redacted = re.sub(r"\n{3,}", "\n\n", redacted)
     redacted = re.sub(r"\*\*\s*\*\*", "", redacted)
     return redacted.strip()
+
+
+# ---------------------------------------------------------------------------
+# Quote repair
+#
+# Redaction throws away information the verification already computed: for a
+# *misattributed* quote the adjudication found which provision the text really
+# lives in, and for a *near-verbatim* (and many "absent") quotes the matcher
+# located the true source span. Repair uses that knowledge deterministically —
+# substitute the source's exact words, re-point the citation to the true
+# provision — so a paraphrase-as-quotation becomes a correct answer instead of
+# a hole plus a warning banner. No LLM call; unrepairable quotes still redact.
+# ---------------------------------------------------------------------------
+
+# A fabricated (absent-verdict) quote is repaired only from the provision it
+# *cites*, and only when the model's text is recognisably a paraphrase of a
+# specific passage there (SequenceMatcher ratio over the best 1-3 sentence
+# run). Below this, substituting "the real text" risks planting a passage that
+# does not support the surrounding claim.
+_REPAIR_FABRICATED_MIN_RATIO: float = 0.60
+# Near-verbatim quotes are already ≥90%-recall grounded; the sentence-run match
+# must be strong before we overwrite the model's wording with the source's.
+_REPAIR_NEAR_MIN_RATIO: float = 0.80
+_REPAIR_MAX_SENTENCE_RUN: int = 3
+
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.;:])\s+|\n+")
+
+
+def _best_sentence_run(quote_text: str, raw_source: str) -> tuple[float, str | None]:
+    """Best-matching run of 1-3 consecutive source sentences for *quote_text*.
+
+    Returns ``(ratio, raw_run)`` where *raw_run* preserves the source's exact
+    casing/wording (single-line, inner double quotes folded) — the string that
+    can replace the model's paraphrase inside the answer's quote marks.
+    """
+    quote_norm = _normalize(quote_text)
+    if not quote_norm:
+        return 0.0, None
+    raw_sents = [s.strip() for s in _SENTENCE_SPLIT_RE.split(raw_source) if s.strip()]
+    norm_sents = [_normalize(s) for s in raw_sents]
+    best_ratio, best_run = 0.0, None
+    for i in range(len(raw_sents)):
+        acc = ""
+        for j in range(i, min(i + _REPAIR_MAX_SENTENCE_RUN, len(raw_sents))):
+            acc = norm_sents[j] if j == i else f"{acc} {norm_sents[j]}"
+            if len(acc) > 3 * len(quote_norm) + 40:
+                break
+            m = difflib.SequenceMatcher(None, quote_norm, acc, autojunk=False)
+            if m.real_quick_ratio() <= best_ratio:
+                continue
+            ratio = m.ratio()
+            if ratio > best_ratio:
+                raw_run = " ".join(raw_sents[i : j + 1])
+                best_ratio, best_run = ratio, raw_run
+    if best_run is not None:
+        # Quote bodies are single-line and must not contain double-quote glyphs
+        # (they would terminate the enclosing quotation).
+        best_run = _WHITESPACE_RE.sub(" ", best_run).replace('"', "'").strip()
+    return best_ratio, best_run
+
+
+def _build_raw_sources(
+    provisions: list[dict[str, Any]],
+    definitions: list[dict[str, Any]] | None,
+) -> dict[str, tuple[str, str]]:
+    """Return ``{normalized_ref: (pretty_ref, raw_text)}`` for repair lookups."""
+    out: dict[str, tuple[str, str]] = {}
+    for item, text_of in [
+        *((p, _provision_text) for p in provisions or []),
+        *((d, _definition_text) for d in definitions or []),
+    ]:
+        if not item:
+            continue
+        raw_ref = item.get("article_ref")
+        if not (isinstance(raw_ref, str) and _CITATION_REF_RE.search(raw_ref)):
+            continue
+        key = _normalize_ref(raw_ref)
+        text = text_of(item)
+        if not text:
+            continue
+        if key in out:
+            out[key] = (out[key][0], out[key][1] + "\n" + text)
+        else:
+            out[key] = (raw_ref, text)
+    return out
+
+
+def _unique_grounding_ref(
+    quote_text: str,
+    source_map: dict[str, str],
+) -> str | None:
+    """The single normalized ref whose source grounds *quote_text*, if unique.
+
+    Candidates collapse by base provision family: "Article 43", "Article
+    43(4)" and "Article 43(4), subparagraph 2" all grounding a quote is one
+    provision seen at three depths, not an ambiguity. Within the surviving
+    family the most specific (longest) ref wins, so re-pointing lands on the
+    precise provision. More than one distinct family → None (a genuinely
+    ambiguous quote must not be re-attributed by guess).
+    """
+    candidates = [
+        ref for ref, src in source_map.items()
+        if grounding_verdict(quote_text, src) != "absent"
+    ]
+    if not candidates:
+        return None
+    families = {_base_ref_family(ref) for ref in candidates}
+    if len(families) != 1:
+        return None
+    return max(candidates, key=len)
+
+
+def _citation_ref_span(answer: str, quote_start: int) -> tuple[int, int] | None:
+    """Span of the citation ref immediately preceding a quote, if any."""
+    lo = max(0, quote_start - _ATTRIBUTION_WINDOW)
+    matches = list(_CITATION_REF_RE.finditer(answer[lo:quote_start]))
+    if not matches:
+        return None
+    m = matches[-1]
+    return lo + m.start(1), lo + m.end(1)
+
+
+def repair_and_redact(
+    answer: str,
+    report: FaithfulnessReport,
+    provisions: list[dict[str, Any]],
+    definitions: list[dict[str, Any]] | None = None,
+) -> tuple[str, FaithfulnessReport, list[str]]:
+    """Repair what verification already solved; redact only the remainder.
+
+    Per offending quote, in one descending-offset pass (so earlier edits never
+    invalidate later offsets):
+
+    - **misattributed** (single true source, not a concatenated dump): re-point
+      the nearest citation ref to the true provision; if the wording is only
+      near-verbatim there, also substitute the source's exact sentence run.
+    - **fabricated**: substitute the cited provision's best sentence run when
+      the model's text is recognisably a paraphrase of it; otherwise redact.
+    - **near-verbatim**: substitute the exact source wording when the match is
+      strong; otherwise keep as-is (grounded either way).
+
+    Returns ``(answer, residual_report, repair_notes)``; the residual report
+    holds only the quotes still removed/noted, for the warning block. Callers
+    keep feeding the *original* report to confidence — a repaired fabrication
+    still reflects generation behaviour.
+    """
+    sources, source_map = _build_sources(provisions, definitions)
+    raw_sources = _build_raw_sources(provisions, definitions)
+
+    # action: (quote, kind, payload)
+    actions: list[tuple[Quote, str, dict[str, Any]]] = []
+    residual_unverified: list[Quote] = []
+    residual_misattributed: list[Quote] = []
+    residual_near: list[Quote] = []
+    notes: list[str] = []
+
+    def _run_for(quote: Quote, ref: str | None, min_ratio: float) -> str | None:
+        if ref is None or ref not in raw_sources:
+            # Walk up the parent chain like attribution resolution does.
+            for parent in _article_ref_parent_chain(ref or ""):
+                if parent in raw_sources:
+                    ref = parent
+                    break
+            else:
+                return None
+        ratio, run = _best_sentence_run(quote.text, raw_sources[ref][1])
+        if run and ratio >= min_ratio and len(run) >= _MIN_QUOTE_LEN:
+            return run
+        return None
+
+    for q in report.unverified:
+        if _ELLIPSIS_RE.search(q.text):
+            residual_unverified.append(q)   # multi-fragment: not repairable
+            continue
+        cited = _nearest_citation_ref(answer, q.start)
+        run = _run_for(q, cited, _REPAIR_FABRICATED_MIN_RATIO)
+        if run:
+            actions.append((q, "substitute", {"text": run}))
+            notes.append(f"quote corrected to the exact text of {raw_sources.get(cited, (cited,))[0] if cited else 'its source'}")
+        else:
+            residual_unverified.append(q)
+
+    for q in report.misattributed:
+        quote_norm = _normalize(q.text)
+        if (
+            len(quote_norm) >= _CONCAT_MIN_QUOTE
+            and _distinct_source_count(quote_norm, sources) > _CONCAT_MAX_SOURCES
+        ):
+            residual_misattributed.append(q)   # dump, not a quotation
+            continue
+        true_ref = _unique_grounding_ref(q.text, source_map)
+        ref_span = _citation_ref_span(answer, q.start)
+        if true_ref and true_ref in raw_sources and ref_span:
+            payload: dict[str, Any] = {
+                "ref_span": ref_span,
+                "ref_text": raw_sources[true_ref][0],
+            }
+            if grounding_verdict(q.text, source_map[true_ref]) == "near":
+                run = _run_for(q, true_ref, _REPAIR_NEAR_MIN_RATIO)
+                if run:
+                    payload["text"] = run
+            actions.append((q, "repoint", payload))
+            notes.append(
+                f"citation corrected: the quoted text is from {raw_sources[true_ref][0]}"
+            )
+        else:
+            residual_misattributed.append(q)
+
+    for q in report.near_verbatim:
+        cited = _nearest_citation_ref(answer, q.start)
+        run = _run_for(q, cited, _REPAIR_NEAR_MIN_RATIO)
+        if run:
+            actions.append((q, "substitute", {"text": run}))
+            notes.append(
+                f"wording aligned to the exact text of {raw_sources.get(cited, (cited,))[0] if cited else 'its source'}"
+            )
+        else:
+            residual_near.append(q)
+
+    # Apply repairs + residual redactions in one descending-offset pass.
+    edits: list[tuple[int, int, str]] = []   # (start, end, replacement)
+    for q, kind, payload in actions:
+        if "text" in payload:
+            edits.append((q.start, q.end, "“" + payload["text"] + "”"))
+        if kind == "repoint":
+            lo, hi = payload["ref_span"]
+            edits.append((lo, hi, payload["ref_text"]))
+    for q in residual_unverified + residual_misattributed:
+        edits.append((q.start, q.end, _REDACTION_MARKER))
+
+    repaired = answer
+    for start, end, replacement in sorted(edits, key=lambda e: e[0], reverse=True):
+        if 0 <= start < end <= len(repaired):
+            repaired = repaired[:start] + replacement + repaired[end:]
+
+    repaired = re.sub(r"[ \t]{2,}", " ", repaired)
+    repaired = re.sub(r"\n{3,}", "\n\n", repaired)
+    repaired = re.sub(r"\*\*\s*\*\*", "", repaired).strip()
+
+    residual = FaithfulnessReport(
+        total_quotes=report.total_quotes,
+        verified=list(report.verified) + [q for q, _, _ in actions],
+        unverified=residual_unverified,
+        near_verbatim=residual_near,
+        misattributed=residual_misattributed,
+    )
+    return repaired, residual, notes
+
+
+def build_repair_note(notes: list[str]) -> str | None:
+    """Small info block listing deterministic quote repairs (or None)."""
+    if not notes:
+        return None
+    lines = [
+        "> \U0001F527 **Auto-verified corrections** — "
+        f"{len(notes)} quote(s)/citation(s) were corrected against the "
+        "retrieved source text:"
+    ]
+    lines.extend(f"> - {n}" for n in notes)
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
