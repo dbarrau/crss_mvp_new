@@ -847,7 +847,8 @@
         [
           "special category",
           "special-category",
-          "sensitive data"
+          "sensitive data",
+          "special categories"
         ],
         [
           "article 6 and article 9",
@@ -1130,7 +1131,10 @@
     "question": "A medical device with an AI component is placed on the EU market in 2025. How do the application timelines and transitional provisions of the EU AI Act and MDR 2017/745 interact for our compliance obligations?",
     "answer_key": {
       "must_cite": [
-        "Article 83"
+        [
+          "Article 111",
+          "Article 113"
+        ]
       ],
       "must_state": [
         [
@@ -1196,6 +1200,215 @@
         [
           "independence",
           "impartial"
+        ]
+      ],
+      "must_not_claim": []
+    }
+  },
+  {
+    "id": "HQ_033",
+    "label": "Notified body surveillance duties after QMS certification (MDR Annex IX/VII + Article 56)",
+    "tests": "notified-body role channel; annex anchoring; certificate lifecycle",
+    "question": "Our notified body has just issued an EU quality management system certificate under MDR Annex IX for our Class IIb infusion pumps. As the manufacturer's regulatory affairs lead I want to understand: what surveillance activities must the notified body carry out during the certificate's period of validity, and what can it do if it finds we are no longer compliant?",
+    "judge_notes": "The correct anchors are MDR Annex IX Chapter I Section 3 (surveillance assessment: audits at least once every 12 months, unannounced audits) and/or Annex VII Section 4.10 (the notified body's surveillance obligations), plus Article 56 for suspension/restriction/withdrawal of certificates. Note: Article 44 governs the authorities' monitoring OF notified bodies — presenting it as the notified body's surveillance duty toward the manufacturer is a backbone error.",
+    "answer_key": {
+      "must_cite": [
+        [
+          "Annex IX",
+          "Annex VII"
+        ],
+        "Article 56"
+      ],
+      "must_state": [
+        [
+          "surveillance audit",
+          "surveillance assessment",
+          "audit at least once",
+          "every 12 months",
+          "annual audit",
+          "periodic audit",
+          "surveillance"
+        ],
+        [
+          "unannounced"
+        ],
+        [
+          "suspend",
+          "withdraw",
+          "restrict",
+          "suspension",
+          "withdrawal"
+        ]
+      ],
+      "must_not_claim": []
+    }
+  },
+  {
+    "id": "HQ_034",
+    "label": "CIR 2026/977 — notified body re-certification timelines and quotations",
+    "tests": "implementing regulation coverage; CIR role channel; procedural timelines",
+    "question": "Our notified body has invited us to start re-certification of our MDR quality management system certificates. Under Commission Implementing Regulation (EU) 2026/977, what timelines govern the notified body's handling of the re-certification, what must its quotation cover, and what does the process expect from us as the manufacturer?",
+    "judge_notes": "The decisive source is CIR (EU) 2026/977 itself: Article 1 (quotations), Article 2 (timelines), Articles 6-7 (re-certification of QMS certificates and the re-certification decision). MDR Annex VII context is complementary, not a substitute. An answer that analyses only the MDR and never reaches the implementing regulation has missed the primary legal route.",
+    "answer_key": {
+      "must_cite": [
+        "Article 2",
+        [
+          "Article 6",
+          "Article 7"
+        ]
+      ],
+      "must_state": [
+        [
+          "quotation"
+        ],
+        [
+          "timeline",
+          "time limit",
+          "deadline",
+          "within"
+        ],
+        [
+          "re-certification",
+          "recertification",
+          "re-certify"
+        ],
+        [
+          "notified body"
+        ]
+      ],
+      "must_not_claim": []
+    }
+  },
+  {
+    "id": "HQ_035",
+    "label": "Abstention — FDA 510(k) has no EU effect; US rules outside corpus",
+    "tests": "abstention/scope discipline; no fabricated foreign law; cross-jurisdiction trap",
+    "question": "Our Class II device already has FDA 510(k) clearance in the United States. Can we rely on that clearance to CE-mark the device and place it on the EU market, and what post-market reporting duties will we have towards the FDA once we also sell in the US?",
+    "judge_notes": "Correct behaviour has two parts. (1) EU side: state clearly that FDA 510(k) clearance confers no conformity under the MDR — the device needs the full MDR conformity assessment route and CE marking; there is no mutual recognition. (2) US side: explicitly decline — FDA/US requirements are outside the scope of the EU regulatory corpus this system covers. Inventing FDA citations, US timelines or 21 CFR references is a fatal defect. A clean scope refusal on the US part plus a correct EU analysis deserves a high score; do not penalise the refusal.",
+    "answer_key": {
+      "must_cite": [],
+      "must_state": [
+        [
+          "conformity assessment"
+        ],
+        [
+          "cannot",
+          "does not",
+          "no mutual",
+          "not sufficient",
+          "not recognised",
+          "not recognized",
+          "not accepted",
+          "no effect"
+        ],
+        [
+          "CE mark",
+          "CE-mark",
+          "CE marking"
+        ]
+      ],
+      "must_not_claim": [
+        "510(k) clearance is sufficient",
+        "510(k) satisfies"
+      ]
+    }
+  },
+  {
+    "id": "HQ_036",
+    "label": "Wrong-premise trap — MDD 93/42/EEC classification rules for software",
+    "tests": "repealed-law trap; premise correction; MDR Annex VIII Rule 11",
+    "question": "We are classifying our diagnostic decision-support software. Which classification rules under the Medical Device Directive 93/42/EEC apply to it, and what class will the software fall into?",
+    "judge_notes": "The premise is false: Directive 93/42/EEC (MDD) was repealed and replaced by Regulation (EU) 2017/745 (MDR), subject to the Article 120 transitional provisions. A reliable answer corrects the premise and classifies under MDR Annex VIII (Rule 11 is the software rule — software providing information for diagnostic/therapeutic decisions is at least Class IIa, with higher classes depending on severity of impact). Answering with MDD rules as if they were in force is a fatal backbone error.",
+    "answer_key": {
+      "must_cite": [
+        "Annex VIII"
+      ],
+      "must_state": [
+        [
+          "repealed",
+          "replaced",
+          "no longer in force",
+          "superseded",
+          "no longer applies",
+          "no longer applicable",
+          "legacy",
+          "former Directive",
+          "not the"
+        ],
+        [
+          "Rule 11"
+        ],
+        [
+          "2017/745",
+          "MDR"
+        ]
+      ],
+      "must_not_claim": []
+    }
+  },
+  {
+    "id": "HQ_037",
+    "label": "Multi-turn clarify loop — role reply resolves to deployer obligations (AI Act Art 26)",
+    "tests": "multi-turn history rewrite; clarify-gate closure; deployer backbone",
+    "history": [
+      {
+        "role": "user",
+        "content": "What obligations does our company have under the AI Act for the high-risk AI recruitment system we've introduced?"
+      },
+      {
+        "role": "assistant",
+        "content": "To answer precisely I need to know your company's role under the AI Act, because the obligations differ fundamentally: are you the provider of the system (you developed it or place it on the market under your own name or trademark), or the deployer (you use a system supplied by another company under your own authority)?"
+      }
+    ],
+    "question": "We're the deployer — we license the system from a software vendor and use it to screen applicants for our own vacancies.",
+    "judge_notes": "This is a multi-turn exchange: the user's final message answers the system's clarification question. Grade the answer as a response to the ORIGINAL question with role = deployer. The backbone is Article 26 (deployer obligations: use in accordance with instructions for use, assign competent human oversight, input-data relevance where under the deployer's control, monitoring and log retention, informing workers/affected persons). Presenting the provider obligations (Articles 9-17) as the company's own duties is a backbone error; noting them as the vendor's duties is fine. Article 27 FRIA applies to public bodies and certain private operators — a private employer screening its own applicants is generally outside it; flagging that boundary is a plus.",
+    "answer_key": {
+      "must_cite": [
+        "Article 26"
+      ],
+      "must_state": [
+        [
+          "deployer"
+        ],
+        [
+          "instructions for use",
+          "accordance with the instructions",
+          "according to the instructions"
+        ],
+        [
+          "human oversight"
+        ],
+        [
+          "monitor",
+          "monitoring"
+        ],
+        [
+          "log"
+        ]
+      ],
+      "must_not_claim": []
+    }
+  },
+  {
+    "id": "HQ_038",
+    "label": "AI Act application dates — Article 113 timeline for high-risk and prohibitions",
+    "tests": "temporal correctness; exact dates; Article 113",
+    "question": "We operate a high-risk AI system listed in Annex III of the AI Act. Which parts of the AI Act already apply to us today, and from what exact dates do the high-risk obligations and the Article 5 prohibitions apply? Please give the specific application dates.",
+    "judge_notes": "The anchor is Article 113: the Regulation applies generally from 2 August 2026 (this covers the Annex III high-risk obligations); Chapters I and II — including the Article 5 prohibitions — apply from 2 February 2025 (already in force); the GPAI/governance chapters from 2 August 2025; Article 6(1) embedded-product high-risk route from 2 August 2027. Wrong or invented dates are fatal for compliance use. A caveat that pending legislative amendments could shift dates is acceptable but the corpus dates above are the required baseline.",
+    "answer_key": {
+      "must_cite": [
+        "Article 113"
+      ],
+      "must_state": [
+        [
+          "2 August 2026",
+          "2026-08-02",
+          "August 2, 2026"
+        ],
+        [
+          "2 February 2025",
+          "2025-02-02",
+          "February 2, 2025"
         ]
       ],
       "must_not_claim": []

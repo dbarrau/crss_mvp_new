@@ -62,6 +62,14 @@ If the answer gets the primary legal route materially wrong, cap the score at 6.
 If the answer misstates the initial actor status in a way that distorts the whole conclusion, cap the score at 6.5.
 If the answer omits a decisive provision that should clearly anchor the conclusion, cap the score at 7.0.
 If the answer is polished but legally unstable, say so explicitly.
+A CITATION VERIFICATION section may follow the answer: it is a deterministic
+machine check of every verbatim quote against the retrieved legal corpus, and
+it outranks your own impression of the citations. If it reports one or more
+FABRICATED or MISATTRIBUTED quotes, that is a fatal defect for compliance
+reliance: cap the score at 6.5 and the reliance judgment at "Cannot be relied
+on without major revision" — a compliance officer who forwards an answer
+containing an unverifiable quote assumes personal professional risk, however
+sound the surrounding reasoning.
 
 Required output format:
 
