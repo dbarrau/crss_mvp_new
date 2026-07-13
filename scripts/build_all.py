@@ -264,6 +264,62 @@ def stage_canonicalize(*, no_communities: bool) -> dict:
     return summary
 
 
+def stage_verify_role_coverage() -> list[str]:
+    """Warn loudly when a loaded regulation has no actor-role machinery.
+
+    Every regulation in the catalog is role-partitioned EU law: after
+    canonicalization it must carry at least one ActorRole node and at least one
+    OBLIGATION_OF edge, or the role-obligation retrieval channel is silently
+    empty for that regulation and every role-scoped question degrades to
+    vector-only.  This has happened twice in practice (CIR 2026/977 missing
+    from ``_REG_PATTERNS``; the same CIR with zero ActorRole nodes), and both
+    times nothing failed — the gap only surfaced as quietly worse answers.
+
+    Returns the list of warning strings (empty = healthy) so the build summary
+    can repeat them at the end; the build is not failed, because a partial
+    graph is still more useful than no graph.
+    """
+    from neo4j import GraphDatabase
+
+    from domain.legislation_catalog import LEGISLATION
+
+    print("=== Verify role/obligation coverage ===")
+    uri, user, password, database = _neo4j_params()
+    warnings: list[str] = []
+    with GraphDatabase.driver(uri, auth=(user, password)) as driver:
+        with driver.session(database=database) as session:
+            rows = session.run(
+                "MATCH (p:Provision) WITH DISTINCT p.celex AS celex "
+                "OPTIONAL MATCH (r:ActorRole {celex: celex}) "
+                "WITH celex, count(r) AS roles "
+                "OPTIONAL MATCH (:Provision {celex: celex})-[o:OBLIGATION_OF]->() "
+                "RETURN celex, roles, count(o) AS obligations"
+            ).data()
+    by_celex = {row["celex"]: row for row in rows}
+    for celex, meta in LEGISLATION.items():
+        row = by_celex.get(celex)
+        if row is None:
+            continue  # not loaded in this build (e.g. --docs subset)
+        problems = []
+        if not row["roles"]:
+            problems.append("0 ActorRole nodes")
+        if not row["obligations"]:
+            problems.append("0 OBLIGATION_OF edges")
+        if problems:
+            warnings.append(
+                f"{meta.get('name', celex)} ({celex}): {' and '.join(problems)} — "
+                "role-obligation retrieval is EMPTY for this regulation. "
+                "Check role_linker patterns / curated OBLIGATION_OF patches."
+            )
+    if warnings:
+        for w in warnings:
+            print(f"  [WARN] {w}")
+    else:
+        print(f"  [OK]   all {len(by_celex)} loaded regulations have roles + obligations")
+    print()
+    return warnings
+
+
 def stage_summaries() -> dict:
     from scripts.generate_community_summaries import generate_summaries
 
@@ -341,6 +397,7 @@ def main() -> None:
     stage_load(args.lang, wipe=wipe)
     stage_embed()
     stage_canonicalize(no_communities=args.no_communities)
+    coverage_warnings = stage_verify_role_coverage()
     if want_summaries:
         stage_summaries()
 
@@ -350,6 +407,8 @@ def main() -> None:
     print(f"  docs ingested: {ok}/{len(ingest)}")
     if failed:
         print(f"  docs FAILED to ingest (not loaded): {', '.join(failed)}")
+    for w in coverage_warnings:
+        print(f"  [WARN] {w}")
     print("  Graph is ready. Try: python scripts/chat.py")
 
 
