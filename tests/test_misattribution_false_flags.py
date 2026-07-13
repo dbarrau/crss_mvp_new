@@ -64,6 +64,30 @@ def test_guidance_section_label_blocks_adjudication():
     assert report.misattributed_count == 0
 
 
+def test_truncated_cited_source_does_not_flag_without_displacement_proof():
+    """v3 residuals (HQ_014): verbatim Article 48(7) text, correctly cited,
+    was flagged because the retrieved Article 48 source text is capped and
+    stopped before paragraph (7). Absence from an incomplete copy is not
+    proof of displacement — flag only when a *different* keyed family
+    positively grounds the quote."""
+    art48_7 = (
+        "Manufacturers of class C devices, other than devices for performance "
+        "study, shall be subject to a conformity assessment as specified in "
+        "Chapters I and III of Annex IX."
+    )
+    provisions = [
+        # The cited family is present but its (capped) text lacks the quote…
+        {"article_ref": "Article 48", "article_text": "Truncated body: paragraphs 1-6 only."},
+        # …and the quote's true home reaches the pooled corpus only via an
+        # entry the citation regex cannot key (no Article/Annex/Recital ref).
+        {"article_ref": "Chapter VII overview", "article_text": art48_7},
+    ]
+    answer = f"Class C assessment is set by **Article 48(7)**: “{art48_7.rstrip('.')}”"
+    report = check_faithfulness(answer, provisions)
+    assert report.misattributed_count == 0
+    assert report.unverified_count == 0
+
+
 def test_nearest_label_extraction():
     answer = "Per **Article 6** and then MDCG 2019-11 Section 5.1 says “x”"
     assert _nearest_citation_ref(answer, answer.index("“")) is None

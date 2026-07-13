@@ -561,15 +561,28 @@ def _structural_verdict(
         # disagreed. Silent when no family source was retrieved (cannot
         # adjudicate — no false flag).
         family = _base_ref_family(cited)
-        family_sources = [
-            src for ref, src in source_map.items()
+        family_grounds = any(
+            grounding_verdict(quote.text, src) != "absent"
+            for ref, src in source_map.items()
             if _base_ref_family(ref) == family
-        ]
-        if family_sources and all(
-            grounding_verdict(quote.text, src) == "absent"
-            for src in family_sources
-        ):
-            return "misattributed"
+        )
+        if not family_grounds:
+            # Displacement must be *proven*, not inferred from absence: the
+            # retrieved copy of the cited provision can be incomplete (large
+            # articles' flattened bodies and child expansions are capped), so
+            # "grounded somewhere in the pooled corpus but not in my copy of
+            # your citation" is not evidence of a wrong cite — observed:
+            # verbatim IVDR Article 48(7) text, correctly cited, flagged
+            # because Article 48's capped source text stopped before (7).
+            # Flag only when a *different* keyed family positively grounds
+            # the quote — that is the exact claim the ATTRIBUTION FLAG makes.
+            other_family_grounds = any(
+                grounding_verdict(quote.text, src) != "absent"
+                for ref, src in source_map.items()
+                if _base_ref_family(ref) != family
+            )
+            if other_family_grounds:
+                return "misattributed"
     return None
 
 

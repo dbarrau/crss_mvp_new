@@ -531,9 +531,13 @@ def test_correctly_cited_quote_passes_structural_guards():
     assert report.ok is True
 
 
-def test_misattribution_silent_when_cited_provision_not_retrieved():
-    # If the cited provision was never retrieved we cannot adjudicate
-    # attribution — the quote must not be falsely flagged as misattributed.
+def test_misattribution_flagged_by_positive_displacement_proof():
+    # Semantics upgraded (13 Jul 2026): the old rule stayed silent when the
+    # cited provision was never retrieved ("cannot adjudicate"). Under the
+    # positive-displacement doctrine we CAN adjudicate without holding the
+    # cited source: the quote's text provably lives in the retrieved
+    # Article 15 source, so attributing it to Article 99 is a proven
+    # mis-cite — flagged, and repairable by re-pointing to Article 15.
     answer = (
         "As set out in [Article 99 AI Act], "
         '"High-risk AI systems shall be designed and developed in such a way '
@@ -541,8 +545,15 @@ def test_misattribution_silent_when_cited_provision_not_retrieved():
         'cybersecurity."'
     )
     report = check_faithfulness(answer, _STRUCTURAL_PROVISIONS)
-    assert report.misattributed_count == 0
-    assert report.verified_count == 1
+    assert report.misattributed_count == 1
+
+    from application._faithfulness import repair_and_redact
+
+    repaired, residual, notes = repair_and_redact(answer, report, _STRUCTURAL_PROVISIONS)
+    assert residual.misattributed == []
+    assert "Article 15" in repaired          # citation re-pointed, quote kept
+    assert "accuracy, robustness" in repaired
+    assert notes and "Article 15" in notes[0]
 
 
 def test_attribution_flag_distinct_from_fabrication_flag_in_warning_block():
