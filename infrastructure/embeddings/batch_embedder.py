@@ -35,6 +35,12 @@ EMBED_KINDS = {
     "article", "paragraph", "subparagraph", "point", "roman_item",
     "recital", "section",
     "chapter", "annex_part",
+    # annex_chapter: the chapter layer inside MDR/IVDR annexes (Annex I GSPR
+    # chapters, Annex VIII classification-rule chapters, Annex IX conformity
+    # chapters).  Omitting it left those 24 nodes invisible to the dense
+    # channel and un-anchorable, so classification-rule hits collapsed to a
+    # deep point instead of "Annex VIII Chapter III".
+    "annex_chapter",
     "annex", "annex_section", "annex_subsection",
     "annex_point", "annex_subpoint", "annex_bullet",
     # Guidance (MDCG)

@@ -37,10 +37,18 @@ PASSAGE_PREFIX = "passage: "
 _CANDIDATE_MULTIPLIER = 5
 _CANDIDATE_CAP = 48
 
-# Cross-encoder truncation length.  Legal provisions front-load their key
+# Cross-encoder truncation length, in *tokens* (enforced by the tokenizer via
+# the CrossEncoder's max_length).  Legal provisions front-load their key
 # content, so 320 tokens captures the discriminative text at roughly half the
 # inference cost of the model's 512 maximum.
-_RERANK_MAX_LEN = 320
+_RERANK_MAX_TOKENS = 320
+
+# Pre-tokenization character slice for reranker passages.  Only a perf guard so
+# the tokenizer never chews through a multi-page annex: at ~4 chars/token,
+# 4 × _RERANK_MAX_TOKENS comfortably covers the token budget, and the real
+# truncation happens in the tokenizer.  (A previous version sliced the passage
+# to 320 *characters* — ~80 tokens — silently starving the cross-encoder.)
+_RERANK_MAX_CHARS = 4 * _RERANK_MAX_TOKENS
 
 # Blend weight between the (normalised) cross-encoder score and the
 # (normalised) cosine score.  0.0 = cosine only, 1.0 = cross-encoder only.
@@ -85,7 +93,7 @@ def _sanitise_lucene(text: str) -> str:
 # anchor to a specific numbered point rather than a broad subsection.
 _PARENT_KINDS = frozenset({
     "article", "annex_section", "annex_subsection", "annex_point",
-    "annex_part",
+    "annex_part", "annex_chapter",
     "recital", "section",
     # Guidance (MDCG) — guidance_paragraph and guidance_chart are anchor-worthy
     # so a retrieved deep guidance leaf resolves to its own paragraph/chart
@@ -227,7 +235,8 @@ MATCH (src)-[:CITES]->(art)
 WHERE src.celex <> art.celex
 MATCH (srcArt:Provision)-[:HAS_PART*0..5]->(src)
 WHERE srcArt.kind IN ['article', 'annex_section', 'annex_subsection',
-                       'annex_point', 'annex_part', 'recital', 'section']
+                       'annex_point', 'annex_part', 'annex_chapter',
+                       'recital', 'section']
   AND NOT srcArt.id IN $ids
 WITH srcArt, COUNT(src) AS citation_freq
 RETURN DISTINCT
@@ -267,8 +276,8 @@ _CHAIN_SEED_LOOKUP_CYPHER = """\
 UNWIND $refs AS ref
 OPTIONAL MATCH (p1:Provision {celex: $celex})
   WHERE toLower(p1.display_ref) = toLower(ref)
-  AND p1.kind IN ['article', 'annex_section', 'annex_part', 'annex',
-                  'recital', 'section', 'chapter', 'title']
+  AND p1.kind IN ['article', 'annex_section', 'annex_part', 'annex_chapter',
+                  'annex', 'recital', 'section', 'chapter', 'title']
 OPTIONAL MATCH (p2:Guidance {celex: $celex})
   WHERE toLower(p2.display_ref) = toLower(ref)
 WITH coalesce(p1, p2) AS seed
@@ -283,8 +292,8 @@ UNWIND $seed_ids AS sid
 MATCH (seed) WHERE seed.id = sid
 OPTIONAL MATCH (seed)-[:TRIGGERS_OBLIGATION_CLUSTER|IS_PREREQUISITE_FOR|REQUIRES_PRIOR_CHECK*1..2]->(linked)
 WHERE linked IS NOT NULL
-  AND linked.kind IN ['article', 'annex_section', 'annex_part', 'annex',
-                      'recital', 'section']
+  AND linked.kind IN ['article', 'annex_section', 'annex_part', 'annex_chapter',
+                      'annex', 'recital', 'section']
 RETURN DISTINCT
   linked.id           AS article_id,
   linked.celex        AS celex,
@@ -298,15 +307,31 @@ RETURN DISTINCT
 # Direct provision lookup by display_ref.  Used for structural questions
 # that explicitly name a provision ("What does Annex I contain?",
 # "What does Article 26 require?").  Bypasses vector similarity entirely.
+#
+# The CELEX filter and the row cap are both applied *inside* the query, per
+# ref: display_ref is heavily duplicated across regulations and depths (e.g.
+# "Paragraph 1" matches hundreds of nodes), so filtering in Python after a
+# global LIMIT could evict every in-scope node before the filter ever ran,
+# and one ambiguous ref could starve the others' budget.
 _DIRECT_REF_CYPHER = """\
 UNWIND $refs AS ref
-OPTIONAL MATCH (p1:Provision) WHERE toLower(p1.display_ref) = toLower(ref)
-OPTIONAL MATCH (p2:Guidance)  WHERE toLower(p2.display_ref) = toLower(ref)
-WITH ref, collect(p1) + collect(p2) AS nodes
-UNWIND nodes AS art
+CALL {
+  WITH ref
+  OPTIONAL MATCH (p1:Provision)
+    WHERE toLower(p1.display_ref) = toLower(ref)
+      AND ($celexes IS NULL OR p1.celex IN $celexes)
+  OPTIONAL MATCH (p2:Guidance)
+    WHERE toLower(p2.display_ref) = toLower(ref)
+      AND ($celexes IS NULL OR p2.celex IN $celexes)
+  WITH collect(DISTINCT p1) + collect(DISTINCT p2) AS nodes
+  UNWIND nodes AS art
+  WITH art WHERE art IS NOT NULL
+  RETURN art
+  ORDER BY art.hierarchy_depth ASC
+  LIMIT 8
+}
 RETURN art.id AS article_id, art.celex AS celex, art.display_ref AS display_ref, art.binding_force AS binding_force
 ORDER BY art.hierarchy_depth ASC
-LIMIT 20
 """
 
 # Role-aware provision lookup. Starts from one or more ActorRole nodes,
@@ -327,7 +352,7 @@ WITH collect(DISTINCT seed) + collect(DISTINCT included) + collect(DISTINCT equi
 UNWIND roles AS role
 WITH DISTINCT role
 MATCH (p:Provision)-[:OBLIGATION_OF]->(role)
-WHERE p.kind IN ['article', 'annex', 'annex_section', 'annex_subsection', 'annex_point', 'annex_part', 'recital', 'section']
+WHERE p.kind IN ['article', 'annex', 'annex_section', 'annex_subsection', 'annex_point', 'annex_part', 'annex_chapter', 'recital', 'section']
   AND ($target_celexes IS NULL OR p.celex IN $target_celexes)
 RETURN DISTINCT
     p.id AS article_id,
@@ -341,8 +366,14 @@ RETURN DISTINCT
     role.id AS matched_role_id,
     role.term_normalized AS matched_role
 ORDER BY (CASE WHEN kind = 'article' THEN 0 ELSE 1 END), article_id
-LIMIT 60
+LIMIT 400
 """
+# The LIMIT above is only a runaway guard: it must clear the largest role's
+# complete OBLIGATION_OF set (MDR manufacturer, ~230 edges) so the *relevance*
+# ranking in Python — not this query's lexicographic id order — decides which
+# obligations survive the downstream cap.  A tight LIMIT here silently
+# pre-trimmed large roles (GDPR controller/supervisory authority, MDR
+# manufacturer) by id sort before the query vector ever saw them.
 
 
 class GraphRetriever:
@@ -400,7 +431,7 @@ class GraphRetriever:
                     else "cpu"
                 )
                 self._reranker = _CrossEncoder(
-                    _rr_model, max_length=512, device=_device
+                    _rr_model, max_length=_RERANK_MAX_TOKENS, device=_device
                 )
                 logger.info(
                     "Cross-encoder reranker loaded: %s (device=%s)",
@@ -634,7 +665,7 @@ class GraphRetriever:
                     for c in (r.get("children") or [])[:8]
                 ).strip()
                 text = (text + " " + children_text).strip() or text
-            pairs.append((question, text[:_RERANK_MAX_LEN]))
+            pairs.append((question, text[:_RERANK_MAX_CHARS]))
 
         rr_scores = [
             float(s) for s in self._reranker.predict(pairs, show_progress_bar=False)
@@ -1018,11 +1049,14 @@ ORDER BY d.celex, d.term_normalized
         if not refs:
             return []
 
+        # CELEX scoping happens inside the Cypher (before its per-ref LIMIT)
+        # so in-scope nodes can never be evicted by out-of-scope duplicates.
         with self._driver.session(database=self._db) as s:
-            rows = s.run(_DIRECT_REF_CYPHER, refs=refs).data()
-
-        if celex_filter:
-            rows = [r for r in rows if r["celex"] in celex_filter]
+            rows = s.run(
+                _DIRECT_REF_CYPHER,
+                refs=refs,
+                celexes=sorted(celex_filter) if celex_filter else None,
+            ).data()
 
         # Deduplicate, prefer the shortest display_ref (outermost/parent node)
         seen: set[str] = set()
@@ -1322,7 +1356,7 @@ ORDER BY d.celex, d.term_normalized
 UNWIND $community_ids AS cid
 MATCH (p:Provision)-[:MEMBER_OF]->(c:Community {id: cid})
 WHERE p.kind IN ['article', 'annex_section', 'annex_subsection', 'annex_point',
-                  'annex_part', 'recital', 'section',
+                  'annex_part', 'annex_chapter', 'recital', 'section',
                   'guidance_section', 'guidance_subsection']
   AND p.text_for_analysis IS NOT NULL
 WITH cid, p
