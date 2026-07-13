@@ -52,6 +52,19 @@ _STATUS_ANCHOR_ROUTES: frozenset[str] = frozenset({
     "cross_regulation",
 })
 
+# Routes where a detected actor role demands the role's *definitional* anchor
+# in context. The role channel returns OBLIGATION_OF provisions only — the
+# defining provision (e.g. GDPR Article 4(7) for 'controller') is a DEFINES
+# provision and structurally invisible to it, so a role-qualification answer
+# can be correct on obligations yet never cite the definition that anchors the
+# status determination (observed: HQ_022, controller-vs-processor answered
+# without Article 4).
+_ROLE_DEFINITION_ANCHOR_ROUTES: frozenset[str] = frozenset({
+    "role_obligations",
+    "legal_qualification",
+    "cross_regulation",
+})
+
 # ---------------------------------------------------------------------------
 # HyDE query generation
 # ---------------------------------------------------------------------------
@@ -211,6 +224,7 @@ def _has_lookup_target_coverage(
 def _detect_missing_status_anchors(
     provisions: list[dict],
     route_id: str,
+    role_spec_celexes: set[str] | None = None,
 ) -> list[_ProvisionLookupTarget]:
     """Return DEFINES anchors required to ground EXEMPTS provisions in the bag.
 
@@ -225,28 +239,43 @@ def _detect_missing_status_anchors(
     (``legal_qualification``, ``cross_regulation``). For other routes the
     EXEMPTS provision is treated as a self-contained answer.
 
+    A second rule covers role-driven questions: when the router detected an
+    actor role for some CELEX (``role_spec_celexes``) on a role-anchored route,
+    the bag must contain a DEFINES provision for that CELEX — the role channel
+    returns OBLIGATION_OF provisions only, so without this the answer's status
+    determination has no definitional anchor to cite.
+
     Returns force-retrieval targets for the canonical definitions article of
     each affected CELEX. CELEXes outside ``_DEFINITIONS_REF_BY_CELEX`` are
     silently skipped (e.g. guidance documents do not have a definitions
     article in the same sense).
     """
-    if route_id not in _STATUS_ANCHOR_ROUTES:
+    anchor_celexes: set[str] = set()
+
+    if route_id in _STATUS_ANCHOR_ROUTES:
+        exempts_celexes: set[str] = set()
+        for provision in provisions:
+            role = (provision.get("provision_role") or "").strip().upper()
+            celex = provision.get("celex") or ""
+            if celex and role == "EXEMPTS":
+                exempts_celexes.add(celex)
+        anchor_celexes |= exempts_celexes
+
+    if route_id in _ROLE_DEFINITION_ANCHOR_ROUTES and role_spec_celexes:
+        anchor_celexes |= role_spec_celexes
+
+    if not anchor_celexes:
         return []
 
-    exempts_celexes: set[str] = set()
-    defines_celexes: set[str] = set()
-    for provision in provisions:
-        role = (provision.get("provision_role") or "").strip().upper()
-        celex = provision.get("celex") or ""
-        if not celex:
-            continue
-        if role == "EXEMPTS":
-            exempts_celexes.add(celex)
-        elif role == "DEFINES":
-            defines_celexes.add(celex)
+    defines_celexes = {
+        provision.get("celex")
+        for provision in provisions
+        if (provision.get("provision_role") or "").strip().upper() == "DEFINES"
+        and provision.get("celex")
+    }
 
     missing: list[_ProvisionLookupTarget] = []
-    for celex in sorted(exempts_celexes - defines_celexes):
+    for celex in sorted(anchor_celexes - defines_celexes):
         ref = _DEFINITIONS_REF_BY_CELEX.get(celex)
         if not ref:
             continue
@@ -278,9 +307,14 @@ def _retrieve_direct_provisions(
         paragraph_match = re.search(r"paragraph\s+(\d+)", question, re.IGNORECASE)
         if paragraph_match:
             wanted_para = paragraph_match.group(1)
-            para_ref = f"Paragraph {wanted_para}"
+            # Paragraph children carry qualified refs ("Article 26(2)"); the
+            # bare local form ("Paragraph 2") is accepted for data loaded
+            # before qualification.
+            para_re = re.compile(
+                rf"^(?:Article \d{{1,3}}[a-z]?\({wanted_para}\)|Paragraph {wanted_para})$"
+            )
             has_para = any(
-                child.get("ref") == para_ref
+                para_re.match(child.get("ref") or "")
                 for provision in direct_provisions
                 for child in (provision.get("children") or [])
             )
@@ -616,7 +650,16 @@ def _retrieve_route_provisions(
         )
 
     # ── Role channel ─────────────────────────────────────────────────────────
-    if route.id in {"role_obligations", "cross_regulation", "legal_qualification"} and role_specs:
+    # provision_lookup is included: an explicitly named provision decides the
+    # route, but when the question ALSO names an actor role, the role's
+    # obligation set carries the substantive answer (observed: "what can the
+    # notified body do…" + "Annex IX" routed provision_lookup and never saw
+    # Article 56, the role channel's top hit). The role hits are appended
+    # after the named provision in the merge phase, never replacing it.
+    if route.id in {
+        "role_obligations", "cross_regulation", "legal_qualification",
+        "provision_lookup",
+    } and role_specs:
         role_provisions = retriever.retrieve_by_roles(
             role_specs, k=max(6, k // 2),
             query_vec=retriever.encode_as_query(question),
@@ -673,6 +716,9 @@ def _retrieve_route_provisions(
             _merge_unique_provisions(provisions, role_provisions, prepend=True)
         if direct_provisions:
             _merge_unique_provisions(provisions, direct_provisions, prepend=True)
+    elif route.id == "provision_lookup" and role_provisions:
+        # The named provision keeps the lead; role obligations follow it.
+        _merge_unique_provisions(provisions, role_provisions)
 
     # ── Context-anchor phase: force decisive topic anchors into the bag for ANY
     #    route. The router has already run, so this cannot reclassify the
@@ -797,7 +843,11 @@ def _evaluate_route_sufficiency(
         for target in legal_qualification_targets
         if not _has_lookup_target_coverage(provisions + direct_provisions, target)
     ]
-    missing_status_anchors = _detect_missing_status_anchors(all_provisions, route.id)
+    missing_status_anchors = _detect_missing_status_anchors(
+        all_provisions,
+        route.id,
+        role_spec_celexes={celex for _, celex in role_specs},
+    )
 
     def add_check(name: str, passed: bool, detail: str) -> None:
         checks.append({"name": name, "passed": passed, "detail": detail})
@@ -843,6 +893,16 @@ def _evaluate_route_sufficiency(
             if has_role_ctx
             else "no role-linked provisions were retrieved",
         )
+        if missing_status_anchors:
+            add_check(
+                "status_anchor",
+                False,
+                "role-driven question without a DEFINES anchor for "
+                + ", ".join(
+                    f"{','.join(sorted(target.celexes or []))}:{target.ref}"
+                    for target in missing_status_anchors
+                ),
+            )
     elif route.id == "cross_regulation":
         add_check(
             "cross_reg_coverage",
@@ -1223,9 +1283,13 @@ def _build_audit_trace(
             "non_binding": sum(
                 1 for p in provisions if p.get("binding_force") == "non_binding"
             ),
+            "interpretive": sum(
+                1 for p in provisions if p.get("binding_force") == "interpretive"
+            ),
             "unknown": sum(
                 1 for p in provisions
-                if p.get("binding_force") not in ("binding", "non_binding")
+                if p.get("binding_force")
+                not in ("binding", "non_binding", "interpretive")
             ),
         },
     }

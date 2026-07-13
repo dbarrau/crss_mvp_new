@@ -568,6 +568,34 @@ def test_evaluate_route_sufficiency_flags_single_community_concentration():
     )
 
 
+def test_role_driven_route_requires_defines_anchor_for_role_celex():
+    """A role-driven bag without the role celex's DEFINES provision is
+    insufficient: the role channel returns OBLIGATION_OF provisions only, so
+    without this rule the status determination has no definitional anchor to
+    cite (HQ_022: controller-vs-processor answered without GDPR Article 4)."""
+    from application._retrieval import _detect_missing_status_anchors
+    from domain.legislation_catalog import GDPR_CELEX
+
+    bag = [
+        {"article_id": "gdpr-art-28", "celex": GDPR_CELEX, "provision_role": "OBLIGATION"},
+    ]
+    missing = _detect_missing_status_anchors(
+        bag, "role_obligations", role_spec_celexes={GDPR_CELEX},
+    )
+    assert [(t.ref, sorted(t.celexes)) for t in missing] == [("Article 4", [GDPR_CELEX])]
+
+    # Present DEFINES anchor → nothing missing
+    bag.append({"article_id": "gdpr-art-4", "celex": GDPR_CELEX, "provision_role": "DEFINES"})
+    assert _detect_missing_status_anchors(
+        bag, "role_obligations", role_spec_celexes={GDPR_CELEX},
+    ) == []
+
+    # Routes outside the role-anchor set don't fire on role celexes alone
+    assert _detect_missing_status_anchors(
+        bag[:1], "general_compliance", role_spec_celexes={GDPR_CELEX},
+    ) == []
+
+
 def test_evaluate_route_sufficiency_passes_with_multi_community_coverage():
     route = _select_question_route(
         "How do AI Act and MDR deployer obligations compare?",
@@ -595,6 +623,14 @@ def test_evaluate_route_sufficiency_passes_with_multi_community_coverage():
                 "celex": MDR_CELEX,
                 "community_id": "community::manufacturer",
                 "matched_role": "deployer",
+            },
+            # Role-driven bags must carry the role celex's DEFINES anchor
+            # (the definitional provision the status determination cites).
+            {
+                "article_id": "ai-art-3",
+                "celex": AI_ACT_CELEX,
+                "community_id": "community::deployer",
+                "provision_role": "DEFINES",
             },
         ],
         definitions=[],
