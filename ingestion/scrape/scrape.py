@@ -3,7 +3,7 @@
 from playwright.sync_api import sync_playwright
 from pathlib import Path
 
-def scrape_document(celex: str, lang: str, out_dir: Path) -> Path:
+def scrape_document(celex: str, lang: str, out_dir: Path, filename: str = "raw.html") -> Path:
     """
     Scrapes an HTML document from EUR-Lex using its CELEX identifier.
 
@@ -15,10 +15,13 @@ def scrape_document(celex: str, lang: str, out_dir: Path) -> Path:
         celex: The unique CELEX identifier of the EU document (e.g., '32024R0590').
         lang: The language code for the document (e.g., 'EN', 'ES', 'FR').
         out_dir: A pathlib.Path object pointing to the directory where
-            the 'raw.html' file should be saved.
+            the HTML file should be saved.
+        filename: Output filename inside ``out_dir``.  The default is the
+            main document ('raw.html'); the preamble supplement for
+            consolidated acts is saved as 'raw_preamble.html'.
 
     Returns:
-        Path: The path to the newly created 'raw.html' file.
+        Path: The path to the newly created HTML file.
 
     Raises:
         playwright.errors.Error: If the browser fails to launch or the
@@ -28,7 +31,7 @@ def scrape_document(celex: str, lang: str, out_dir: Path) -> Path:
     url = f"https://eur-lex.europa.eu/legal-content/{lang}/TXT/HTML/?uri=CELEX:{celex}"
 
 
-    out_file = out_dir / "raw.html"
+    out_file = out_dir / filename
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)

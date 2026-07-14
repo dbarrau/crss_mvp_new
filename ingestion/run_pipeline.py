@@ -67,7 +67,11 @@ def _run_legislation(celex: str, lang: str) -> Optional[Path]:
 
     scrape_celex = LEGISLATION[celex].get("source_celex", celex)
 
-    html_candidates = sorted(raw_dir.glob("*.html"))
+    # The preamble supplement must never be mistaken for the main document
+    # (e.g. after `rm raw.html` in the re-scrape flow).
+    html_candidates = sorted(
+        f for f in raw_dir.glob("*.html") if f.name != "raw_preamble.html"
+    )
     if html_candidates:
         html_file = html_candidates[0]
         logger.info("Using existing HTML: %s", html_file)
@@ -78,6 +82,24 @@ def _run_legislation(celex: str, lang: str) -> Optional[Path]:
         except Exception as e:
             logger.exception("Scraping failed for %s %s: %s", celex, lang, e)
             return None
+
+    # Consolidated EUR-Lex texts (CONSLEG) omit the preamble entirely — the
+    # recitals exist only in the *original* act, whose CELEX is this catalog
+    # entry's canonical key. Fetch it once as a preamble supplement so the
+    # parser can graft the recitals into the consolidated body (GDPR: 173,
+    # MDR/IVDR: 101 each). Best-effort: parsing proceeds without recitals if
+    # the fetch fails.
+    if scrape_celex != celex:
+        preamble_file = raw_dir / "raw_preamble.html"
+        if not preamble_file.exists():
+            try:
+                scrape_document(celex, lang, raw_dir, filename="raw_preamble.html")
+                logger.info("Scraped preamble supplement to: %s", preamble_file)
+            except Exception as e:
+                logger.warning(
+                    "Preamble supplement scrape failed for %s (%s) — "
+                    "parsing without recitals.", celex, e,
+                )
 
     try:
         json_file = parse_document(html_file, lang, celex, reg_dir)

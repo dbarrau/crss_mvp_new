@@ -8,6 +8,7 @@ writes ``parsed.json`` into the target directory. This keeps
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
@@ -17,6 +18,97 @@ from canonicalization.text_enrichment import enrich_text_for_analysis
 from .base.registry import PARSER_REGISTRY
 from .normalizer import normalize_consolidated_html
 from .semantic_layer.definitions import extract_defined_terms
+
+
+def _supplement_preamble(
+    provisions: List[Dict[str, Any]],
+    relations: List[Dict[str, Any]],
+    html_file: Path,
+    parser,
+    celex: str,
+    regulation_id: str,
+    lang: str,
+) -> int:
+    """Graft the original act's preamble into a consolidated parse (in place).
+
+    Consolidated EUR-Lex texts (CONSLEG) legally omit the preamble, so the
+    consolidated parse of GDPR/MDR/IVDR carries zero recitals — while the AI
+    Act (parsed from the original CELEX) carries all 180.  When the pipeline
+    has cached the original act as ``raw_preamble.html`` next to the main
+    document, this parses it with the same parser and grafts the preamble
+    subtree (preamble → citations + recitals) under the consolidated document
+    root, before the enacting terms.
+
+    Safe by construction: both parses run under the same canonical CELEX, so
+    the id schemes are identical (``{celex}_document``, ``{celex}_art_N``) and
+    the preamble subtree's parent/path pointers already reference the
+    consolidated root id.  Recital-sourced cross-references are carried over —
+    their article targets resolve against the consolidated body because the
+    ids match.
+
+    Returns the number of recitals grafted (0 = nothing to do).
+    """
+    if any(p.get("kind") == "preamble" for p in provisions):
+        return 0
+    preamble_file = Path(html_file).parent / "raw_preamble.html"
+    if not preamble_file.exists():
+        return 0
+
+    pre_html = normalize_consolidated_html(preamble_file.read_text(encoding="utf-8"))
+    result = parser(pre_html, celex, regulation_id, lang=lang)
+    if isinstance(result, dict):
+        pre_provs = result.get("provisions", [])
+        pre_rels = result.get("relations", [])
+    else:
+        pre_provs, pre_rels = result
+
+    existing_ids = {p["id"] for p in provisions}
+    subtree = [
+        p for p in pre_provs
+        if p.get("kind") in ("preamble", "citation", "recital")
+        and p["id"] not in existing_ids
+    ]
+    recitals = sum(1 for p in subtree if p.get("kind") == "recital")
+    if not recitals:
+        return 0
+
+    # Graft under the consolidated root, before the enacting terms, so
+    # HAS_PART ordering reflects legal document order.
+    root = next((p for p in provisions if p.get("kind") == "document"), None)
+    preamble_node = next(p for p in subtree if p.get("kind") == "preamble")
+    if root is not None:
+        preamble_node["parent_id"] = root["id"]
+        preamble_node["path"] = [root["id"]]
+        root["children"].insert(0, preamble_node["id"])
+        insert_at = provisions.index(root) + 1
+    else:
+        insert_at = 0
+    provisions[insert_at:insert_at] = subtree
+
+    # Recital/citation-sourced cross-references only; the original parse's
+    # enacting-terms relations would duplicate the consolidated ones.
+    subtree_ids = {p["id"] for p in subtree}
+    relations.extend(r for r in pre_rels if r.get("source") in subtree_ids)
+    return recitals
+
+
+def _stamp_regulation_provenance(provisions: List[Dict[str, Any]]) -> None:
+    """Stamp kind-aware ``binding_force`` + ``source_type`` (in place).
+
+    Recitals/citations/preamble aid interpretation but impose no obligations
+    (settled CJEU position: a recital cannot derogate from an operative
+    provision). The previous blanket ``"binding"`` stamp silently defeated the
+    loader's kind-default on every rebuild — the loader honours a parsed value
+    over its own default — so a full re-ingest would have reverted the
+    13 Jul 2026 interpretive-recitals migration.
+    """
+    for provision in provisions:
+        provision["binding_force"] = (
+            "interpretive"
+            if provision.get("kind") in ("preamble", "citation", "recital")
+            else "binding"
+        )
+        provision["source_type"] = "regulation"
 
 
 def parse_document(html_file: Path, lang: str, celex: str, out_dir: Path) -> Path:
@@ -67,6 +159,17 @@ def parse_document(html_file: Path, lang: str, celex: str, out_dir: Path) -> Pat
         except Exception:
             raise TypeError("Parser returned unexpected type; expected dict, List or (List, List)")
 
+    # Consolidated sources omit the preamble; graft it from the cached
+    # original-act HTML when present (see _supplement_preamble).
+    grafted = _supplement_preamble(
+        provisions, relations, Path(html_file), parser, celex,
+        regulation_id, lang,
+    )
+    if grafted:
+        logging.getLogger(__name__).info(
+            "Preamble supplement: grafted %d recital(s) into %s.", grafted, celex,
+        )
+
     regulation_name = LEGISLATION.get(celex, {}).get("name")
     out: Dict[str, Any] = {
         "graph_version": "0.1",
@@ -78,9 +181,7 @@ def parse_document(html_file: Path, lang: str, celex: str, out_dir: Path) -> Pat
         "relations": relations,
     }
 
-    for provision in provisions:
-        provision["binding_force"] = "binding"
-        provision["source_type"] = "regulation"
+    _stamp_regulation_provenance(provisions)
 
     # Enrich text_for_analysis for multi-granularity embeddings
     enrich_text_for_analysis(provisions)
