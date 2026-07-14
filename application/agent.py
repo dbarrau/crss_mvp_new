@@ -1001,6 +1001,7 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
             role_specs=role_specs,
             corrective_actions=corrective_actions,
             question=retrieval_question,
+            reference_index=_fallback_refs,
         )
         full_answer = _verification.answer
         # Bold provision references deterministically — the model writes them as

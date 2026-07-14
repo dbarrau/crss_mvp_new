@@ -44,6 +44,7 @@ from application._faithfulness import (
     repair_and_redact,
 )
 from application._confidence import compute_confidence
+from application._phantom import strip_phantom_citations
 from application._postprocessing import _strip_foreign_law_citations
 
 logger = logging.getLogger(__name__)
@@ -184,6 +185,7 @@ def verify_answer(
     role_specs: list[tuple[str, str]],
     corrective_actions: list[str],
     question: str,
+    reference_index: dict[str, tuple[str, str]] | None = None,
 ) -> VerificationResult:
     """Run the post-generation verification stage over a draft answer.
 
@@ -209,6 +211,21 @@ def verify_answer(
             logger.info(
                 "Jurisdiction guard: removed %d line(s) citing non-EU law.",
                 _foreign_removed,
+            )
+
+    # Phantom-provision guard: strip citations to provisions that do not exist
+    # in the cited regulation (draft-numbering leakage, e.g. AI Act "Articles
+    # 4a–4c" from the Council/Parliament drafts). Quote guards cannot catch
+    # this — a quote-free prose paragraph passes faithfulness trivially — so
+    # every Article/Annex/Recital mention is existence-checked against the
+    # whole-graph reference index. Disable with CRSS_PHANTOM_GUARD=0.
+    if reference_index and os.environ.get("CRSS_PHANTOM_GUARD", "1") != "0":
+        answer, _phantom_refs = strip_phantom_citations(answer, reference_index)
+        if _phantom_refs:
+            logger.info(
+                "Phantom-provision guard: removed line(s) citing nonexistent "
+                "provision(s): %s",
+                ", ".join(_phantom_refs[:10]),
             )
 
     faith_mode = faithfulness_mode(os.environ.get("CRSS_FAITHFULNESS_CHECK", "1"))

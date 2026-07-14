@@ -86,6 +86,10 @@ def _parse_reliance(text: str) -> str:
 _FABRICATED_RE = re.compile(r"FAITHFULNESS FLAG\*\*\s*[—\-]\s*(\d+)\s+of\s+(\d+)", re.I)
 _MISATTRIBUTED_RE = re.compile(r"ATTRIBUTION FLAG\*\*\s*[—\-]\s*(\d+)\s+of\s+(\d+)", re.I)
 _NEAR_RE = re.compile(r"Wording check\*\*\s*[—\-]\s*(\d+)\s+quote", re.I)
+# Phantom-provision guard block (application/_phantom.py): citations to
+# provisions that do not exist in the cited regulation (draft-numbering
+# leakage). A distinct critical-defect class from fabricated quotes.
+_PHANTOM_RE = re.compile(r"PHANTOM CITATION FLAG\*\*\s*[—\-]\s*(\d+)\s+statement", re.I)
 
 
 # Hard per-case wall-clock timeout. A Mistral stream that stalls mid-response
@@ -138,6 +142,7 @@ def _parse_faithfulness(answer: str) -> dict[str, int]:
     fab = _FABRICATED_RE.search(answer)
     mis = _MISATTRIBUTED_RE.search(answer)
     near = _NEAR_RE.search(answer)
+    phantom = _PHANTOM_RE.search(answer)
     total = 0
     if fab:
         total = max(total, int(fab.group(2)))
@@ -147,6 +152,7 @@ def _parse_faithfulness(answer: str) -> dict[str, int]:
         "fabricated": int(fab.group(1)) if fab else 0,
         "misattributed": int(mis.group(1)) if mis else 0,
         "near_verbatim": int(near.group(1)) if near else 0,
+        "phantom_citations": int(phantom.group(1)) if phantom else 0,
         "total_quotes": total,
     }
 
@@ -228,6 +234,8 @@ def _critical_defects(result: dict) -> list[str]:
         defects.append(f"fabricated_quotes={fc['fabricated']}")
     if fc.get("misattributed", 0):
         defects.append(f"misattributed_quotes={fc['misattributed']}")
+    if fc.get("phantom_citations", 0):
+        defects.append(f"phantom_citations={fc['phantom_citations']}")
     # Deterministic answer-key failure: a missed decisive citation or missed
     # key facts. This is the "omitted decisive provision" fatal rule enforced
     # by regex against a law-grounded key, not by the judge's impression.
@@ -250,7 +258,7 @@ def _apply_reliance_gate(result: dict) -> None:
     # quotes and missed decisive citations both make an answer something a
     # compliance officer must re-verify line by line before use.
     hard_defect = any(
-        d.startswith(("fabricated", "misattributed", "answer_key_failed"))
+        d.startswith(("fabricated", "misattributed", "phantom", "answer_key_failed"))
         for d in defects
     )
     if hard_defect and result.get("reliance") not in _RELIANCE_UNRELIABLE:
@@ -452,6 +460,8 @@ def main() -> int:
             f"fab={fc['fabricated']} mis={fc['misattributed']} "
             f"near={fc['near_verbatim']}/{fc['total_quotes']}"
         )
+        if fc.get("phantom_citations"):
+            faith_str += f" phantom={fc['phantom_citations']}"
         verdict = r["reliance_final"] + (" ⛔GATED" if r.get("reliance_gated") else "")
         kc = r.get("answer_key_check")
         key_str = ""
