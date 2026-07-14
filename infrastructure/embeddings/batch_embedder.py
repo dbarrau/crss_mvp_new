@@ -23,11 +23,13 @@ from neo4j import GraphDatabase
 from sentence_transformers import SentenceTransformer
 
 from infrastructure.graphdb.neo4j.loader import _normalize_neo4j_uri
+# Single source of truth for the E5 prefixes (retrieval._config is a pure
+# constants module — no imports, so no layering cycle).  Writer and reader
+# must agree on this prefix or all stored embeddings silently desync.
+from retrieval._config import PASSAGE_PREFIX  # noqa: F401  (re-exported)
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=False)
 logger = logging.getLogger(__name__)
-
-PASSAGE_PREFIX = "passage: "
 MODEL_NAME = "intfloat/multilingual-e5-base"
 DIMENSIONS = 768
 

@@ -1,11 +1,16 @@
 """Rank community embeddings against a query — diagnostic only."""
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from neo4j import GraphDatabase
 
-QUERY_PREFIX = "query: "
-KEYWORDS = ["article 5", "prohibit", "article 6", "classif", "systemic risk", "article 55"]
+from retrieval._config import QUERY_PREFIX
+
+KEYWORDS =["article 5", "prohibit", "article 6", "classif", "systemic risk", "article 55"]
 
 question = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else (
     "What are all obligations of providers under the EU AI Act?"

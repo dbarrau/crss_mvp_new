@@ -342,7 +342,7 @@ def main() -> int:
     print(f"\n{_BOLD}CRSS Retrieval Eval — {len(golden)} case(s), k={args.k}{_RESET}\n")
     print("Connecting to Neo4j and loading embeddings …")
     retriever = GraphRetriever()
-    print(f"Index loaded ({retriever._matrix.shape if retriever._matrix is not None else 'empty'})\n")
+    print(f"Index loaded ({retriever._dense.matrix.shape if retriever._dense.matrix is not None else 'empty'})\n")
 
     results: list[dict] = []
     for case in golden:

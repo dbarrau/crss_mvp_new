@@ -37,11 +37,11 @@ from neo4j import GraphDatabase
 from sentence_transformers import SentenceTransformer
 
 from infrastructure.graphdb.neo4j.loader import _normalize_neo4j_uri
+from retrieval._config import PASSAGE_PREFIX as _PASSAGE_PREFIX
 
 logger = logging.getLogger(__name__)
 
 _BATCH = 100
-_PASSAGE_PREFIX = "passage: "
 _DEFAULT_SAMPLE = 20
 
 
