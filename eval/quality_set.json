@@ -1,1422 +1,1526 @@
 [
-  {
-    "id": "HQ_001",
-    "label": "German hospital — multi-stage actor status transition (MDR 5(5) + AI Act provider/deployer)",
-    "tests": "actor-status transition; in-house exemption; cross-reg; calibration",
-    "question": "A university hospital in Germany develops an in-house AI-assisted pathology system that analyzes Raman spectroscopy data to classify tumor margins during surgery. The system is initially trained internally using retrospective patient datasets and is used only within the hospital under the MDR Article 5(5) health institution exemption. After deployment, the hospital introduces a continuous learning pipeline that automatically retrains the model weekly using newly generated patient spectra from its oncology department. The retraining logic, validation thresholds, and permitted spectral domains were pre-defined in the initial technical documentation and quality management procedures. Two years later, the hospital enters a collaboration agreement with a second university hospital in France. The updated model weights are periodically shared with the French hospital, but the source code and intended purpose remain unchanged. Under the EU AI Act, MDR 2017/745, and the MDR Article 5(5) exemption framework: 1. At which stage(s), if any, could the German hospital transition from: user -> manufacturer under MDR, deployer -> provider under the AI Act?",
-    "answer_key": {
-      "must_cite": [
-        "Article 5",
-        [
-          "Article 25",
-          "Article 3"
-        ]
-      ],
-      "must_state": [
-        [
-          "health institution",
-          "in-house",
-          "in house"
-        ],
-        [
-          "substantial modification",
-          "continuous learning",
-          "pre-determined",
-          "predetermined",
-          "pre-defined",
-          "predefined"
-        ],
-        [
-          "provider"
-        ],
-        [
-          "manufacturer"
-        ],
-        [
-          "transfer",
-          "another legal entity",
-          "shared",
-          "second hospital",
-          "another institution",
-          "placing on the market",
-          "made available"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_002",
-    "label": "Cross-regulation — data protection obligations for connected medical device manufacturers (MDR + GDPR)",
-    "tests": "cross_regulation; MDR+GDPR; manufacturer role",
-    "question": "What data protection obligations apply to manufacturers of connected medical devices under MDR and GDPR?",
-    "answer_key": {
-      "must_cite": [],
-      "must_state": [
-        [
-          "lawful basis",
-          "article 6"
-        ],
-        [
-          "special category",
-          "health data",
-          "article 9"
-        ],
-        [
-          "security",
-          "article 32"
-        ],
-        [
-          "by design",
-          "data protection by design",
-          "article 25"
-        ],
-        [
-          "dpia",
-          "impact assessment",
-          "article 35"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_003",
-    "label": "Benchmark — Class IIb SaMD with continuous learning, PROVIDER obligations (AI Act + MDR)",
-    "tests": "classification_chain; provider; Art 43(4); lex specialis; recurring benchmark",
-    "question": "We are the provider of a Class IIb software-as-a-medical-device that uses a continuous-learning model. What obligations apply to us under the EU AI Act and MDR 2017/745, including for the continuous-learning behaviour?",
-    "answer_key": {
-      "must_cite": [
-        "Article 43",
-        [
-          "Article 16",
-          "Article 17",
-          "Article 19"
-        ]
-      ],
-      "must_state": [
-        [
-          "substantial modification",
-          "continuous learning",
-          "pre-determined",
-          "predetermined",
-          "predefined"
-        ],
-        [
-          "conformity assessment"
-        ],
-        [
-          "high-risk",
-          "high risk"
-        ],
-        [
-          "quality management",
-          "qms"
-        ],
-        [
-          "technical documentation"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_004",
-    "label": "AI Act high-risk qualification — triage chatbot (Annex III vs Article 6(1))",
-    "tests": "legal_qualification; high-risk routing; calibration",
-    "question": "A company markets an AI chatbot that triages patient symptoms and recommends whether to seek emergency care. Is this a high-risk AI system under the EU AI Act, and on what legal basis - Article 6(1) with Annex I, or Annex III?",
-    "answer_key": {
-      "must_cite": [
-        "Article 6"
-      ],
-      "must_state": [
-        [
-          "high-risk",
-          "high risk"
-        ],
-        [
-          "medical device",
-          "samd",
-          "software as a medical device"
-        ],
-        [
-          "annex i",
-          "article 6(1)",
-          "safety component",
-          "product"
-        ],
-        [
-          "annex iii"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_005",
-    "label": "AI Act GPAI model provider — systemic-risk obligations (Article 53 + 55)",
-    "tests": "role_obligations; GPAI; systemic risk",
-    "question": "What obligations does a provider of a general-purpose AI model with systemic risk have under the EU AI Act?",
-    "answer_key": {
-      "must_cite": [
-        "Article 53",
-        "Article 55"
-      ],
-      "must_state": [
-        [
-          "systemic risk"
-        ],
-        [
-          "adversarial",
-          "model evaluation",
-          "red-team",
-          "red team"
-        ],
-        [
-          "serious incident"
-        ],
-        [
-          "cybersecurity",
-          "cyber security",
-          "cyber-security"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_006",
-    "label": "AI Act prohibited practices — workplace emotion recognition (Article 5)",
-    "tests": "provision_lookup; prohibition; calibration",
-    "question": "Is it lawful under the EU AI Act to deploy an AI system that infers employees' emotions from webcam feeds during work, and which provision governs this?",
-    "answer_key": {
-      "must_cite": [
-        "Article 5"
-      ],
-      "must_state": [
-        [
-          "prohibited",
-          "prohibition",
-          "banned",
-          "not lawful",
-          "unlawful",
-          "not permitted"
-        ],
-        [
-          "emotion"
-        ],
-        [
-          "workplace",
-          "work place",
-          "at work"
-        ],
-        [
-          "medical",
-          "safety"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_007",
-    "label": "AI Act substantial modification — re-conformity of a high-risk system (Article 43(4))",
-    "tests": "classification_chain; substantial modification; hard",
-    "question": "When does a change to an already-deployed high-risk AI system count as a substantial modification requiring a new conformity assessment under the EU AI Act, and how are pre-determined changes treated?",
-    "answer_key": {
-      "must_cite": [
-        "Article 43"
-      ],
-      "must_state": [
-        [
-          "substantial modification"
-        ],
-        [
-          "new conformity assessment",
-          "re-assessment",
-          "fresh conformity",
-          "renewed conformity"
-        ],
-        [
-          "pre-determined",
-          "predetermined",
-          "pre-defined",
-          "predefined",
-          "initial technical documentation"
-        ],
-        [
-          "intended purpose",
-          "performance"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_008",
-    "label": "AI Act deployer obligations — distinguish from provider (Article 26)",
-    "tests": "role_obligations; deployer; actor distinction",
-    "question": "We deploy a third-party high-risk AI system for CV screening in recruitment. What are our obligations as a deployer under the EU AI Act, and how do they differ from the provider's?",
-    "answer_key": {
-      "must_cite": [
-        "Article 26"
-      ],
-      "must_state": [
-        [
-          "deployer"
-        ],
-        [
-          "human oversight"
-        ],
-        [
-          "in accordance with",
-          "instructions for use",
-          "instructions"
-        ],
-        [
-          "monitor",
-          "logs",
-          "log"
-        ],
-        [
-          "provider"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_009",
-    "label": "AI Act / MDR lex specialis — serious incident reporting overlap (Article 73(10))",
-    "tests": "cross_regulation; lex specialis; hard",
-    "question": "For a high-risk AI system that is also a medical device under MDR, how do the serious-incident reporting duties of the EU AI Act and MDR interact, and which prevails?",
-    "answer_key": {
-      "must_cite": [
-        "Article 73"
-      ],
-      "must_state": [
-        [
-          "serious incident"
-        ],
-        [
-          "in addition",
-          "additional",
-          "both apply",
-          "cumulative",
-          "does not replace",
-          "alongside",
-          "also report"
-        ],
-        [
-          "mdr",
-          "medical device regulation"
-        ],
-        [
-          "market surveillance",
-          "authority",
-          "authorities"
-        ]
-      ],
-      "must_not_claim": [
-        "mdr fully replaces",
-        "ai act does not apply",
-        "ai act reporting is absorbed"
-      ]
-    }
-  },
-  {
-    "id": "HQ_010",
-    "label": "AI Act importer — verification duties for a high-risk system (Article 23)",
-    "tests": "role_obligations; importer",
-    "question": "What must an importer verify before placing a high-risk AI system from a non-EU provider on the EU market?",
-    "answer_key": {
-      "must_cite": [
-        "Article 23"
-      ],
-      "must_state": [
-        [
-          "importer"
-        ],
-        [
-          "conformity assessment"
-        ],
-        [
-          "ce marking",
-          "ce mark"
-        ],
-        [
-          "technical documentation"
-        ],
-        [
-          "authorised representative",
-          "authorized representative"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_011",
-    "label": "Definition precision — 'AI system' under Article 3(1)",
-    "tests": "definition_lookup; scope precision",
-    "question": "What is the legal definition of an 'AI system' under the EU AI Act, and what distinguishes it from ordinary software?",
-    "answer_key": {
-      "must_cite": [
-        "Article 3"
-      ],
-      "must_state": [
-        [
-          "machine-based",
-          "machine based"
-        ],
-        [
-          "autonomy",
-          "autonomous"
-        ],
-        [
-          "infer",
-          "inference"
-        ],
-        [
-          "output",
-          "prediction",
-          "content",
-          "recommendation",
-          "decision"
-        ],
-        [
-          "adapt",
-          "adaptiveness"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_012",
-    "label": "MDR manufacturer obligations — Article 10",
-    "tests": "role_obligations; manufacturer; MDR",
-    "question": "What are the core obligations of a medical device manufacturer under MDR 2017/745?",
-    "answer_key": {
-      "must_cite": [
-        "Article 10"
-      ],
-      "must_state": [
-        [
-          "risk management"
-        ],
-        [
-          "clinical evaluation"
-        ],
-        [
-          "technical documentation"
-        ],
-        [
-          "quality management",
-          "qms"
-        ],
-        [
-          "post-market surveillance",
-          "pms"
-        ],
-        [
-          "ce marking",
-          "declaration of conformity"
-        ],
-        [
-          "udi",
-          "eudamed",
-          "registration"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_013",
-    "label": "MDR Class IIb conformity assessment route (Annex IX vs Annex X)",
-    "tests": "classification_chain; conformity route; MDR",
-    "question": "Which conformity assessment routes are available for a Class IIb medical device under MDR 2017/745, and what role does the notified body play?",
-    "answer_key": {
-      "must_cite": [
-        "Annex IX",
-        "Annex XI",
-        "Article 52"
-      ],
-      "must_state": [
-        [
-          "notified body"
-        ],
-        [
-          "Annex IX"
-        ],
-        [
-          "Annex X",
-          "type examination",
-          "Annex XI",
-          "production quality"
-        ],
-        [
-          "quality management",
-          "qms",
-          "technical documentation"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_014",
-    "label": "IVDR classification — Class B vs C (notified body involvement)",
-    "tests": "classification_chain; IVDR; notified body",
-    "question": "How is an in vitro diagnostic classified as Class B versus Class C under IVDR 2017/746, and when must a notified body be involved?",
-    "answer_key": {
-      "must_cite": [
-        "Annex VIII"
-      ],
-      "must_state": [
-        [
-          "classification rule",
-          "annex viii",
-          "rule"
-        ],
-        [
-          "notified body"
-        ],
-        [
-          "class b"
-        ],
-        [
-          "class c"
-        ],
-        [
-          "individual risk",
-          "public health risk",
-          "risk"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_015",
-    "label": "MDR Article 5(5) health institution exemption — conditions and limits",
-    "tests": "provision_lookup; exemption; calibration",
-    "question": "Under what conditions can a hospital manufacture and use a device in-house under the MDR Article 5(5) health institution exemption, and what obligations still apply?",
-    "answer_key": {
-      "must_cite": [
-        "Article 5"
-      ],
-      "must_state": [
-        [
-          "health institution"
-        ],
-        [
-          "not transferred",
-          "another legal entity",
-          "manufactured and used",
-          "within the"
-        ],
-        [
-          "no equivalent",
-          "equivalent device",
-          "not available on the market",
-          "cannot be met"
-        ],
-        [
-          "general safety and performance",
-          "annex i",
-          "gspr"
-        ],
-        [
-          "quality management",
-          "documentation"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_016",
-    "label": "MDR transitional provisions — significant change to a legacy device (Article 120)",
-    "tests": "provision_lookup; transitional; temporal; hard",
-    "question": "A device was CE-marked under the old MDD and is still on the market under MDR transitional provisions. What counts as a 'significant change' that ends the transitional benefit under MDR Article 120?",
-    "answer_key": {
-      "must_cite": [
-        "Article 120"
-      ],
-      "must_state": [
-        [
-          "significant change"
-        ],
-        [
-          "intended purpose"
-        ],
-        [
-          "design"
-        ],
-        [
-          "mdcg 2020-3",
-          "mdcg 2020/3"
-        ],
-        [
-          "transitional",
-          "legacy",
-          "mdd"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_017",
-    "label": "MDR post-market surveillance and PMCF (Articles 83-86)",
-    "tests": "role_obligations; PMS; MDR",
-    "question": "What post-market surveillance and post-market clinical follow-up obligations does a manufacturer have under MDR 2017/745?",
-    "answer_key": {
-      "must_cite": [
-        "Article 83"
-      ],
-      "must_state": [
-        [
-          "post-market surveillance",
-          "pms"
-        ],
-        [
-          "pmcf",
-          "post-market clinical follow-up"
-        ],
-        [
-          "psur",
-          "periodic safety update"
-        ],
-        [
-          "plan",
-          "annex iii"
-        ],
-        [
-          "proportionate",
-          "risk class",
-          "class"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_018",
-    "label": "MDR importer vs distributor obligations (Article 13 vs 14)",
-    "tests": "role_obligations; importer/distributor distinction",
-    "question": "How do the obligations of an importer differ from those of a distributor of medical devices under MDR 2017/745?",
-    "answer_key": {
-      "must_cite": [
-        "Article 13",
-        "Article 14"
-      ],
-      "must_state": [
-        [
-          "importer"
-        ],
-        [
-          "distributor"
-        ],
-        [
-          "verify",
-          "verification"
-        ],
-        [
-          "ce marking",
-          "ce mark",
-          "ce-mark"
-        ],
-        [
-          "storage",
-          "transport condition"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_019",
-    "label": "MDR authorised representative mandate for a non-EU manufacturer (Article 11)",
-    "tests": "role_obligations; authorised representative",
-    "question": "A manufacturer established outside the EU wants to place a device on the EU market. What is the role and what are the obligations of its authorised representative under MDR Article 11?",
-    "answer_key": {
-      "must_cite": [
-        "Article 11"
-      ],
-      "must_state": [
-        [
-          "authorised representative",
-          "authorized representative"
-        ],
-        [
-          "mandate",
-          "written mandate"
-        ],
-        [
-          "outside the eu",
-          "non-eu",
-          "third country",
-          "established outside"
-        ],
-        [
-          "technical documentation",
-          "declaration of conformity",
-          "keep available"
-        ],
-        [
-          "liable",
-          "jointly",
-          "defective"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_020",
-    "label": "SaMD qualification — clinical decision support as a medical device (MDCG 2019-11)",
-    "tests": "legal_qualification; guidance; MDR",
-    "question": "Is standalone clinical decision-support software a medical device under MDR 2017/745, and how does MDCG 2019-11 guidance inform the qualification?",
-    "answer_key": {
-      "must_cite": [
-        "Article 2"
-      ],
-      "must_state": [
-        [
-          "intended purpose"
-        ],
-        [
-          "mdcg 2019-11",
-          "mdcg 2019/11"
-        ],
-        [
-          "medical device"
-        ],
-        [
-          "rule 11",
-          "annex viii"
-        ],
-        [
-          "diagnosis",
-          "prevention",
-          "monitoring",
-          "treatment",
-          "prediction"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_021",
-    "label": "MDR vigilance — serious incident vs FSCA reporting (Article 87)",
-    "tests": "provision_lookup; vigilance; MDR",
-    "question": "What are a manufacturer's vigilance reporting obligations under MDR - the distinction and timelines between serious incidents and field safety corrective actions?",
-    "answer_key": {
-      "must_cite": [
-        "Article 87"
-      ],
-      "must_state": [
-        [
-          "15 day",
-          "15-day",
-          "fifteen day"
-        ],
-        [
-          "2 day",
-          "2-day",
-          "two day",
-          "48 hour"
-        ],
-        [
-          "10 day",
-          "10-day",
-          "ten day"
-        ],
-        [
-          "public health threat"
-        ],
-        [
-          "death",
-          "deterioration"
-        ],
-        [
-          "field safety corrective action",
-          "fsca"
-        ],
-        [
-          "aware",
-          "awareness"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_022",
-    "label": "GDPR controller vs processor — SaMD cloud vendor (Articles 4, 24, 28)",
-    "tests": "role_obligations; GDPR; controller/processor distinction",
-    "question": "A cloud vendor hosts and runs inference for a hospital's diagnostic AI on patient data. Is the vendor a controller or a processor under the GDPR, and what determines that?",
-    "answer_key": {
-      "must_cite": [
-        "Article 4",
-        "Article 28"
-      ],
-      "must_state": [
-        [
-          "controller"
-        ],
-        [
-          "processor"
-        ],
-        [
-          "purposes and means",
-          "determines the purposes",
-          "means of processing"
-        ],
-        [
-          "on behalf of",
-          "instructions",
-          "documented instructions"
-        ],
-        [
-          "hospital",
-          "customer",
-          "client"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_023",
-    "label": "GDPR Article 28 — mandatory content of a data processing agreement",
-    "tests": "provision_lookup; GDPR; processor",
-    "question": "What must a data processing agreement contain under GDPR Article 28 when a medical device manufacturer engages a processor?",
-    "answer_key": {
-      "must_cite": [
-        "Article 28"
-      ],
-      "must_state": [
-        [
-          "documented instructions",
-          "instructions"
-        ],
-        [
-          "confidentiality"
-        ],
-        [
-          "security",
-          "article 32"
-        ],
-        [
-          "sub-processor",
-          "subprocessor",
-          "another processor"
-        ],
-        [
-          "assist the controller",
-          "assist"
-        ],
-        [
-          "delete or return",
-          "return or delete"
-        ],
-        [
-          "audit",
-          "inspection"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_024",
-    "label": "GDPR lawful basis for health data in clinical AI (Articles 6 + 9)",
-    "tests": "provision_lookup; GDPR; special category data",
-    "question": "What lawful basis is required to process patients' health data to train and run a clinical AI system under the GDPR, considering Articles 6 and 9?",
-    "answer_key": {
-      "must_cite": [
-        "Article 6",
-        "Article 9"
-      ],
-      "must_state": [
-        [
-          "special category",
-          "special-category",
-          "sensitive data",
-          "special categories"
-        ],
-        [
-          "article 6 and article 9",
-          "both article 6",
-          "article 9 in addition",
-          "as well as an article 6",
-          "combined with an article 6",
-          "in addition to a lawful basis",
-          "two-step",
-          "two step",
-          "both a lawful basis",
-          "alongside an article 6",
-          "article 6 + article 9",
-          "+ article 9",
-          "dual-basis",
-          "dual basis",
-          "6(1) is still required",
-          "still required",
-          "in addition to the article 6",
-          "must also satisfy",
-          "derogation in article 9",
-          "derogations in article 9",
-          "in addition to an article 6"
-        ],
-        [
-          "explicit consent",
-          "9(2)(a)",
-          "9(2)(h)",
-          "9(2)(i)",
-          "9(2)(j)",
-          "scientific research",
-          "health care",
-          "public health",
-          "provision of health"
-        ]
-      ],
-      "must_not_claim": [
-        "legitimate interest is sufficient",
-        "consent alone is sufficient"
-      ]
-    }
-  },
-  {
-    "id": "HQ_025",
-    "label": "DPIA + AI Act interplay for high-risk patient-data processing (GDPR Article 35)",
-    "tests": "cross_regulation; GDPR+AI Act; DPIA",
-    "question": "When is a data protection impact assessment required under GDPR Article 35 for a high-risk AI system processing patient data, and how does it relate to the EU AI Act's fundamental-rights impact assessment?",
-    "answer_key": {
-      "must_cite": [
-        "Article 35",
-        "Article 27"
-      ],
-      "must_state": [
-        [
-          "data protection impact assessment",
-          "dpia"
-        ],
-        [
-          "high risk",
-          "high-risk",
-          "likely to result in a high risk"
-        ],
-        [
-          "fundamental rights impact assessment",
-          "fria"
-        ],
-        [
-          "complement",
-          "relate",
-          "overlap",
-          "distinct",
-          "separate",
-          "in addition"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_026",
-    "label": "Automated decision-making rights — high-risk AI + GDPR Article 22",
-    "tests": "cross_regulation; GDPR+AI Act; automated decision-making",
-    "question": "A high-risk AI system makes automated eligibility decisions affecting individuals. What rights and safeguards does GDPR Article 22 impose, and how does this interact with the EU AI Act?",
-    "answer_key": {
-      "must_cite": [
-        "Article 22"
-      ],
-      "must_state": [
-        [
-          "solely automated",
-          "automated decision",
-          "automated decision-making"
-        ],
-        [
-          "human intervention",
-          "contest",
-          "express",
-          "right to obtain"
-        ],
-        [
-          "legal effect",
-          "significant",
-          "similarly significant"
-        ],
-        [
-          "explicit consent",
-          "contract",
-          "authorised by",
-          "authorized by"
-        ],
-        [
-          "human oversight",
-          "ai act"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_027",
-    "label": "Wrong-premise trap — 'we only deploy, so we're not a provider' (fine-tune + market)",
-    "tests": "actor-status correction; audit-loop calibration",
-    "question": "We take an open-source foundation model, fine-tune it on our data, and put it on the market under our own brand for medical triage. Since we did not build the original model and only deploy it, we are just a deployer and not a provider under the EU AI Act, correct?",
-    "answer_key": {
-      "must_cite": [
-        "Article 25",
-        "Article 3"
-      ],
-      "must_state": [
-        [
-          "are a provider",
-          "is a provider",
-          "qualify as a provider",
-          "become a provider",
-          "becomes a provider",
-          "considered a provider",
-          "deemed a provider",
-          "treated as a provider",
-          "a provider, not",
-          "you are a provider"
-        ],
-        [
-          "own name",
-          "own brand",
-          "trademark",
-          "under your own",
-          "your own name"
-        ],
-        [
-          "substantial modification",
-          "intended purpose",
-          "fine-tun"
-        ]
-      ],
-      "must_not_claim": [
-        "you are just a deployer",
-        "you are only a deployer",
-        "you are merely a deployer",
-        "yes, you are correct",
-        "you remain merely a deployer"
-      ]
-    }
-  },
-  {
-    "id": "HQ_028",
-    "label": "Genuine ambiguity — wellness app borderline MDR qualification",
-    "tests": "calibration; should hedge; intended purpose",
-    "question": "Our app tracks heart-rate variability and 'suggests when the user might be stressed' for general wellbeing, with a disclaimer that it is not for medical use. Does it fall under MDR 2017/745?",
-    "answer_key": {
-      "must_cite": [
-        "Article 2"
-      ],
-      "must_state": [
-        [
-          "intended purpose"
-        ],
-        [
-          "depends",
-          "borderline",
-          "case-by-case",
-          "fact-specific",
-          "not clear-cut",
-          "likely",
-          "may"
-        ],
-        [
-          "medical purpose",
-          "disclaimer"
-        ],
-        [
-          "wellbeing",
-          "wellness",
-          "general wellbeing"
-        ],
-        [
-          "annex xvi",
-          "mdcg 2019-11",
-          "mdcg 2019/11"
-        ]
-      ],
-      "must_not_claim": [
-        "definitely a medical device",
-        "clearly a medical device",
-        "certainly a medical device"
-      ]
-    }
-  },
-  {
-    "id": "HQ_029",
-    "label": "Category-confusion trap — 'does GDPR require a notified body?'",
-    "tests": "framework correction; calibration",
-    "question": "For our patient-data analytics platform, does the GDPR require us to use a notified body for conformity assessment?",
-    "answer_key": {
-      "must_cite": [],
-      "must_state": [
-        [
-          "does not require",
-          "no notified body",
-          "not require a notified body",
-          "there is no notified body",
-          "gdpr does not"
-        ],
-        [
-          "notified body"
-        ],
-        [
-          "conformity assessment",
-          "mdr",
-          "supervisory authorit",
-          "different framework"
-        ]
-      ],
-      "must_not_claim": [
-        "gdpr requires a notified body",
-        "gdpr requires you to use a notified body",
-        "yes, you must use a notified body",
-        "yes, the gdpr requires"
-      ]
-    }
-  },
-  {
-    "id": "HQ_030",
-    "label": "Landscape breadth — diagnostic-AI startup launching in the EU",
-    "tests": "community_summary; multi-reg breadth",
-    "question": "We are a startup launching an AI diagnostic tool for radiology in the EU. Give an overview of the full regulatory compliance landscape we need to address.",
-    "answer_key": {
-      "must_cite": [],
-      "must_state": [
-        [
-          "mdr",
-          "medical device regulation",
-          "2017/745"
-        ],
-        [
-          "ai act",
-          "artificial intelligence act",
-          "2024/1689"
-        ],
-        [
-          "gdpr",
-          "data protection",
-          "2016/679"
-        ],
-        [
-          "high-risk",
-          "high risk"
-        ],
-        [
-          "conformity assessment",
-          "ce marking",
-          "notified body"
-        ],
-        [
-          "clinical evaluation",
-          "clinical"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_031",
-    "label": "Temporal interplay — AI Act + MDR entry-into-force for a 2025 device",
-    "tests": "cross_regulation; temporal; transitional; hard",
-    "question": "A medical device with an AI component is placed on the EU market in 2025. How do the application timelines and transitional provisions of the EU AI Act and MDR 2017/745 interact for our compliance obligations?",
-    "answer_key": {
-      "must_cite": [
-        [
-          "Article 111",
-          "Article 113"
-        ]
-      ],
-      "must_state": [
-        [
-          "2026",
-          "2027",
-          "2 august"
-        ],
-        [
-          "high-risk",
-          "high risk"
-        ],
-        [
-          "transitional",
-          "already placed on the market",
-          "legacy",
-          "already on the market"
-        ],
-        [
-          "mdr",
-          "2021"
-        ],
-        [
-          "substantial change",
-          "significant change",
-          "article 83"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_032",
-    "label": "MDR notified body role and obligations (Articles 35-50, Annex VII)",
-    "tests": "role_obligations; notified body; MDR",
-    "question": "What is the role of a notified body under MDR 2017/745, and what obligations and oversight apply to it?",
-    "answer_key": {
-      "must_cite": [
-        "Annex VII"
-      ],
-      "must_state": [
-        [
-          "notified body",
-          "notified bodies"
-        ],
-        [
-          "conformity assessment"
-        ],
-        [
-          "designation",
-          "designated"
-        ],
-        [
-          "competence",
-          "qualified",
-          "personnel"
-        ],
-        [
-          "surveillance",
-          "monitoring",
-          "audit",
-          "unannounced"
-        ],
-        [
-          "independence",
-          "impartial"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_033",
-    "label": "Notified body surveillance duties after QMS certification (MDR Annex IX/VII + Article 56)",
-    "tests": "notified-body role channel; annex anchoring; certificate lifecycle",
-    "question": "Our notified body has just issued an EU quality management system certificate under MDR Annex IX for our Class IIb infusion pumps. As the manufacturer's regulatory affairs lead I want to understand: what surveillance activities must the notified body carry out during the certificate's period of validity, and what can it do if it finds we are no longer compliant?",
-    "judge_notes": "The correct anchors are MDR Annex IX Chapter I Section 3 (surveillance assessment: audits at least once every 12 months, unannounced audits) and/or Annex VII Section 4.10 (the notified body's surveillance obligations), plus Article 56 for suspension/restriction/withdrawal of certificates. Note: Article 44 governs the authorities' monitoring OF notified bodies — presenting it as the notified body's surveillance duty toward the manufacturer is a backbone error.",
-    "answer_key": {
-      "must_cite": [
-        [
-          "Annex IX",
-          "Annex VII"
-        ],
-        "Article 56"
-      ],
-      "must_state": [
-        [
-          "surveillance audit",
-          "surveillance assessment",
-          "audit at least once",
-          "every 12 months",
-          "annual audit",
-          "periodic audit",
-          "surveillance"
-        ],
-        [
-          "unannounced"
-        ],
-        [
-          "suspend",
-          "withdraw",
-          "restrict",
-          "suspension",
-          "withdrawal"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_034",
-    "label": "CIR 2026/977 — notified body re-certification timelines and quotations",
-    "tests": "implementing regulation coverage; CIR role channel; procedural timelines",
-    "question": "Our notified body has invited us to start re-certification of our MDR quality management system certificates. Under Commission Implementing Regulation (EU) 2026/977, what timelines govern the notified body's handling of the re-certification, what must its quotation cover, and what does the process expect from us as the manufacturer?",
-    "judge_notes": "The decisive source is CIR (EU) 2026/977 itself: Article 1 (quotations), Article 2 (timelines), Articles 6-7 (re-certification of QMS certificates and the re-certification decision). MDR Annex VII context is complementary, not a substitute. An answer that analyses only the MDR and never reaches the implementing regulation has missed the primary legal route.",
-    "answer_key": {
-      "must_cite": [
-        "Article 2",
-        [
-          "Article 6",
-          "Article 7"
-        ]
-      ],
-      "must_state": [
-        [
-          "quotation"
-        ],
-        [
-          "timeline",
-          "time limit",
-          "deadline",
-          "within"
-        ],
-        [
-          "re-certification",
-          "recertification",
-          "re-certify"
-        ],
-        [
-          "notified body"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_035",
-    "label": "Abstention — FDA 510(k) has no EU effect; US rules outside corpus",
-    "tests": "abstention/scope discipline; no fabricated foreign law; cross-jurisdiction trap",
-    "question": "Our Class II device already has FDA 510(k) clearance in the United States. Can we rely on that clearance to CE-mark the device and place it on the EU market, and what post-market reporting duties will we have towards the FDA once we also sell in the US?",
-    "judge_notes": "Correct behaviour has two parts. (1) EU side: state clearly that FDA 510(k) clearance confers no conformity under the MDR — the device needs the full MDR conformity assessment route and CE marking; there is no mutual recognition. (2) US side: explicitly decline — FDA/US requirements are outside the scope of the EU regulatory corpus this system covers. Inventing FDA citations, US timelines or 21 CFR references is a fatal defect. A clean scope refusal on the US part plus a correct EU analysis deserves a high score; do not penalise the refusal.",
-    "answer_key": {
-      "must_cite": [],
-      "must_state": [
-        [
-          "conformity assessment"
-        ],
-        [
-          "cannot",
-          "does not",
-          "no mutual",
-          "not sufficient",
-          "not recognised",
-          "not recognized",
-          "not accepted",
-          "no effect"
-        ],
-        [
-          "CE mark",
-          "CE-mark",
-          "CE marking"
-        ]
-      ],
-      "must_not_claim": [
-        "510(k) clearance is sufficient",
-        "510(k) satisfies"
-      ]
-    }
-  },
-  {
-    "id": "HQ_036",
-    "label": "Wrong-premise trap — MDD 93/42/EEC classification rules for software",
-    "tests": "repealed-law trap; premise correction; MDR Annex VIII Rule 11",
-    "question": "We are classifying our diagnostic decision-support software. Which classification rules under the Medical Device Directive 93/42/EEC apply to it, and what class will the software fall into?",
-    "judge_notes": "The premise is false: Directive 93/42/EEC (MDD) was repealed and replaced by Regulation (EU) 2017/745 (MDR), subject to the Article 120 transitional provisions. A reliable answer corrects the premise and classifies under MDR Annex VIII (Rule 11 is the software rule — software providing information for diagnostic/therapeutic decisions is at least Class IIa, with higher classes depending on severity of impact). Answering with MDD rules as if they were in force is a fatal backbone error.",
-    "answer_key": {
-      "must_cite": [
-        "Annex VIII"
-      ],
-      "must_state": [
-        [
-          "repealed",
-          "replaced",
-          "no longer in force",
-          "superseded",
-          "no longer applies",
-          "no longer applicable",
-          "legacy",
-          "former Directive",
-          "not the"
-        ],
-        [
-          "Rule 11"
-        ],
-        [
-          "2017/745",
-          "MDR"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_037",
-    "label": "Multi-turn clarify loop — role reply resolves to deployer obligations (AI Act Art 26)",
-    "tests": "multi-turn history rewrite; clarify-gate closure; deployer backbone",
-    "history": [
-      {
-        "role": "user",
-        "content": "What obligations does our company have under the AI Act for the high-risk AI recruitment system we've introduced?"
-      },
-      {
-        "role": "assistant",
-        "content": "To answer precisely I need to know your company's role under the AI Act, because the obligations differ fundamentally: are you the provider of the system (you developed it or place it on the market under your own name or trademark), or the deployer (you use a system supplied by another company under your own authority)?"
-      }
+ {
+  "id": "HQ_001",
+  "label": "German hospital — multi-stage actor status transition (MDR 5(5) + AI Act provider/deployer)",
+  "tests": "actor-status transition; in-house exemption; cross-reg; calibration",
+  "question": "A university hospital in Germany develops an in-house AI-assisted pathology system that analyzes Raman spectroscopy data to classify tumor margins during surgery. The system is initially trained internally using retrospective patient datasets and is used only within the hospital under the MDR Article 5(5) health institution exemption. After deployment, the hospital introduces a continuous learning pipeline that automatically retrains the model weekly using newly generated patient spectra from its oncology department. The retraining logic, validation thresholds, and permitted spectral domains were pre-defined in the initial technical documentation and quality management procedures. Two years later, the hospital enters a collaboration agreement with a second university hospital in France. The updated model weights are periodically shared with the French hospital, but the source code and intended purpose remain unchanged. Under the EU AI Act, MDR 2017/745, and the MDR Article 5(5) exemption framework: 1. At which stage(s), if any, could the German hospital transition from: user -> manufacturer under MDR, deployer -> provider under the AI Act?",
+  "answer_key": {
+   "must_cite": [
+    "Article 5",
+    [
+     "Article 25",
+     "Article 3"
+    ]
+   ],
+   "must_state": [
+    [
+     "health institution",
+     "in-house",
+     "in house"
     ],
-    "question": "We're the deployer — we license the system from a software vendor and use it to screen applicants for our own vacancies.",
-    "judge_notes": "This is a multi-turn exchange: the user's final message answers the system's clarification question. Grade the answer as a response to the ORIGINAL question with role = deployer. The backbone is Article 26 (deployer obligations: use in accordance with instructions for use, assign competent human oversight, input-data relevance where under the deployer's control, monitoring and log retention, informing workers/affected persons). Presenting the provider obligations (Articles 9-17) as the company's own duties is a backbone error; noting them as the vendor's duties is fine. Article 27 FRIA applies to public bodies and certain private operators — a private employer screening its own applicants is generally outside it; flagging that boundary is a plus.",
-    "answer_key": {
-      "must_cite": [
-        "Article 26"
-      ],
-      "must_state": [
-        [
-          "deployer"
-        ],
-        [
-          "instructions for use",
-          "accordance with the instructions",
-          "according to the instructions"
-        ],
-        [
-          "human oversight"
-        ],
-        [
-          "monitor",
-          "monitoring"
-        ],
-        [
-          "log"
-        ]
-      ],
-      "must_not_claim": []
-    }
-  },
-  {
-    "id": "HQ_038",
-    "label": "AI Act application dates — Article 113 timeline for high-risk and prohibitions",
-    "tests": "temporal correctness; exact dates; Article 113",
-    "question": "We operate a high-risk AI system listed in Annex III of the AI Act. Which parts of the AI Act already apply to us today, and from what exact dates do the high-risk obligations and the Article 5 prohibitions apply? Please give the specific application dates.",
-    "judge_notes": "The anchor is Article 113: the Regulation applies generally from 2 August 2026 (this covers the Annex III high-risk obligations); Chapters I and II — including the Article 5 prohibitions — apply from 2 February 2025 (already in force); the GPAI/governance chapters from 2 August 2025; Article 6(1) embedded-product high-risk route from 2 August 2027. Wrong or invented dates are fatal for compliance use. A caveat that pending legislative amendments could shift dates is acceptable but the corpus dates above are the required baseline.",
-    "answer_key": {
-      "must_cite": [
-        "Article 113"
-      ],
-      "must_state": [
-        [
-          "2 August 2026",
-          "2026-08-02",
-          "August 2, 2026"
-        ],
-        [
-          "2 February 2025",
-          "2025-02-02",
-          "February 2, 2025"
-        ]
-      ],
-      "must_not_claim": []
-    }
+    [
+     "substantial modification",
+     "continuous learning",
+     "pre-determined",
+     "predetermined",
+     "pre-defined",
+     "predefined"
+    ],
+    [
+     "provider"
+    ],
+    [
+     "manufacturer"
+    ],
+    [
+     "transfer",
+     "another legal entity",
+     "shared",
+     "second hospital",
+     "another institution",
+     "placing on the market",
+     "made available"
+    ]
+   ],
+   "must_not_claim": []
   }
+ },
+ {
+  "id": "HQ_002",
+  "label": "Cross-regulation — data protection obligations for connected medical device manufacturers (MDR + GDPR)",
+  "tests": "cross_regulation; MDR+GDPR; manufacturer role",
+  "question": "What data protection obligations apply to manufacturers of connected medical devices under MDR and GDPR?",
+  "answer_key": {
+   "must_cite": [],
+   "must_state": [
+    [
+     "lawful basis",
+     "article 6"
+    ],
+    [
+     "special category",
+     "health data",
+     "article 9"
+    ],
+    [
+     "security",
+     "article 32"
+    ],
+    [
+     "by design",
+     "data protection by design",
+     "article 25"
+    ],
+    [
+     "dpia",
+     "impact assessment",
+     "article 35"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_003",
+  "label": "Benchmark — Class IIb SaMD with continuous learning, PROVIDER obligations (AI Act + MDR)",
+  "tests": "classification_chain; provider; Art 43(4); lex specialis; recurring benchmark",
+  "question": "We are the provider of a Class IIb software-as-a-medical-device that uses a continuous-learning model. What obligations apply to us under the EU AI Act and MDR 2017/745, including for the continuous-learning behaviour?",
+  "answer_key": {
+   "must_cite": [
+    "Article 43",
+    [
+     "Article 16",
+     "Article 17",
+     "Article 19"
+    ]
+   ],
+   "must_state": [
+    [
+     "substantial modification",
+     "continuous learning",
+     "pre-determined",
+     "predetermined",
+     "predefined"
+    ],
+    [
+     "conformity assessment"
+    ],
+    [
+     "high-risk",
+     "high risk"
+    ],
+    [
+     "quality management",
+     "qms"
+    ],
+    [
+     "technical documentation"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_004",
+  "label": "AI Act high-risk qualification — triage chatbot (Annex III vs Article 6(1))",
+  "tests": "legal_qualification; high-risk routing; calibration",
+  "question": "A company markets an AI chatbot that triages patient symptoms and recommends whether to seek emergency care. Is this a high-risk AI system under the EU AI Act, and on what legal basis - Article 6(1) with Annex I, or Annex III?",
+  "answer_key": {
+   "must_cite": [
+    "Article 6"
+   ],
+   "must_state": [
+    [
+     "high-risk",
+     "high risk"
+    ],
+    [
+     "medical device",
+     "samd",
+     "software as a medical device"
+    ],
+    [
+     "annex i",
+     "article 6(1)",
+     "safety component",
+     "product"
+    ],
+    [
+     "annex iii"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_005",
+  "label": "AI Act GPAI model provider — systemic-risk obligations (Article 53 + 55)",
+  "tests": "role_obligations; GPAI; systemic risk",
+  "question": "What obligations does a provider of a general-purpose AI model with systemic risk have under the EU AI Act?",
+  "answer_key": {
+   "must_cite": [
+    "Article 53",
+    "Article 55"
+   ],
+   "must_state": [
+    [
+     "systemic risk"
+    ],
+    [
+     "adversarial",
+     "model evaluation",
+     "red-team",
+     "red team"
+    ],
+    [
+     "serious incident"
+    ],
+    [
+     "cybersecurity",
+     "cyber security",
+     "cyber-security"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_006",
+  "label": "AI Act prohibited practices — workplace emotion recognition (Article 5)",
+  "tests": "provision_lookup; prohibition; calibration",
+  "question": "Is it lawful under the EU AI Act to deploy an AI system that infers employees' emotions from webcam feeds during work, and which provision governs this?",
+  "answer_key": {
+   "must_cite": [
+    "Article 5"
+   ],
+   "must_state": [
+    [
+     "prohibited",
+     "prohibition",
+     "banned",
+     "not lawful",
+     "unlawful",
+     "not permitted"
+    ],
+    [
+     "emotion"
+    ],
+    [
+     "workplace",
+     "work place",
+     "at work"
+    ],
+    [
+     "medical",
+     "safety"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_007",
+  "label": "AI Act substantial modification — re-conformity of a high-risk system (Article 43(4))",
+  "tests": "classification_chain; substantial modification; hard",
+  "question": "When does a change to an already-deployed high-risk AI system count as a substantial modification requiring a new conformity assessment under the EU AI Act, and how are pre-determined changes treated?",
+  "answer_key": {
+   "must_cite": [
+    "Article 43"
+   ],
+   "must_state": [
+    [
+     "substantial modification"
+    ],
+    [
+     "new conformity assessment",
+     "re-assessment",
+     "fresh conformity",
+     "renewed conformity"
+    ],
+    [
+     "pre-determined",
+     "predetermined",
+     "pre-defined",
+     "predefined",
+     "initial technical documentation"
+    ],
+    [
+     "intended purpose",
+     "performance"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_008",
+  "label": "AI Act deployer obligations — distinguish from provider (Article 26)",
+  "tests": "role_obligations; deployer; actor distinction",
+  "question": "We deploy a third-party high-risk AI system for CV screening in recruitment. What are our obligations as a deployer under the EU AI Act, and how do they differ from the provider's?",
+  "answer_key": {
+   "must_cite": [
+    "Article 26"
+   ],
+   "must_state": [
+    [
+     "deployer"
+    ],
+    [
+     "human oversight"
+    ],
+    [
+     "in accordance with",
+     "instructions for use",
+     "instructions"
+    ],
+    [
+     "monitor",
+     "logs",
+     "log"
+    ],
+    [
+     "provider"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_009",
+  "label": "AI Act / MDR lex specialis — serious incident reporting overlap (Article 73(10))",
+  "tests": "cross_regulation; lex specialis; hard",
+  "question": "For a high-risk AI system that is also a medical device under MDR, how do the serious-incident reporting duties of the EU AI Act and MDR interact, and which prevails?",
+  "answer_key": {
+   "must_cite": [
+    "Article 73"
+   ],
+   "must_state": [
+    [
+     "serious incident"
+    ],
+    [
+     "in addition",
+     "additional",
+     "both apply",
+     "cumulative",
+     "does not replace",
+     "alongside",
+     "also report"
+    ],
+    [
+     "mdr",
+     "medical device regulation"
+    ],
+    [
+     "market surveillance",
+     "authority",
+     "authorities"
+    ]
+   ],
+   "must_not_claim": [
+    "mdr fully replaces",
+    "ai act does not apply",
+    "ai act reporting is absorbed"
+   ]
+  }
+ },
+ {
+  "id": "HQ_010",
+  "label": "AI Act importer — verification duties for a high-risk system (Article 23)",
+  "tests": "role_obligations; importer",
+  "question": "What must an importer verify before placing a high-risk AI system from a non-EU provider on the EU market?",
+  "answer_key": {
+   "must_cite": [
+    "Article 23"
+   ],
+   "must_state": [
+    [
+     "importer"
+    ],
+    [
+     "conformity assessment"
+    ],
+    [
+     "ce marking",
+     "ce mark"
+    ],
+    [
+     "technical documentation"
+    ],
+    [
+     "authorised representative",
+     "authorized representative"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_011",
+  "label": "Definition precision — 'AI system' under Article 3(1)",
+  "tests": "definition_lookup; scope precision",
+  "question": "What is the legal definition of an 'AI system' under the EU AI Act, and what distinguishes it from ordinary software?",
+  "answer_key": {
+   "must_cite": [
+    "Article 3"
+   ],
+   "must_state": [
+    [
+     "machine-based",
+     "machine based"
+    ],
+    [
+     "autonomy",
+     "autonomous"
+    ],
+    [
+     "infer",
+     "inference"
+    ],
+    [
+     "output",
+     "prediction",
+     "content",
+     "recommendation",
+     "decision"
+    ],
+    [
+     "adapt",
+     "adaptiveness"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_012",
+  "label": "MDR manufacturer obligations — Article 10",
+  "tests": "role_obligations; manufacturer; MDR",
+  "question": "What are the core obligations of a medical device manufacturer under MDR 2017/745?",
+  "answer_key": {
+   "must_cite": [
+    "Article 10"
+   ],
+   "must_state": [
+    [
+     "risk management"
+    ],
+    [
+     "clinical evaluation"
+    ],
+    [
+     "technical documentation"
+    ],
+    [
+     "quality management",
+     "qms"
+    ],
+    [
+     "post-market surveillance",
+     "pms"
+    ],
+    [
+     "ce marking",
+     "declaration of conformity"
+    ],
+    [
+     "udi",
+     "eudamed",
+     "registration"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_013",
+  "label": "MDR Class IIb conformity assessment route (Annex IX vs Annex X)",
+  "tests": "classification_chain; conformity route; MDR",
+  "question": "Which conformity assessment routes are available for a Class IIb medical device under MDR 2017/745, and what role does the notified body play?",
+  "answer_key": {
+   "must_cite": [
+    "Annex IX",
+    "Annex XI",
+    "Article 52"
+   ],
+   "must_state": [
+    [
+     "notified body"
+    ],
+    [
+     "Annex IX"
+    ],
+    [
+     "Annex X",
+     "type examination",
+     "Annex XI",
+     "production quality"
+    ],
+    [
+     "quality management",
+     "qms",
+     "technical documentation"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_014",
+  "label": "IVDR classification — Class B vs C (notified body involvement)",
+  "tests": "classification_chain; IVDR; notified body",
+  "question": "How is an in vitro diagnostic classified as Class B versus Class C under IVDR 2017/746, and when must a notified body be involved?",
+  "answer_key": {
+   "must_cite": [
+    "Annex VIII"
+   ],
+   "must_state": [
+    [
+     "classification rule",
+     "annex viii",
+     "rule"
+    ],
+    [
+     "notified body"
+    ],
+    [
+     "class b"
+    ],
+    [
+     "class c"
+    ],
+    [
+     "individual risk",
+     "public health risk",
+     "risk"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_015",
+  "label": "MDR Article 5(5) health institution exemption — conditions and limits",
+  "tests": "provision_lookup; exemption; calibration",
+  "question": "Under what conditions can a hospital manufacture and use a device in-house under the MDR Article 5(5) health institution exemption, and what obligations still apply?",
+  "answer_key": {
+   "must_cite": [
+    "Article 5"
+   ],
+   "must_state": [
+    [
+     "health institution"
+    ],
+    [
+     "not transferred",
+     "another legal entity",
+     "manufactured and used",
+     "within the"
+    ],
+    [
+     "no equivalent",
+     "equivalent device",
+     "not available on the market",
+     "cannot be met"
+    ],
+    [
+     "general safety and performance",
+     "annex i",
+     "gspr"
+    ],
+    [
+     "quality management",
+     "documentation"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_016",
+  "label": "MDR transitional provisions — significant change to a legacy device (Article 120)",
+  "tests": "provision_lookup; transitional; temporal; hard",
+  "question": "A device was CE-marked under the old MDD and is still on the market under MDR transitional provisions. What counts as a 'significant change' that ends the transitional benefit under MDR Article 120?",
+  "answer_key": {
+   "must_cite": [
+    "Article 120"
+   ],
+   "must_state": [
+    [
+     "significant change"
+    ],
+    [
+     "intended purpose"
+    ],
+    [
+     "design"
+    ],
+    [
+     "mdcg 2020-3",
+     "mdcg 2020/3"
+    ],
+    [
+     "transitional",
+     "legacy",
+     "mdd"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_017",
+  "label": "MDR post-market surveillance and PMCF (Articles 83-86)",
+  "tests": "role_obligations; PMS; MDR",
+  "question": "What post-market surveillance and post-market clinical follow-up obligations does a manufacturer have under MDR 2017/745?",
+  "answer_key": {
+   "must_cite": [
+    "Article 83"
+   ],
+   "must_state": [
+    [
+     "post-market surveillance",
+     "pms"
+    ],
+    [
+     "pmcf",
+     "post-market clinical follow-up"
+    ],
+    [
+     "psur",
+     "periodic safety update"
+    ],
+    [
+     "plan",
+     "annex iii"
+    ],
+    [
+     "proportionate",
+     "risk class",
+     "class"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_018",
+  "label": "MDR importer vs distributor obligations (Article 13 vs 14)",
+  "tests": "role_obligations; importer/distributor distinction",
+  "question": "How do the obligations of an importer differ from those of a distributor of medical devices under MDR 2017/745?",
+  "answer_key": {
+   "must_cite": [
+    "Article 13",
+    "Article 14"
+   ],
+   "must_state": [
+    [
+     "importer"
+    ],
+    [
+     "distributor"
+    ],
+    [
+     "verify",
+     "verification"
+    ],
+    [
+     "ce marking",
+     "ce mark",
+     "ce-mark"
+    ],
+    [
+     "storage",
+     "transport condition"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_019",
+  "label": "MDR authorised representative mandate for a non-EU manufacturer (Article 11)",
+  "tests": "role_obligations; authorised representative",
+  "question": "A manufacturer established outside the EU wants to place a device on the EU market. What is the role and what are the obligations of its authorised representative under MDR Article 11?",
+  "answer_key": {
+   "must_cite": [
+    "Article 11"
+   ],
+   "must_state": [
+    [
+     "authorised representative",
+     "authorized representative"
+    ],
+    [
+     "mandate",
+     "written mandate"
+    ],
+    [
+     "outside the eu",
+     "non-eu",
+     "third country",
+     "established outside"
+    ],
+    [
+     "technical documentation",
+     "declaration of conformity",
+     "keep available"
+    ],
+    [
+     "liable",
+     "jointly",
+     "defective"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_020",
+  "label": "SaMD qualification — clinical decision support as a medical device (MDCG 2019-11)",
+  "tests": "legal_qualification; guidance; MDR",
+  "question": "Is standalone clinical decision-support software a medical device under MDR 2017/745, and how does MDCG 2019-11 guidance inform the qualification?",
+  "answer_key": {
+   "must_cite": [
+    "Article 2"
+   ],
+   "must_state": [
+    [
+     "intended purpose"
+    ],
+    [
+     "mdcg 2019-11",
+     "mdcg 2019/11"
+    ],
+    [
+     "medical device"
+    ],
+    [
+     "rule 11",
+     "annex viii"
+    ],
+    [
+     "diagnosis",
+     "prevention",
+     "monitoring",
+     "treatment",
+     "prediction"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_021",
+  "label": "MDR vigilance — serious incident vs FSCA reporting (Article 87)",
+  "tests": "provision_lookup; vigilance; MDR",
+  "question": "What are a manufacturer's vigilance reporting obligations under MDR - the distinction and timelines between serious incidents and field safety corrective actions?",
+  "answer_key": {
+   "must_cite": [
+    "Article 87"
+   ],
+   "must_state": [
+    [
+     "15 day",
+     "15-day",
+     "fifteen day"
+    ],
+    [
+     "2 day",
+     "2-day",
+     "two day",
+     "48 hour"
+    ],
+    [
+     "10 day",
+     "10-day",
+     "ten day"
+    ],
+    [
+     "public health threat"
+    ],
+    [
+     "death",
+     "deterioration"
+    ],
+    [
+     "field safety corrective action",
+     "fsca"
+    ],
+    [
+     "aware",
+     "awareness"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_022",
+  "label": "GDPR controller vs processor — SaMD cloud vendor (Articles 4, 24, 28)",
+  "tests": "role_obligations; GDPR; controller/processor distinction",
+  "question": "A cloud vendor hosts and runs inference for a hospital's diagnostic AI on patient data. Is the vendor a controller or a processor under the GDPR, and what determines that?",
+  "answer_key": {
+   "must_cite": [
+    "Article 4",
+    "Article 28"
+   ],
+   "must_state": [
+    [
+     "controller"
+    ],
+    [
+     "processor"
+    ],
+    [
+     "purposes and means",
+     "determines the purposes",
+     "means of processing"
+    ],
+    [
+     "on behalf of",
+     "instructions",
+     "documented instructions"
+    ],
+    [
+     "hospital",
+     "customer",
+     "client"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_023",
+  "label": "GDPR Article 28 — mandatory content of a data processing agreement",
+  "tests": "provision_lookup; GDPR; processor",
+  "question": "What must a data processing agreement contain under GDPR Article 28 when a medical device manufacturer engages a processor?",
+  "answer_key": {
+   "must_cite": [
+    "Article 28"
+   ],
+   "must_state": [
+    [
+     "documented instructions",
+     "instructions"
+    ],
+    [
+     "confidentiality"
+    ],
+    [
+     "security",
+     "article 32"
+    ],
+    [
+     "sub-processor",
+     "subprocessor",
+     "another processor"
+    ],
+    [
+     "assist the controller",
+     "assist"
+    ],
+    [
+     "delete or return",
+     "return or delete"
+    ],
+    [
+     "audit",
+     "inspection"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_024",
+  "label": "GDPR lawful basis for health data in clinical AI (Articles 6 + 9)",
+  "tests": "provision_lookup; GDPR; special category data",
+  "question": "What lawful basis is required to process patients' health data to train and run a clinical AI system under the GDPR, considering Articles 6 and 9?",
+  "answer_key": {
+   "must_cite": [
+    "Article 6",
+    "Article 9"
+   ],
+   "must_state": [
+    [
+     "special category",
+     "special-category",
+     "sensitive data",
+     "special categories"
+    ],
+    [
+     "article 6 and article 9",
+     "both article 6",
+     "article 9 in addition",
+     "as well as an article 6",
+     "combined with an article 6",
+     "in addition to a lawful basis",
+     "two-step",
+     "two step",
+     "both a lawful basis",
+     "alongside an article 6",
+     "article 6 + article 9",
+     "+ article 9",
+     "dual-basis",
+     "dual basis",
+     "6(1) is still required",
+     "still required",
+     "in addition to the article 6",
+     "must also satisfy",
+     "derogation in article 9",
+     "derogations in article 9",
+     "in addition to an article 6"
+    ],
+    [
+     "explicit consent",
+     "9(2)(a)",
+     "9(2)(h)",
+     "9(2)(i)",
+     "9(2)(j)",
+     "scientific research",
+     "health care",
+     "public health",
+     "provision of health"
+    ]
+   ],
+   "must_not_claim": [
+    "legitimate interest is sufficient",
+    "consent alone is sufficient"
+   ]
+  }
+ },
+ {
+  "id": "HQ_025",
+  "label": "DPIA + AI Act interplay for high-risk patient-data processing (GDPR Article 35)",
+  "tests": "cross_regulation; GDPR+AI Act; DPIA",
+  "question": "When is a data protection impact assessment required under GDPR Article 35 for a high-risk AI system processing patient data, and how does it relate to the EU AI Act's fundamental-rights impact assessment?",
+  "answer_key": {
+   "must_cite": [
+    "Article 35",
+    "Article 27"
+   ],
+   "must_state": [
+    [
+     "data protection impact assessment",
+     "dpia"
+    ],
+    [
+     "high risk",
+     "high-risk",
+     "likely to result in a high risk"
+    ],
+    [
+     "fundamental rights impact assessment",
+     "fria"
+    ],
+    [
+     "complement",
+     "relate",
+     "overlap",
+     "distinct",
+     "separate",
+     "in addition"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_026",
+  "label": "Automated decision-making rights — high-risk AI + GDPR Article 22",
+  "tests": "cross_regulation; GDPR+AI Act; automated decision-making",
+  "question": "A high-risk AI system makes automated eligibility decisions affecting individuals. What rights and safeguards does GDPR Article 22 impose, and how does this interact with the EU AI Act?",
+  "answer_key": {
+   "must_cite": [
+    "Article 22"
+   ],
+   "must_state": [
+    [
+     "solely automated",
+     "automated decision",
+     "automated decision-making"
+    ],
+    [
+     "human intervention",
+     "contest",
+     "express",
+     "right to obtain"
+    ],
+    [
+     "legal effect",
+     "significant",
+     "similarly significant"
+    ],
+    [
+     "explicit consent",
+     "contract",
+     "authorised by",
+     "authorized by"
+    ],
+    [
+     "human oversight",
+     "ai act"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_027",
+  "label": "Wrong-premise trap — 'we only deploy, so we're not a provider' (fine-tune + market)",
+  "tests": "actor-status correction; audit-loop calibration",
+  "question": "We take an open-source foundation model, fine-tune it on our data, and put it on the market under our own brand for medical triage. Since we did not build the original model and only deploy it, we are just a deployer and not a provider under the EU AI Act, correct?",
+  "answer_key": {
+   "must_cite": [
+    "Article 25",
+    "Article 3"
+   ],
+   "must_state": [
+    [
+     "are a provider",
+     "is a provider",
+     "qualify as a provider",
+     "become a provider",
+     "becomes a provider",
+     "considered a provider",
+     "deemed a provider",
+     "treated as a provider",
+     "a provider, not",
+     "you are a provider"
+    ],
+    [
+     "own name",
+     "own brand",
+     "trademark",
+     "under your own",
+     "your own name"
+    ],
+    [
+     "substantial modification",
+     "intended purpose",
+     "fine-tun"
+    ]
+   ],
+   "must_not_claim": [
+    "you are just a deployer",
+    "you are only a deployer",
+    "you are merely a deployer",
+    "yes, you are correct",
+    "you remain merely a deployer"
+   ]
+  }
+ },
+ {
+  "id": "HQ_028",
+  "label": "Genuine ambiguity — wellness app borderline MDR qualification",
+  "tests": "calibration; should hedge; intended purpose",
+  "question": "Our app tracks heart-rate variability and 'suggests when the user might be stressed' for general wellbeing, with a disclaimer that it is not for medical use. Does it fall under MDR 2017/745?",
+  "answer_key": {
+   "must_cite": [
+    "Article 2"
+   ],
+   "must_state": [
+    [
+     "intended purpose"
+    ],
+    [
+     "depends",
+     "borderline",
+     "case-by-case",
+     "fact-specific",
+     "not clear-cut",
+     "likely",
+     "may"
+    ],
+    [
+     "medical purpose",
+     "disclaimer"
+    ],
+    [
+     "wellbeing",
+     "wellness",
+     "general wellbeing"
+    ],
+    [
+     "annex xvi",
+     "mdcg 2019-11",
+     "mdcg 2019/11"
+    ]
+   ],
+   "must_not_claim": [
+    "definitely a medical device",
+    "clearly a medical device",
+    "certainly a medical device"
+   ]
+  }
+ },
+ {
+  "id": "HQ_029",
+  "label": "Category-confusion trap — 'does GDPR require a notified body?'",
+  "tests": "framework correction; calibration",
+  "question": "For our patient-data analytics platform, does the GDPR require us to use a notified body for conformity assessment?",
+  "answer_key": {
+   "must_cite": [],
+   "must_state": [
+    [
+     "does not require",
+     "no notified body",
+     "not require a notified body",
+     "there is no notified body",
+     "gdpr does not"
+    ],
+    [
+     "notified body"
+    ],
+    [
+     "conformity assessment",
+     "mdr",
+     "supervisory authorit",
+     "different framework"
+    ]
+   ],
+   "must_not_claim": [
+    "gdpr requires a notified body",
+    "gdpr requires you to use a notified body",
+    "yes, you must use a notified body",
+    "yes, the gdpr requires"
+   ]
+  }
+ },
+ {
+  "id": "HQ_030",
+  "label": "Landscape breadth — diagnostic-AI startup launching in the EU",
+  "tests": "community_summary; multi-reg breadth",
+  "question": "We are a startup launching an AI diagnostic tool for radiology in the EU. Give an overview of the full regulatory compliance landscape we need to address.",
+  "answer_key": {
+   "must_cite": [],
+   "must_state": [
+    [
+     "mdr",
+     "medical device regulation",
+     "2017/745"
+    ],
+    [
+     "ai act",
+     "artificial intelligence act",
+     "2024/1689"
+    ],
+    [
+     "gdpr",
+     "data protection",
+     "2016/679"
+    ],
+    [
+     "high-risk",
+     "high risk"
+    ],
+    [
+     "conformity assessment",
+     "ce marking",
+     "notified body"
+    ],
+    [
+     "clinical evaluation",
+     "clinical"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_031",
+  "label": "Temporal interplay — AI Act + MDR entry-into-force for a 2025 device",
+  "tests": "cross_regulation; temporal; transitional; hard",
+  "question": "A medical device with an AI component is placed on the EU market in 2025. How do the application timelines and transitional provisions of the EU AI Act and MDR 2017/745 interact for our compliance obligations?",
+  "answer_key": {
+   "must_cite": [
+    [
+     "Article 111",
+     "Article 113"
+    ]
+   ],
+   "must_state": [
+    [
+     "2026",
+     "2027",
+     "2 august"
+    ],
+    [
+     "high-risk",
+     "high risk"
+    ],
+    [
+     "transitional",
+     "already placed on the market",
+     "legacy",
+     "already on the market"
+    ],
+    [
+     "mdr",
+     "2021"
+    ],
+    [
+     "substantial change",
+     "significant change",
+     "article 83"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_032",
+  "label": "MDR notified body role and obligations (Articles 35-50, Annex VII)",
+  "tests": "role_obligations; notified body; MDR",
+  "question": "What is the role of a notified body under MDR 2017/745, and what obligations and oversight apply to it?",
+  "answer_key": {
+   "must_cite": [
+    "Annex VII"
+   ],
+   "must_state": [
+    [
+     "notified body",
+     "notified bodies"
+    ],
+    [
+     "conformity assessment"
+    ],
+    [
+     "designation",
+     "designated"
+    ],
+    [
+     "competence",
+     "qualified",
+     "personnel"
+    ],
+    [
+     "surveillance",
+     "monitoring",
+     "audit",
+     "unannounced"
+    ],
+    [
+     "independence",
+     "impartial"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_033",
+  "label": "Notified body surveillance duties after QMS certification (MDR Annex IX/VII + Article 56)",
+  "tests": "notified-body role channel; annex anchoring; certificate lifecycle",
+  "question": "Our notified body has just issued an EU quality management system certificate under MDR Annex IX for our Class IIb infusion pumps. As the manufacturer's regulatory affairs lead I want to understand: what surveillance activities must the notified body carry out during the certificate's period of validity, and what can it do if it finds we are no longer compliant?",
+  "judge_notes": "The correct anchors are MDR Annex IX Chapter I Section 3 (surveillance assessment: audits at least once every 12 months, unannounced audits) and/or Annex VII Section 4.10 (the notified body's surveillance obligations), plus Article 56 for suspension/restriction/withdrawal of certificates. Note: Article 44 governs the authorities' monitoring OF notified bodies — presenting it as the notified body's surveillance duty toward the manufacturer is a backbone error.",
+  "answer_key": {
+   "must_cite": [
+    [
+     "Annex IX",
+     "Annex VII"
+    ],
+    "Article 56"
+   ],
+   "must_state": [
+    [
+     "surveillance audit",
+     "surveillance assessment",
+     "audit at least once",
+     "every 12 months",
+     "annual audit",
+     "periodic audit",
+     "surveillance"
+    ],
+    [
+     "unannounced"
+    ],
+    [
+     "suspend",
+     "withdraw",
+     "restrict",
+     "suspension",
+     "withdrawal"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_034",
+  "label": "CIR 2026/977 — notified body re-certification timelines and quotations",
+  "tests": "implementing regulation coverage; CIR role channel; procedural timelines",
+  "question": "Our notified body has invited us to start re-certification of our MDR quality management system certificates. Under Commission Implementing Regulation (EU) 2026/977, what timelines govern the notified body's handling of the re-certification, what must its quotation cover, and what does the process expect from us as the manufacturer?",
+  "judge_notes": "The decisive source is CIR (EU) 2026/977 itself: Article 1 (quotations), Article 2 (timelines), Articles 6-7 (re-certification of QMS certificates and the re-certification decision). MDR Annex VII context is complementary, not a substitute. An answer that analyses only the MDR and never reaches the implementing regulation has missed the primary legal route.",
+  "answer_key": {
+   "must_cite": [
+    "Article 2",
+    [
+     "Article 6",
+     "Article 7"
+    ]
+   ],
+   "must_state": [
+    [
+     "quotation"
+    ],
+    [
+     "timeline",
+     "time limit",
+     "deadline",
+     "within"
+    ],
+    [
+     "re-certification",
+     "recertification",
+     "re-certify"
+    ],
+    [
+     "notified body"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_035",
+  "label": "Abstention — FDA 510(k) has no EU effect; US rules outside corpus",
+  "tests": "abstention/scope discipline; no fabricated foreign law; cross-jurisdiction trap",
+  "question": "Our Class II device already has FDA 510(k) clearance in the United States. Can we rely on that clearance to CE-mark the device and place it on the EU market, and what post-market reporting duties will we have towards the FDA once we also sell in the US?",
+  "judge_notes": "Correct behaviour has two parts. (1) EU side: state clearly that FDA 510(k) clearance confers no conformity under the MDR — the device needs the full MDR conformity assessment route and CE marking; there is no mutual recognition. (2) US side: explicitly decline — FDA/US requirements are outside the scope of the EU regulatory corpus this system covers. Inventing FDA citations, US timelines or 21 CFR references is a fatal defect. A clean scope refusal on the US part plus a correct EU analysis deserves a high score; do not penalise the refusal.",
+  "answer_key": {
+   "must_cite": [],
+   "must_state": [
+    [
+     "conformity assessment"
+    ],
+    [
+     "cannot",
+     "does not",
+     "no mutual",
+     "not sufficient",
+     "not recognised",
+     "not recognized",
+     "not accepted",
+     "no effect"
+    ],
+    [
+     "CE mark",
+     "CE-mark",
+     "CE marking"
+    ]
+   ],
+   "must_not_claim": [
+    "510(k) clearance is sufficient",
+    "510(k) satisfies"
+   ]
+  }
+ },
+ {
+  "id": "HQ_036",
+  "label": "Wrong-premise trap — MDD 93/42/EEC classification rules for software",
+  "tests": "repealed-law trap; premise correction; MDR Annex VIII Rule 11",
+  "question": "We are classifying our diagnostic decision-support software. Which classification rules under the Medical Device Directive 93/42/EEC apply to it, and what class will the software fall into?",
+  "judge_notes": "The premise is false: Directive 93/42/EEC (MDD) was repealed and replaced by Regulation (EU) 2017/745 (MDR), subject to the Article 120 transitional provisions. A reliable answer corrects the premise and classifies under MDR Annex VIII (Rule 11 is the software rule — software providing information for diagnostic/therapeutic decisions is at least Class IIa, with higher classes depending on severity of impact). Answering with MDD rules as if they were in force is a fatal backbone error.",
+  "answer_key": {
+   "must_cite": [
+    "Annex VIII"
+   ],
+   "must_state": [
+    [
+     "repealed",
+     "replaced",
+     "no longer in force",
+     "superseded",
+     "no longer applies",
+     "no longer applicable",
+     "legacy",
+     "former Directive",
+     "not the"
+    ],
+    [
+     "Rule 11"
+    ],
+    [
+     "2017/745",
+     "MDR"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_037",
+  "label": "Multi-turn clarify loop — role reply resolves to deployer obligations (AI Act Art 26)",
+  "tests": "multi-turn history rewrite; clarify-gate closure; deployer backbone",
+  "history": [
+   {
+    "role": "user",
+    "content": "What obligations does our company have under the AI Act for the high-risk AI recruitment system we've introduced?"
+   },
+   {
+    "role": "assistant",
+    "content": "To answer precisely I need to know your company's role under the AI Act, because the obligations differ fundamentally: are you the provider of the system (you developed it or place it on the market under your own name or trademark), or the deployer (you use a system supplied by another company under your own authority)?"
+   }
+  ],
+  "question": "We're the deployer — we license the system from a software vendor and use it to screen applicants for our own vacancies.",
+  "judge_notes": "This is a multi-turn exchange: the user's final message answers the system's clarification question. Grade the answer as a response to the ORIGINAL question with role = deployer. The backbone is Article 26 (deployer obligations: use in accordance with instructions for use, assign competent human oversight, input-data relevance where under the deployer's control, monitoring and log retention, informing workers/affected persons). Presenting the provider obligations (Articles 9-17) as the company's own duties is a backbone error; noting them as the vendor's duties is fine. Article 27 FRIA applies to public bodies and certain private operators — a private employer screening its own applicants is generally outside it; flagging that boundary is a plus.",
+  "answer_key": {
+   "must_cite": [
+    "Article 26"
+   ],
+   "must_state": [
+    [
+     "deployer"
+    ],
+    [
+     "instructions for use",
+     "accordance with the instructions",
+     "according to the instructions"
+    ],
+    [
+     "human oversight"
+    ],
+    [
+     "monitor",
+     "monitoring"
+    ],
+    [
+     "log"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_038",
+  "label": "AI Act application dates — Article 113 timeline for high-risk and prohibitions",
+  "tests": "temporal correctness; exact dates; Article 113",
+  "question": "We operate a high-risk AI system listed in Annex III of the AI Act. Which parts of the AI Act already apply to us today, and from what exact dates do the high-risk obligations and the Article 5 prohibitions apply? Please give the specific application dates.",
+  "judge_notes": "The anchor is Article 113: the Regulation applies generally from 2 August 2026 (this covers the Annex III high-risk obligations); Chapters I and II — including the Article 5 prohibitions — apply from 2 February 2025 (already in force); the GPAI/governance chapters from 2 August 2025; Article 6(1) embedded-product high-risk route from 2 August 2027. Wrong or invented dates are fatal for compliance use. A caveat that pending legislative amendments could shift dates is acceptable but the corpus dates above are the required baseline.",
+  "answer_key": {
+   "must_cite": [
+    "Article 113"
+   ],
+   "must_state": [
+    [
+     "2 August 2026",
+     "2026-08-02",
+     "August 2, 2026"
+    ],
+    [
+     "2 February 2025",
+     "2025-02-02",
+     "February 2, 2025"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_039",
+  "label": "Negative space — obligations for a NON-high-risk AI provider (draft-numbering trap)",
+  "tests": "thin-corpus region: what applies when high-risk does NOT; resistance to draft AI Act numbering (Title IA / Articles 4a-4c)",
+  "question": "We provide an AI-powered contract-analysis tool for procurement teams in the EU. We have concluded it is not a high-risk AI system under the AI Act. Which obligations under the AI Act still apply to us as its provider, and which requirements do NOT apply to us because they are reserved for high-risk systems? Please cite the specific articles.",
+  "judge_notes": "The correct final-text answer: Article 4 (AI literacy — applies to providers and deployers of ALL AI systems), Article 50 (transparency duties where the system interacts with natural persons or generates synthetic content), and Article 95 (voluntary codes of conduct). The high-risk requirements of Chapter III Section 2 (Articles 8-15: risk management, data governance, technical documentation, logging, accuracy) and Section 3 duties (e.g. Article 17 QMS, Article 43 conformity assessment) do NOT apply to non-high-risk systems — prescribing them as mandatory is a fatal error. CRITICAL TRAP: the pre-final drafts had a 'Title IA' with Articles 4a-4c ('general principles applicable to all AI systems'); none of that exists in the final Regulation — Article 4 is AI literacy. Any citation of Articles 4a/4b/4c or Title IA is a fabricated provision and fatal.",
+  "answer_key": {
+   "must_cite": [
+    "Article 4",
+    "Article 50"
+   ],
+   "must_state": [
+    [
+     "ai literacy",
+     "AI literacy"
+    ],
+    [
+     "transparency"
+    ],
+    [
+     "voluntary",
+     "codes of conduct",
+     "code of conduct",
+     "Article 95"
+    ],
+    [
+     "do not apply",
+     "does not apply",
+     "not apply to",
+     "only to high-risk",
+     "reserved for high-risk"
+    ]
+   ],
+   "must_not_claim": [
+    "article 4a",
+    "articles 4a",
+    "article 4b",
+    "article 4c",
+    "title ia"
+   ]
+  }
+ },
+ {
+  "id": "HQ_040",
+  "label": "Negative space — GPAI value chain under FINAL numbering (draft Article 28 trap)",
+  "tests": "final-text numbering for value-chain / downstream-GPAI duties; Annex XII documentation",
+  "question": "We integrate a third-party general-purpose AI model into our SaaS product. Under the final text of the AI Act, which articles govern the responsibilities along the AI value chain between us and the GPAI model provider, and what information and documentation can we, as a downstream provider, expect to receive from the model provider? Cite the specific articles and annexes.",
+  "judge_notes": "Final-text anchors: Article 25 (responsibilities along the AI value chain — the draft texts numbered this Article 28, which in the final act is 'Notifying authorities'; citing Article 28 for value-chain duties is a draft-numbering fabrication and fatal). Article 53 (obligations of GPAI model providers), in particular Article 53(1)(b) — provide information and documentation to downstream providers per Annex XII. Article 55 adds obligations only for GPAI models with systemic risk (Article 51 classification). The GPAI model rules bind the model provider (e.g. Mistral), not the downstream system provider.",
+  "answer_key": {
+   "must_cite": [
+    "Article 25",
+    "Article 53"
+   ],
+   "must_state": [
+    [
+     "Annex XII",
+     "annex xii"
+    ],
+    [
+     "downstream"
+    ],
+    [
+     "documentation",
+     "technical documentation",
+     "information"
+    ]
+   ],
+   "must_not_claim": [
+    "article 28(2)",
+    "article 4b",
+    "articles 4b",
+    "article 4c"
+   ]
+  }
+ },
+ {
+  "id": "HQ_041",
+  "label": "Negative space — GDPR consent validity under power imbalance (recital-grounded)",
+  "tests": "recital retrieval (GDPR recitals ingested 14 Jul 2026); consent conditions; special-category alternatives",
+  "question": "A hospital asks patients to consent to the processing of their health data by our AI diagnostic platform. Under the GDPR, when is consent NOT a valid legal basis because of an imbalance of power between the controller and the data subject, and what does the GDPR's preamble say about that presumption? Which alternative legal bases under Article 9 should we consider for processing health data in this setting?",
+  "judge_notes": "Anchors: Article 7(4) (assessing whether consent is freely given; conditionality), Recital 43 (presumption that consent is NOT freely given where there is a clear imbalance between data subject and controller — the preamble element the question explicitly asks for; Recital 42 on burden of proof is a good supplement), Article 9(2) alternatives for health data — in particular 9(2)(h) (medical diagnosis, provision of health care, management of health systems) with the Article 9(3) professional-secrecy condition; 9(2)(a) explicit consent remains possible when freely given; 9(2)(i)/(j) for public-health/research contexts. An answer that never engages with the preamble/recital element misses the core of the question. GDPR recitals entered the corpus on 14 Jul 2026 — this case regression-tests that retrieval surfaces them.",
+  "answer_key": {
+   "must_cite": [
+    "Article 7",
+    "Article 9",
+    "Recital 43"
+   ],
+   "must_state": [
+    [
+     "freely given"
+    ],
+    [
+     "imbalance"
+    ],
+    [
+     "9(2)(h)",
+     "medical diagnosis",
+     "provision of health care",
+     "health care"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ }
 ]
