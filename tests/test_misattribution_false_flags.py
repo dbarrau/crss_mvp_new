@@ -116,6 +116,50 @@ def test_recital_grounding_is_not_displacement_proof():
     assert report.unverified_count == 0
 
 
+def test_shared_chapeau_across_sibling_points_is_not_concatenation():
+    """v5 residual (HQ_006): AI Act Article 5(1)'s points share an identical
+    opening chapeau, so under qualified display_refs a verbatim quote of one
+    point matched the ≥50-char span in several separately-keyed sibling nodes
+    and was miscounted as a multi-provision dump. The concatenation count is
+    now over base families, so sibling depths of one article count once."""
+    chapeau = (
+        "the placing on the market, the putting into service for this specific "
+        "purpose, or the use of an AI system"
+    )
+    # Same article (Article 5) keyed at several depths, all sharing the chapeau.
+    provisions = [
+        {"article_ref": "Article 5", "article_text": chapeau + " for social scoring."},
+        {"article_ref": "Article 5(1)", "article_text": chapeau + " for social scoring."},
+        {"article_ref": "Article 5(1), point (d)", "article_text": chapeau + " for predictive policing."},
+        {"article_ref": "Article 5(1), point (f)", "article_text": (
+            chapeau + " to infer emotions of a natural person in the workplace."
+        )},
+    ]
+    answer = (
+        "Under **Article 5(1)(f)**, the prohibition covers “" + chapeau
+        + " to infer emotions of a natural person in the workplace.”"
+    )
+    report = check_faithfulness(answer, provisions)
+    assert report.misattributed_count == 0
+
+
+def test_true_multi_article_dump_still_flags_as_concatenation():
+    """The family-collapse must not blind the concatenation guard: a quote
+    concatenating verbatim spans from three *different* articles is still a
+    dump."""
+    a = "A risk management system shall be established and maintained for high-risk AI systems throughout their lifecycle."
+    b = "Technical documentation shall be drawn up before the system is placed on the market and kept up to date thereafter."
+    c = "Providers shall draw up a written EU declaration of conformity and keep it for ten years after placing on the market."
+    provisions = [
+        {"article_ref": "Article 9", "article_text": a},
+        {"article_ref": "Article 11", "article_text": b},
+        {"article_ref": "Article 47", "article_text": c},
+    ]
+    answer = f"**Article 9** requires: “{a} {b} {c}”"
+    report = check_faithfulness(answer, provisions)
+    assert report.misattributed_count == 1
+
+
 def test_genuine_operative_displacement_still_flags():
     """The fix must not blind the guard: text cited as Article 9 that actually
     lives in a different *operative* article (Article 15) still flags."""

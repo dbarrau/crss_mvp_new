@@ -51,9 +51,25 @@ def _cite_pattern(ref: str) -> re.Pattern:
     return re.compile(rf"\b{re.escape(ref)}\b", re.IGNORECASE)
 
 
+def _fold(text: str) -> str:
+    """Normalise orthographic noise that breaks literal substring matching.
+
+    Two sources of false "missing fact" reports, both mirrored from the
+    faithfulness checker's normalisation:
+    - hyphen/dash family → space ("fundamental-rights" vs "fundamental rights");
+    - markdown emphasis markers stripped — CRSS answers bold every provision
+      reference by mandate, so "**Article 6(1)**" would otherwise never match a
+      key phrase containing "article 6".
+    """
+    text = re.sub(r"[*_`]", "", text)          # markdown emphasis / code ticks
+    text = re.sub(r"[-‐-―−]", " ", text)        # hyphen/dash family
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def check_answer(answer: str, key: dict) -> dict:
     """Score a single answer against its key. Pure; no LLM."""
     low = answer.lower()
+    folded = _fold(low)
 
     # A must_cite element is either a string (required) or a list of acceptable
     # alternatives (any one satisfies it) — e.g. an actor-status transition may be
@@ -72,7 +88,10 @@ def check_answer(answer: str, key: dict) -> dict:
     missed_states: list[str] = []
     found_n = 0
     for fact in states:
-        if any(alt.lower() in low for alt in fact):
+        # A fact passes if any accepted phrasing appears, hyphen-folded so an
+        # orthographic variant ("machine-readable" vs "machine readable") is
+        # not a false miss.
+        if any(_fold(alt.lower()) in folded for alt in fact):
             found_n += 1
         else:
             missed_states.append(fact[0])

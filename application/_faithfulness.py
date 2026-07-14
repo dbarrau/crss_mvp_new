@@ -461,7 +461,7 @@ def _build_sources(
             _add(_ref_of(d.get("article_ref")), _normalize(_definition_text(d)))
 
     sources = list(by_ref.values()) + unkeyed
-    return sources, by_ref
+    return sources, by_ref, unkeyed
 
 
 def _longest_match(a: str, b: str) -> int:
@@ -473,10 +473,31 @@ def _longest_match(a: str, b: str) -> int:
     ).size
 
 
-def _distinct_source_count(quote_norm: str, sources: list[str]) -> int:
-    """Count sources contributing a >= ``_CONCAT_BLOCK_MIN`` span to the quote."""
-    count = 0
-    for src in sources:
+def _distinct_source_count(
+    quote_norm: str,
+    source_map: dict[str, str],
+    unkeyed: list[str],
+) -> int:
+    """Count distinct provision *families* contributing a >= ``_CONCAT_BLOCK_MIN``
+    span to the quote.
+
+    Family-collapsed, not per-source: a concatenation dump draws from several
+    *different provisions*, so the count must be over base families
+    (``_base_ref_family``), not over source entries. Without this, a verbatim
+    quote of one point of an article whose sibling points share an opening
+    chapeau (e.g. AI Act Article 5(1)'s "the placing on the market, the putting
+    into service …", repeated across points (d)-(h)) matched the ≥50-char span
+    in three separately-keyed sibling nodes and was miscounted as a 3-provision
+    dump — a false ATTRIBUTION FLAG. Unkeyed sources (containers with no citable
+    ref) each count individually, since a real dump across them is still
+    possible.
+    """
+    families: set[str] = set()
+    for ref, src in source_map.items():
+        if _longest_match(quote_norm, src) >= _CONCAT_BLOCK_MIN:
+            families.add(_base_ref_family(ref))
+    count = len(families)
+    for src in unkeyed:
         if _longest_match(quote_norm, src) >= _CONCAT_BLOCK_MIN:
             count += 1
     return count
@@ -540,8 +561,8 @@ def _resolve_cited_source(cited_ref: str, source_map: dict[str, str]) -> str | N
 def _structural_verdict(
     quote: "Quote",
     answer: str,
-    sources: list[str],
     source_map: dict[str, str],
+    unkeyed: list[str],
 ) -> str | None:
     """Return ``'concatenated'`` / ``'misattributed'`` / None for a grounded quote.
 
@@ -552,7 +573,7 @@ def _structural_verdict(
     quote_norm = _normalize(quote.text)
     if (
         len(quote_norm) >= _CONCAT_MIN_QUOTE
-        and _distinct_source_count(quote_norm, sources) > _CONCAT_MAX_SOURCES
+        and _distinct_source_count(quote_norm, source_map, unkeyed) > _CONCAT_MAX_SOURCES
     ):
         return "concatenated"
     cited = _nearest_citation_ref(answer, quote.start)
@@ -669,7 +690,7 @@ def check_faithfulness(
     if not quotes:
         return FaithfulnessReport(total_quotes=0)
     corpus = _build_corpus(provisions, definitions)
-    sources, source_map = _build_sources(provisions, definitions)
+    _sources, source_map, unkeyed = _build_sources(provisions, definitions)
     question_norm = _normalize(question) if question else ""
     verified: list[Quote] = []
     near_verbatim: list[Quote] = []
@@ -687,7 +708,7 @@ def check_faithfulness(
             continue
         # Grounded somewhere — but is it grounded where the answer claims, and
         # is it a single quotation rather than a concatenated dump?
-        if _structural_verdict(q, answer, sources, source_map):
+        if _structural_verdict(q, answer, source_map, unkeyed):
             misattributed.append(q)
         elif verdict == "exact":
             verified.append(q)
@@ -924,7 +945,7 @@ def repair_and_redact(
     keep feeding the *original* report to confidence — a repaired fabrication
     still reflects generation behaviour.
     """
-    sources, source_map = _build_sources(provisions, definitions)
+    _sources, source_map, unkeyed = _build_sources(provisions, definitions)
     raw_sources = _build_raw_sources(provisions, definitions)
 
     # action: (quote, kind, payload)
@@ -964,7 +985,7 @@ def repair_and_redact(
         quote_norm = _normalize(q.text)
         if (
             len(quote_norm) >= _CONCAT_MIN_QUOTE
-            and _distinct_source_count(quote_norm, sources) > _CONCAT_MAX_SOURCES
+            and _distinct_source_count(quote_norm, source_map, unkeyed) > _CONCAT_MAX_SOURCES
         ):
             residual_misattributed.append(q)   # dump, not a quotation
             continue

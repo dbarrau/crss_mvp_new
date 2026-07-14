@@ -60,3 +60,33 @@ def test_must_cite_accepts_alternatives():
     # neither alternative present -> the requirement is missed
     v2 = check_answer("Only Article 5 MDR is discussed.", key)
     assert not v2["passed"] and v2["missed_cites"] == ["Article 25 or Article 3"]
+
+
+def test_must_state_folds_hyphens():
+    # v5 residual (HQ_025): the answer wrote "fundamental-rights impact
+    # assessment" (hyphenated) where the key has the unhyphenated phrase; a raw
+    # substring match reported a present fact as missing.
+    key = {
+        "must_cite": [],
+        "must_state": [["fundamental rights impact assessment"]],
+        "must_not_claim": [],
+    }
+    answer = "The deployer must perform a fundamental-rights impact assessment before use."
+    v = check_answer(answer, key)
+    assert v["passed"] and v["state_recall"] == 1.0
+
+    # The reverse orthography is also tolerated.
+    key2 = {"must_cite": [], "must_state": [["machine-readable"]], "must_not_claim": []}
+    assert check_answer("outputs marked in a machine readable format", key2)["passed"]
+
+
+def test_must_state_strips_markdown_emphasis():
+    # CRSS bolds every provision reference by mandate, so a key phrase
+    # containing an article number must match through the ** markers.
+    key = {
+        "must_cite": [],
+        "must_state": [["in addition to the article 6"]],
+        "must_not_claim": [],
+    }
+    answer = "In addition to the **Article 6(1)** lawful basis, satisfy Article 9(2)."
+    assert check_answer(answer, key)["passed"]
