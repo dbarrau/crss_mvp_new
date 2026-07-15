@@ -45,37 +45,68 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 			nested.decompose()
 		return root_table.get_text(" ", strip=True)
 
+	# Dash markers EUR-Lex uses for unnumbered "indent" sub-items.
+	_DASH_MARKERS = ("—", "–", "•")  # em-dash, en-dash, bullet
+
 	def parse_points_from_tables(parent_node: Dict, tables: List) -> None:
+		"""Turn a list of point <table>s into child nodes, recursively.
+
+		Each item table is one enumerated unit — a lettered/roman/numeric point
+		``(x)`` or an unnumbered ``—`` indent — whose own text (nested items
+		stripped) becomes the node body, and whose immediate sub-item tables
+		recurse into child nodes.  So a definition point's structure at any depth
+		(point → letter → roman, or a ``—`` list) becomes real, referenceable
+		provisions instead of a flattened blob.
+
+		``tables`` may include sub-item tables nested inside others (a recursive
+		``find_all`` from the caller, or the whole subtree on recursion); a table
+		is processed only when no other table in the same list encloses it, so at
+		each level only that level's direct items are created — this also stops a
+		point's roman sub-item from being re-emitted as a phantom sibling.
+		"""
+		table_ids = {id(t) for t in tables}
+
+		def _enclosed_by_sibling(table) -> bool:
+			ancestor = table.find_parent("table")
+			while ancestor is not None:
+				if id(ancestor) in table_ids:
+					return True
+				ancestor = ancestor.find_parent("table")
+			return False
+
+		parent_kind = parent_node.get("kind", "")
+		# First-level items under an article/paragraph are "point"s; anything
+		# deeper (a point's lettered/roman sub-items) is a "roman_item" — the two
+		# kinds the qualified-ref builder chains into "…, point (a)(i)".
+		child_point_kind = (
+			"point" if parent_kind in ("article", "paragraph", "subparagraph")
+			else "roman_item"
+		)
+		parent_html_id = parent_node["id"].split(f"{ctx.celex}_", 1)[-1]
+		indent_seq = 0
+
 		for table in tables:
-			text = point_text_without_nested_tables(table)
-			label_match = re.match(r"^\(([^)]+)\)", text)
-			if not label_match:
+			if _enclosed_by_sibling(table):
 				continue
-			label = label_match.group(1)
-			content = text[label_match.end():].strip()
-			parent_html_id = parent_node["id"].split(f"{ctx.celex}_", 1)[-1]
-			point = ctx.make_node(
-				"point",
-				f"{parent_html_id}_pt_{label}",
-				content,
-				parent_node,
-				number=label,
+			text = point_text_without_nested_tables(table)
+			label_match = re.match(r"^\(([^)]+)\)\s*", text)
+			if label_match:
+				label = label_match.group(1)
+				content = text[label_match.end():].strip()
+				kind = child_point_kind
+				html_id = f"{parent_html_id}_{'pt' if kind == 'point' else 'rm'}_{label}"
+			elif text[:1] in _DASH_MARKERS:
+				indent_seq += 1
+				label = str(indent_seq)
+				content = text[1:].strip()
+				kind = "indent"
+				html_id = f"{parent_html_id}_ind_{indent_seq}"
+			else:
+				continue
+			node = ctx.make_node(kind, html_id, content, parent_node, number=label)
+			parse_points_from_tables(
+				node, table.find_all("table", width=TABLE_POINTS_WIDTH)
 			)
-			nested = table.find_all("table", width="100%")
-			for nested_table in nested:
-				nested_text = nested_table.get_text(" ", strip=True)
-				nested_match = re.match(r"^\(([^)]+)\)", nested_text)
-				if not nested_match:
-					continue
-				nested_label = nested_match.group(1)
-				nested_content = nested_text[nested_match.end():].strip()
-				ctx.make_node(
-					"roman_item",
-					f"{point['id'].split(f'{ctx.celex}_', 1)[-1]}_rm_{nested_label}",
-					nested_content,
-					point,
-					number=nested_label,
-				)
 
 	def collect_subparagraph_blocks(para_div):
 		"""Group direct children into (p_element, [table_elements]) tuples."""

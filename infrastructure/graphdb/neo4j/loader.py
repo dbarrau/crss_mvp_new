@@ -490,6 +490,8 @@ class RegulationGraphLoader:
                 return f"Subparagraph {number}"
             if kind in ("point", "roman_item") and number:
                 return f"Point ({number})"
+            if kind == "indent" and number:
+                return f"Indent {number}"
             if kind == "annex" and number:
                 return f"Annex {number}"
             if kind == "annex_chapter" and number:
@@ -522,7 +524,7 @@ class RegulationGraphLoader:
         # that reaches rendered context, citations and evals is unambiguous.
         # (Node *ids* keep the EUR-Lex anchor convention: stable internal keys.)
         _ARTICLE_DEEP_KINDS = frozenset({
-            "paragraph", "subparagraph", "point", "roman_item",
+            "paragraph", "subparagraph", "point", "roman_item", "indent",
         })
         _ANNEX_DEEP_KINDS = frozenset({
             "annex_chapter", "annex_part", "annex_section", "annex_subsection",
@@ -567,6 +569,10 @@ class RegulationGraphLoader:
                             if ", point (" in ref
                             else ref + f", point ({num})"
                         )
+                    elif k == "indent" and num:
+                        # Unnumbered "—" dash sub-item, cited OJ-style as an
+                        # indent of its point ("Article 2, point (1), indent 3").
+                        ref += f", indent {num}"
                 return ref
 
             annex = chapter = part = None

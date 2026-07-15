@@ -173,61 +173,42 @@ def _merge_text_nodes(soup: BeautifulSoup) -> None:
 # ── Grid-list → table conversion ─────────────────────────────────────────────
 
 def _convert_grid_lists(soup: BeautifulSoup) -> None:
-    """Convert ``<div class="grid-container grid-list">`` into
-    ``<table width="100%"><tr><td>marker</td><td>body</td></tr></table>``."""
+    """Convert ``<div class="grid-container grid-list">`` point lists into the
+    ``<table width="100%">`` structure the parser expects, **preserving nesting**.
+
+    A grid-list is ``[column-1 marker][column-2 body]``, and a point's sub-items
+    (lettered ``(a)``, roman ``(i)``, or ``—`` dash bullets) are themselves
+    grid-lists nested inside column-2.  We convert only the top-level grid-lists;
+    :func:`_grid_to_table` then walks each column-2's *direct* children in
+    document order, recursively turning nested grid-lists into nested tables and
+    keeping the point's own paragraphs — so the sub-item hierarchy survives into a
+    nested ``<table>`` tree that the point parser turns into child nodes.
+
+    (The previous version took ``column-2.find_all("p")`` recursively, which stole
+    the sub-items' paragraphs up into the parent point — dropping their ``(a)`` /
+    ``—`` markers and leaving the nested grids hollow, so definition points such
+    as MDR Article 2(1) and 2(25) were stored as a flat blob with no children.)
+    """
     for grid in soup.find_all("div", class_="grid-list"):
-        col1 = grid.find(class_="grid-list-column-1")
-        col2 = grid.find(class_="grid-list-column-2")
-        if not col1 or not col2:
-            continue
-
-        marker_text = col1.get_text(strip=True)
-        # Build the body — prefer inner <p> content, otherwise full text
-        body_ps = col2.find_all("p")
-
-        table = soup.new_tag("table", border="0", cellpadding="0",
-                             cellspacing="0", width="100%")
-        tbody = soup.new_tag("tbody")
-        tr = soup.new_tag("tr")
-
-        td_marker = soup.new_tag("td", valign="top")
-        p_marker = soup.new_tag("p")
-        p_marker["class"] = ["oj-normal"]
-        p_marker.string = marker_text
-        td_marker.append(p_marker)
-
-        td_body = soup.new_tag("td", valign="top")
-        if body_ps:
-            for p in body_ps:
-                _remap_classes(p)
-                td_body.append(p.extract())
-        else:
-            p_body = soup.new_tag("p")
-            p_body["class"] = ["oj-normal"]
-            p_body.string = col2.get_text(" ", strip=True)
-            td_body.append(p_body)
-
-        # Also convert any nested grid-lists that are still inside col2
-        # (they will have been moved into td_body)
-        for nested_grid in td_body.find_all("div", class_="grid-list"):
-            _convert_single_grid_to_table(nested_grid, soup)
-
-        tr.append(td_marker)
-        tr.append(td_body)
-        tbody.append(tr)
-        table.append(tbody)
-
-        grid.replace_with(table)
+        if grid.find_parent("div", class_="grid-list") is not None:
+            continue  # a nested sub-item — converted with its enclosing grid
+        table = _grid_to_table(grid, soup)
+        if table is not None:
+            grid.replace_with(table)
 
 
-def _convert_single_grid_to_table(grid: Tag, soup: BeautifulSoup) -> None:
-    """Convert a single nested grid-list to table (for roman items etc.)."""
+def _grid_to_table(grid: Tag, soup: BeautifulSoup) -> Tag | None:
+    """Recursively convert one grid-list ``div`` into a ``<table width="100%">``.
+
+    Nested grid-lists in the body become nested tables, so an arbitrarily deep
+    point structure (point → letter → roman) is preserved.  Returns ``None`` when
+    the grid lacks the expected marker/body columns.
+    """
     col1 = grid.find(class_="grid-list-column-1")
     col2 = grid.find(class_="grid-list-column-2")
-    if not col1 or not col2:
-        return
+    if col1 is None or col2 is None:
+        return None
 
-    marker_text = col1.get_text(strip=True)
     table = soup.new_tag("table", border="0", cellpadding="0",
                          cellspacing="0", width="100%")
     tbody = soup.new_tag("tbody")
@@ -236,16 +217,26 @@ def _convert_single_grid_to_table(grid: Tag, soup: BeautifulSoup) -> None:
     td_marker = soup.new_tag("td", valign="top")
     p_marker = soup.new_tag("p")
     p_marker["class"] = ["oj-normal"]
-    p_marker.string = marker_text
+    p_marker.string = col1.get_text(strip=True)
     td_marker.append(p_marker)
 
+    # Preserve column-2's direct children in order: nested grid-lists recurse
+    # into nested tables; everything else (the point's own <p> body) is kept.
     td_body = soup.new_tag("td", valign="top")
-    body_ps = col2.find_all("p")
-    if body_ps:
-        for p in body_ps:
-            _remap_classes(p)
-            td_body.append(p.extract())
-    else:
+    appended = False
+    for child in list(col2.children):
+        if not isinstance(child, Tag):
+            continue
+        if child.name == "div" and "grid-list" in (child.get("class") or []):
+            nested = _grid_to_table(child, soup)
+            if nested is not None:
+                td_body.append(nested)
+                appended = True
+        else:
+            _remap_classes(child)
+            td_body.append(child.extract())
+            appended = True
+    if not appended:
         p_body = soup.new_tag("p")
         p_body["class"] = ["oj-normal"]
         p_body.string = col2.get_text(" ", strip=True)
@@ -255,7 +246,7 @@ def _convert_single_grid_to_table(grid: Tag, soup: BeautifulSoup) -> None:
     tr.append(td_body)
     tbody.append(tr)
     table.append(tbody)
-    grid.replace_with(table)
+    return table
 
 
 # ── Paragraph reconstruction ─────────────────────────────────────────────────
