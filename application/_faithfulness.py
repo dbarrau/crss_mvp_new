@@ -518,11 +518,24 @@ _ATTRIBUTION_LABEL_RE = re.compile(
 )
 
 
-def _nearest_citation_ref(answer: str, quote_start: int) -> str | None:
-    """Return the adjudicable citation ref immediately preceding a quote.
+# Chars scanned *after* a quote (same line only) for a trailing citation.
+# CRSS answers frequently use the cite-after layout — “quote…” (Article 10) —
+# and adjudicating such a quote against the label of the *previous* bullet
+# produced positive-displacement false flags (v6 eval: HQ_012, 11 cite-after
+# quotes, 4 false misattributions).
+_ATTRIBUTION_AFTER_WINDOW: int = 100
+
+
+def _nearest_citation_ref(
+    answer: str, quote_start: int, quote_end: int | None = None
+) -> str | None:
+    """Return the adjudicable citation ref nearest to a quote span.
 
     Scans the ``_ATTRIBUTION_WINDOW`` characters before the quote for the last
-    attribution label. Returns the normalized ref when that label is an
+    attribution label and — when ``quote_end`` is given — the same-line
+    ``_ATTRIBUTION_AFTER_WINDOW`` characters after it for a leading label
+    (cite-after layout: ``“…” (Article 10)``); the label nearest to the quote
+    span wins. Returns the normalized ref when that label is an
     Article/Annex/Recital; returns None both when there is no label and when
     the nearest label is a non-adjudicable form (guidance section, MDCG id) —
     in the latter case the quote is attributed to a source the map cannot
@@ -531,15 +544,27 @@ def _nearest_citation_ref(answer: str, quote_start: int) -> str | None:
     """
     lo = max(0, quote_start - _ATTRIBUTION_WINDOW)
     window = answer[lo:quote_start]
+    best: tuple[int, "re.Match[str]"] | None = None
     matches = list(_ATTRIBUTION_LABEL_RE.finditer(window))
-    if not matches:
+    if matches:
+        last = matches[-1]
+        best = (len(window) - last.end(), last)
+    if quote_end is not None:
+        after = answer[quote_end : quote_end + _ATTRIBUTION_AFTER_WINDOW]
+        newline = after.find("\n")
+        if newline != -1:
+            after = after[:newline]
+        trailing = _ATTRIBUTION_LABEL_RE.search(after)
+        if trailing and (best is None or trailing.start() < best[0]):
+            best = (trailing.start(), trailing)
+    if best is None:
         return None
-    last = matches[-1]
-    if last.group("blocker"):
+    label = best[1]
+    if label.group("blocker"):
         return None
     # Compound annex labels ("Annex IX, Chapter I, point 3.5") resolve at the
     # family level; extract the plain head the source map is keyed by.
-    head = _CITATION_REF_RE.search(last.group("cite"))
+    head = _CITATION_REF_RE.search(label.group("cite"))
     return _normalize_ref(head.group(1)) if head else None
 
 
@@ -576,7 +601,7 @@ def _structural_verdict(
         and _distinct_source_count(quote_norm, source_map, unkeyed) > _CONCAT_MAX_SOURCES
     ):
         return "concatenated"
-    cited = _nearest_citation_ref(answer, quote.start)
+    cited = _nearest_citation_ref(answer, quote.start, quote.end)
     if cited:
         # Adjudicate against the cited provision's whole *family* — every
         # retrieved source keyed at any depth of the same base provision
@@ -625,6 +650,70 @@ def _structural_verdict(
 
 
 # ---------------------------------------------------------------------------
+# Illustrative-quote detection
+#
+# The model quotes text that was never *claimed* to be law: drafted sample
+# wording ("your rejection notice could state: '…'"), scenario echoes it
+# embellished beyond the user's own words, template placeholders ("lack of
+# experience in X"). Verifying those against the legal corpus is a category
+# error — they ground nowhere by construction — and counting them as
+# fabrications dominated the v6 eval's regression (15 of 21 "fabricated"
+# quotes: 8 notification templates in HQ_037, 5 app-marketing echoes in
+# HQ_028, 2 in HQ_008). An ungrounded quote is treated as illustrative only
+# when BOTH hold: no provision citation is attached to it (an attributed
+# quote is always a legal-quote claim), and either the introducing clause
+# carries an example cue or the quote itself reads as addressed prose /
+# template text. Illustrative quotes are kept in the answer and reported
+# separately — never redacted, never counted as fabricated.
+# ---------------------------------------------------------------------------
+
+_ILLUSTRATIVE_CUE_RE = re.compile(
+    r"(?:\be\.g\.|\bfor (?:example|instance)\b|\bsuch as\b|\bsample\b|"
+    r"\btemplates?\b|\bexamples?\b|\bwording\b|\bphras(?:e|ed|ing)\b|"
+    r"\billustrat\w+\b|\bnotification\b|\bdisclaimer\b|\bnotice\b|"
+    r"\b(?:could|might|may|would|should)\s+(?:read|say|state|include|look like|be worded)\b|"
+    r"\blike\b)"
+    r"[^\n]{0,80}$",
+    re.IGNORECASE,
+)
+
+# Content that marks the quote itself as drafted/addressed prose rather than
+# provision text: second-person address, first-person-plural framing, tildes
+# and standalone "X" placeholders ("lack of experience in X" — but not
+# "X-rays", "Annex X" or "Article X", where X is real).
+_ILLUSTRATIVE_CONTENT_RE = re.compile(
+    r"\b(?:you|your|we|our)\b|~|(?<!Annex )(?<!Article )\bX\b(?![-\w])",
+)
+
+
+def _is_illustrative(answer: str, q: "Quote") -> bool:
+    """True when an ungrounded quote is the model's own illustrative wording.
+
+    A trailing citation (``“…” (Article 12)``) is an unambiguous legal-quote
+    claim and vetoes the tier outright. A *leading* label only vetoes when no
+    illustrative cue sits closer to the quote: in "your Article 26
+    notification could state: '…'" the article reference belongs to the
+    illustrative framing, not to a quote attribution.
+    """
+    after = answer[q.end : q.end + _ATTRIBUTION_AFTER_WINDOW]
+    newline = after.find("\n")
+    if newline != -1:
+        after = after[:newline]
+    if _ATTRIBUTION_LABEL_RE.search(after):
+        return False  # trailing citation → a legal-quote claim
+    lead = answer[max(0, q.start - 100) : q.start]
+    cue_matches = list(_ILLUSTRATIVE_CUE_RE.finditer(lead))
+    label_matches = list(_ATTRIBUTION_LABEL_RE.finditer(lead))
+    cue_end = cue_matches[-1].end() if cue_matches else -1
+    label_end = label_matches[-1].end() if label_matches else -1
+    if cue_end >= 0 and cue_end >= label_end:
+        return True
+    if label_end >= 0:
+        return False  # leading attribution with no closer cue
+    return bool(_ILLUSTRATIVE_CONTENT_RE.search(q.text))
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -638,6 +727,9 @@ class FaithfulnessReport:
     unverified: list[Quote] = field(default_factory=list)
     near_verbatim: list[Quote] = field(default_factory=list)
     misattributed: list[Quote] = field(default_factory=list)
+    # The model's own drafted wording (templates, scenario echoes) — kept in
+    # the answer, never counted as fabrication (see _is_illustrative).
+    illustrative: list[Quote] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -666,6 +758,10 @@ class FaithfulnessReport:
     @property
     def misattributed_count(self) -> int:
         return len(self.misattributed)
+
+    @property
+    def illustrative_count(self) -> int:
+        return len(self.illustrative)
 
 
 def check_faithfulness(
@@ -696,12 +792,19 @@ def check_faithfulness(
     near_verbatim: list[Quote] = []
     unverified: list[Quote] = []
     misattributed: list[Quote] = []
+    illustrative: list[Quote] = []
     for q in quotes:
         if question_norm and grounding_verdict(q.text, question_norm) != "absent":
             verified.append(q)   # scenario echo, not a regulatory quote
             continue
         verdict = grounding_verdict(q.text, corpus)
         if verdict == "absent":
+            # Uncited drafted wording (templates, embellished scenario echoes)
+            # grounds nowhere by construction — it is not a legal-quote claim
+            # and must not be redacted as fabrication (see _is_illustrative).
+            if _is_illustrative(answer, q):
+                illustrative.append(q)
+                continue
             # Genuine fabrication: not grounded anywhere.  Structural guards
             # only apply to text that *is* real but displaced, so skip them.
             unverified.append(q)
@@ -720,6 +823,7 @@ def check_faithfulness(
         unverified=unverified,
         near_verbatim=near_verbatim,
         misattributed=misattributed,
+        illustrative=illustrative,
     )
 
 
@@ -973,7 +1077,7 @@ def repair_and_redact(
         if _ELLIPSIS_RE.search(q.text):
             residual_unverified.append(q)   # multi-fragment: not repairable
             continue
-        cited = _nearest_citation_ref(answer, q.start)
+        cited = _nearest_citation_ref(answer, q.start, q.end)
         run = _run_for(q, cited, _REPAIR_FABRICATED_MIN_RATIO)
         if run:
             actions.append((q, "substitute", {"text": run}))
@@ -1008,7 +1112,7 @@ def repair_and_redact(
             residual_misattributed.append(q)
 
     for q in report.near_verbatim:
-        cited = _nearest_citation_ref(answer, q.start)
+        cited = _nearest_citation_ref(answer, q.start, q.end)
         run = _run_for(q, cited, _REPAIR_NEAR_MIN_RATIO)
         if run:
             actions.append((q, "substitute", {"text": run}))
@@ -1044,6 +1148,7 @@ def repair_and_redact(
         unverified=residual_unverified,
         near_verbatim=residual_near,
         misattributed=residual_misattributed,
+        illustrative=list(report.illustrative),
     )
     return repaired, residual, notes
 
