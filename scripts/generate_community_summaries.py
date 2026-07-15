@@ -170,36 +170,63 @@ def _fetch_l1_member_summaries(session, community_id: str) -> list[str]:
     return [r["summary_text"] for r in rows if r.get("summary_text")]
 
 
-def _generate_l1_summary(member_summaries: list[str], client, on_rate_limit=None, on_success=None) -> str:
-    """Generate a Level-1 summary from the Level-0 member summaries."""
-    if not member_summaries:
-        return ""
-    joined = "\n---\n".join(member_summaries)
+def _complete_with_retry(
+    client, messages, *, max_tokens: int, on_rate_limit=None, on_success=None
+) -> str:
+    """Call Mistral with bounded retries that survive transient network faults.
+
+    Retries *any* failure with exponential backoff (5, 10, 20, 40 s); rate limits
+    additionally drive the caller's adaptive throttle via ``on_rate_limit``. After
+    5 attempts the community is skipped (returns "") rather than crashing the
+    batch — a single dropped connection mid-run (observed: httpx
+    ``RemoteProtocolError`` / server-disconnect at community 90/132) must not
+    discard the summaries already written or halt the remaining ones. The run is
+    idempotent, so a skipped community is picked up on the next invocation.
+    """
     for attempt in range(5):
         try:
             resp = client.chat.complete(
                 model=os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
-                messages=[
-                    {"role": "system", "content": _L1_SUMMARY_SYSTEM},
-                    {"role": "user", "content": joined},
-                ],
+                messages=messages,
                 temperature=0.0,
-                max_tokens=280,
+                max_tokens=max_tokens,
             )
             if on_success:
                 on_success()
             return resp.choices[0].message.content.strip()
         except Exception as exc:
-            if "429" in str(exc) or "rate" in str(exc).lower():
-                if on_rate_limit:
-                    on_rate_limit()
-                wait = 2 ** attempt * 5
-                logger.warning("Rate limited; retrying in %ds (attempt %d/5).", wait, attempt + 1)
-                time.sleep(wait)
-            else:
-                raise
-    logger.error("Mistral rate limit: all retries exhausted — community will be skipped.")
+            if ("429" in str(exc) or "rate" in str(exc).lower()) and on_rate_limit:
+                on_rate_limit()
+            if attempt == 4:
+                logger.error(
+                    "Mistral call failed after 5 attempts (%s) — skipping community.",
+                    type(exc).__name__,
+                )
+                return ""
+            wait = 2 ** attempt * 5  # 5, 10, 20, 40 s
+            logger.warning(
+                "Transient Mistral error (%s); retrying in %ds (attempt %d/5).",
+                type(exc).__name__, wait, attempt + 1,
+            )
+            time.sleep(wait)
     return ""
+
+
+def _generate_l1_summary(member_summaries: list[str], client, on_rate_limit=None, on_success=None) -> str:
+    """Generate a Level-1 summary from the Level-0 member summaries."""
+    if not member_summaries:
+        return ""
+    joined = "\n---\n".join(member_summaries)
+    return _complete_with_retry(
+        client,
+        [
+            {"role": "system", "content": _L1_SUMMARY_SYSTEM},
+            {"role": "user", "content": joined},
+        ],
+        max_tokens=280,
+        on_rate_limit=on_rate_limit,
+        on_success=on_success,
+    )
 
 
 def _generate_summary(texts: list[str], client, on_rate_limit=None, on_success=None) -> str:
@@ -210,31 +237,16 @@ def _generate_summary(texts: list[str], client, on_rate_limit=None, on_success=N
     # enough for the model to understand the semantic theme and obligation tiers.
     joined = "\n---\n".join(t[:500] for t in texts[:_DEFAULT_SAMPLE])
 
-    for attempt in range(5):
-        try:
-            resp = client.chat.complete(
-                model=os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
-                messages=[
-                    {"role": "system", "content": _SUMMARY_SYSTEM},
-                    {"role": "user", "content": joined},
-                ],
-                temperature=0.0,
-                max_tokens=350,
-            )
-            if on_success:
-                on_success()
-            return resp.choices[0].message.content.strip()
-        except Exception as exc:
-            if "429" in str(exc) or "rate" in str(exc).lower():
-                if on_rate_limit:
-                    on_rate_limit()
-                wait = 2 ** attempt * 5  # 5, 10, 20, 40, 80 s
-                logger.warning("Rate limited; retrying in %ds (attempt %d/5).", wait, attempt + 1)
-                time.sleep(wait)
-            else:
-                raise
-    logger.error("Mistral rate limit: all retries exhausted — community will be skipped.")
-    return ""
+    return _complete_with_retry(
+        client,
+        [
+            {"role": "system", "content": _SUMMARY_SYSTEM},
+            {"role": "user", "content": joined},
+        ],
+        max_tokens=350,
+        on_rate_limit=on_rate_limit,
+        on_success=on_success,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -256,7 +268,10 @@ def generate_summaries(
     database = os.environ.get("NEO4J_DATABASE", "neo4j")
 
     from mistralai.client import Mistral
-    client = Mistral(api_key=os.environ["MISTRAL_API_KEY"])
+    # Bound every request so a stalled socket cannot freeze the whole batch (the
+    # earlier run hung ~40 min on a timeout-less read before the server dropped
+    # it); paired with _complete_with_retry, a timeout becomes a retry, not a hang.
+    client = Mistral(api_key=os.environ["MISTRAL_API_KEY"], timeout_ms=60000)
 
     model = SentenceTransformer("intfloat/multilingual-e5-base")
 
