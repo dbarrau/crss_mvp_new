@@ -93,6 +93,21 @@ class ResolveResult:
     global_ref_ids: list[str] = field(default_factory=list)
 
 
+# ``text_for_analysis`` is ``"<heading-path> | <body>"`` (the _CTX_SEP separator
+# in canonicalization.text_enrichment).  The ancestry prefix positions the
+# *embedding* but is internal plumbing; an article-level quote must render the
+# BODY, never the ``> Chapter > Section > … |`` path — otherwise quoting a whole
+# article dumps that prefix (with its ``>`` and ``|``) straight into the answer.
+# Leaf quotes already use the node's own clean ``raw_text`` and are unaffected.
+_CTX_SEP = " | "
+
+
+def _strip_ctx_prefix(text: str) -> str:
+    """Body of a ``text_for_analysis`` value, minus its heading-path prefix."""
+    parts = text.split(_CTX_SEP, 1)
+    return parts[1] if len(parts) == 2 else parts[0]
+
+
 def build_pointer_index(
     provisions: list[dict[str, Any]],
     definitions: list[dict[str, Any]] | None = None,
@@ -113,7 +128,7 @@ def build_pointer_index(
         aid = p.get("article_id")
         if aid and aid not in index:
             index[aid] = _Entry(
-                text=(p.get("article_text") or "").strip(),
+                text=_strip_ctx_prefix(p.get("article_text") or "").strip(),
                 ref=p.get("article_ref", "") or "",
                 regulation=regulation,
                 binding_force=force,
@@ -299,6 +314,15 @@ def _clean_husks(text: str) -> str:
     #    reach the reader.  Keep the human-readable link label; drop the id.
     text = re.sub(r"\[([^\]\n]*)\]\((?:cite|quote):[^)\n]*\)", r"\1", text)
     text = re.sub(r"\((?:cite|quote):[^)\n]*\)", "", text)
+    # 0a. Strip an internal node id the model echoed from a context header into
+    #     prose ("… (id: 32024R1689_art_2)").  The id is only a citation *pointer*;
+    #     a reader must never see it.  Scoped to the node-id shape (a CELEX-like or
+    #     MDCG_ token) so ordinary "id:" text is untouched; drops any wrapping
+    #     parentheses/brackets too.
+    text = re.sub(
+        r"(?:[(\[]\s*)?id:\s*(?:\d{5}[A-Z]\d{4}|MDCG_)[A-Za-z0-9_.\-]*\s*[)\]]?",
+        "", text, flags=re.IGNORECASE,
+    )
     # 0b. Unwrap bare bracketed references the model wrote as incomplete markdown
     #     links (e.g. "[Article 11]", "[Annex IV]" with no target) so they read as
     #     plain references, not broken links.  Scoped to reference-like content so
@@ -328,8 +352,33 @@ def _clean_husks(text: str) -> str:
     text = re.sub(r"[ \t]+([.,;:)])", r"\1", text)      # space before punctuation
     text = re.sub(r"([(\[])[ \t]+", r"\1", text)        # space after open bracket
     text = re.sub(r",\s*([.;:])", r"\1", text)          # orphan comma before stop
-    # 5. drop a blockquote line that lost its only content
-    text = re.sub(r"(?m)^>[ \t]*$\n?", "", text)
+    # 5. normalise line-by-line: fold any doubled "> >" the model added down to a
+    #    single-level blockquote, tidy the "> " spacing, and drop a quote line
+    #    that lost its content or capped to just "[…]" — so a resolved quote is
+    #    always a clean, single-level block however the model wrapped its marker.
+    #    Also split a heading the model ran a sentence onto ("### … EU AI ActNo,
+    #    it is not lawful …") at the word→capitalised-sentence boundary, so the
+    #    sentence stops rendering as a giant heading.  The boundary (a lowercase
+    #    letter running straight into a capitalised word followed by lowercase)
+    #    never occurs in a normal Title-Case heading; guarded to long headings.
+    out_lines: list[str] = []
+    for line in text.split("\n"):
+        if line.startswith("#") and len(line) > 70:
+            split = re.match(
+                r"^(#{1,6}\s+\S.*?[a-z])([A-Z][a-z]+[,.]?\s+[a-z].*)$", line
+            )
+            if split:
+                out_lines.extend([split.group(1), "", split.group(2)])
+                continue
+        bq = re.match(r"^(\s*)>[\s>]*(.*)$", line)
+        if bq:
+            content = bq.group(2).rstrip()
+            if content == "" or _is_hollow_quote(content):
+                continue
+            out_lines.append(bq.group(1) + "> " + content)
+        else:
+            out_lines.append(line)
+    text = "\n".join(out_lines)
     text = re.sub(r"[ \t]{2,}", " ", text)
     text = re.sub(r" +\n", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
@@ -370,16 +419,29 @@ def _ref_already_in_prose(preceding: str, ref: str) -> bool:
     return re.search(pattern, tail) is not None
 
 
-def _render_quote(entry: _Entry, char_cap: int = 0) -> str:
-    """Verbatim block for a ``[quote:]`` pointer, capped to *char_cap* chars.
+def _is_hollow_quote(text: str) -> bool:
+    """True when a quote has no meaningful content left (e.g. capped to ``[…]``)."""
+    return text.strip("[]().…·—–-\"'“”‘’ \t\n") == ""
 
-    Empty-text nodes (e.g. a structural ancestor pointed at by mistake) fall back
-    to their reference so the answer never shows an empty blockquote.
+
+def _render_quote(entry: _Entry, char_cap: int = 0) -> str:
+    """Verbatim quote as a standalone blockquote, padded with blank lines.
+
+    The quote is ALWAYS emitted on its own lines (leading and trailing blank
+    lines), whatever the marker's position in the body — this is what makes the
+    rendering placement-independent.  A marker the model dropped mid-sentence can
+    no longer leave an inline ``>`` fragment (``(See > … )``), and one it wrapped
+    in its own ``>`` or a list item cannot glue the quoted law onto that line.
+    :func:`_clean_husks` then collapses the padding, folds a doubled ``> >`` the
+    model added down to one level, and drops a quote that capped to just ``[…]``.
+    Empty / hollow nodes fall back to the reference so a bare ``> `` never shows.
     """
     if not entry.text:
         return _render_cite(entry)
     text = _cap_quote_text(entry.text, char_cap)
-    return "> " + text.replace("\n", "\n> ")
+    if _is_hollow_quote(text):
+        return _render_cite(entry)
+    return "\n\n> " + text.replace("\n", "\n> ") + "\n\n"
 
 
 def resolve_pointers(
