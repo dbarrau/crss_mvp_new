@@ -231,15 +231,49 @@ RETURN DISTINCT
 # "Paragraph 1" matches hundreds of nodes), so filtering in Python after a
 # global LIMIT could evict every in-scope node before the filter ever ran,
 # and one ambiguous ref could starve the others' budget.
-_DIRECT_REF_CYPHER = """\
+#
+# Matching is on a NORMALISED key, not raw equality.  A user/model writes
+# "Article 2(65)" or "Article 53(1)(a)", but a definition point stores the
+# qualified display_ref "Article 2, point (65)" / "Article 53(1), point (a)".
+# Folding ", point "/", indent " and spaces makes both forms equal, so EVERY
+# definition point and lettered sub-point is reachable by its natural
+# citation — not only the ones whose display_ref already happens to be in
+# bare-parenthesis form.  Before this, an exact-equality match silently missed
+# every "Article X(N)" point (e.g. MDR Art 2 points 14–71, AI Act Art 3
+# points), the lookup returned nothing, and the answer fell back to vector
+# search — which is why "Show me Article 2(65)" wrongly reported it absent.
+# (There is no exact index on display_ref — only a fulltext one — so the
+# normalised scan is no costlier than the previous equality scan.)
+_REF_NORM = (
+    "replace(replace(replace(toLower({x}), ', point ', ''), ', indent ', ''), ' ', '')"
+)
+
+
+def ref_norm_key(ref: str) -> str:
+    """Python mirror of the ``_REF_NORM`` Cypher fold — KEEP THE TWO IN SYNC.
+
+    Collapses a provision reference to a format-insensitive key so the bare user
+    form ("Article 2(65)") and the qualified stored display_ref
+    ("Article 2, point (65)") compare equal ("article2(65)").  Shared by the
+    retrieval fallback and the application sufficiency check so both agree with
+    the direct-ref match query above.
+    """
+    key = (ref or "").lower()
+    for sub in (", point ", ", indent "):
+        key = key.replace(sub, "")
+    return key.replace(" ", "")
+
+
+_DIRECT_REF_CYPHER = f"""\
 UNWIND $refs AS ref
-CALL {
+CALL {{
   WITH ref
+  WITH ref, {_REF_NORM.format(x='ref')} AS nref
   OPTIONAL MATCH (p1:Provision)
-    WHERE toLower(p1.display_ref) = toLower(ref)
+    WHERE {_REF_NORM.format(x='p1.display_ref')} = nref
       AND ($celexes IS NULL OR p1.celex IN $celexes)
   OPTIONAL MATCH (p2:Guidance)
-    WHERE toLower(p2.display_ref) = toLower(ref)
+    WHERE {_REF_NORM.format(x='p2.display_ref')} = nref
       AND ($celexes IS NULL OR p2.celex IN $celexes)
   WITH collect(DISTINCT p1) + collect(DISTINCT p2) AS nodes
   UNWIND nodes AS art
@@ -247,7 +281,7 @@ CALL {
   RETURN art
   ORDER BY art.hierarchy_depth ASC
   LIMIT 8
-}
+}}
 RETURN art.id AS article_id, art.celex AS celex, art.display_ref AS display_ref, art.binding_force AS binding_force
 ORDER BY art.hierarchy_depth ASC
 """

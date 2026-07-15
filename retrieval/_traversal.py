@@ -23,6 +23,7 @@ from retrieval._cypher import (
     _EXPAND_CYPHER,
     _ROLE_OBLIGATIONS_CYPHER,
     _SUBTREE_CYPHER,
+    ref_norm_key,
 )
 from retrieval._dense import DenseIndex
 
@@ -92,6 +93,19 @@ def expand_cited_containers(driver, db: str, results: list[dict]) -> None:
         )
 
 
+_QUALIFIED_REF_RE = re.compile(r"^article\s+(\d{1,3}[a-z]?)\s*\(", re.IGNORECASE)
+
+
+def _parent_article_ref(ref: str) -> str | None:
+    """The bare-article parent of a qualified reference, else ``None``.
+
+    "Article 2(68)" / "Article 2(58)(b)" -> "Article 2".  Annex/recital refs
+    have no article parent -> ``None``.
+    """
+    m = _QUALIFIED_REF_RE.match(ref.strip())
+    return f"Article {m.group(1)}" if m else None
+
+
 def retrieve_by_refs(
     driver,
     db: str,
@@ -102,14 +116,29 @@ def retrieve_by_refs(
     if not refs:
         return []
 
+    celexes = sorted(celex_filter) if celex_filter else None
     # CELEX scoping happens inside the Cypher (before its per-ref LIMIT)
     # so in-scope nodes can never be evicted by out-of-scope duplicates.
     with driver.session(database=db) as s:
-        rows = s.run(
-            _DIRECT_REF_CYPHER,
-            refs=refs,
-            celexes=sorted(celex_filter) if celex_filter else None,
-        ).data()
+        rows = s.run(_DIRECT_REF_CYPHER, refs=refs, celexes=celexes).data()
+
+    # Parent-article fallback: a qualified ref that matched no node — e.g.
+    # "Article 2(68)" when AI-Act Article 2 (Scope) has only 12 paragraphs, or a
+    # mistyped point number — retries at the article level.  This grounds the
+    # answer in the REAL article (its full subtree), so the model can state what
+    # the article actually contains and that the point does not exist, instead of
+    # confabulating from unrelated vector-fallback hits.
+    matched = {ref_norm_key(r["display_ref"]) for r in rows if r.get("display_ref")}
+    fallbacks: list[str] = []
+    for ref in refs:
+        if ref_norm_key(ref) in matched:
+            continue
+        parent = _parent_article_ref(ref)
+        if parent and ref_norm_key(parent) not in matched and parent not in fallbacks:
+            fallbacks.append(parent)
+    if fallbacks:
+        with driver.session(database=db) as s:
+            rows += s.run(_DIRECT_REF_CYPHER, refs=fallbacks, celexes=celexes).data()
 
     # Deduplicate, prefer the shortest display_ref (outermost/parent node)
     seen: set[str] = set()

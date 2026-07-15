@@ -18,6 +18,7 @@ from domain.legislation_catalog import (
     GDPR_CELEX,
 )
 from domain.mdcg_catalog import MDCG_DOCUMENTS as _MDCG_DOCS
+from retrieval._cypher import ref_norm_key as _ref_norm_key
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
 
@@ -161,11 +162,22 @@ _build_core_mappings()
 # ---------------------------------------------------------------------------
 
 # Regex for detecting explicit provision references in a question.
-# Matches "Annex I", "Annex XIV", "Article 5", "Article 26a", "Recital 47".
+# Matches "Annex I", "Annex XIV", "Article 5", "Article 26a", "Recital 47", and
+# — critically — qualified paragraph/point paths: "Article 2(65)",
+# "Article 53(1)(a)", "Article 2(58)(b)".  The ``(?:\(\w+\))*`` chain captures
+# the parenthetical path.
+#
+# There is deliberately NO trailing ``\b``.  A path ends in ``)``, and a word
+# boundary between ``)`` (non-word) and the following space (non-word) never
+# holds — so a trailing ``\b`` forced the engine to backtrack and DROP the whole
+# ``(65)`` path, matching only "Article 2".  That silent drop is why
+# "Show me Article 2(65)" was answered as the entire Article 2 (and then the
+# point was reported non-existent).  The leading ``\b`` still prevents matching
+# inside a word ("particle").
 _PROVISION_REF_RE = re.compile(
     r"\b(annex\s+[IVX]{1,5}"
-    r"|article\s+\d{1,3}[a-z]?(?:\(\d+\))?"  # catches Article 26(3)
-    r"|recital\s+\d{1,4})\b",
+    r"|article\s+\d{1,3}[a-z]?(?:\(\w+\))*"
+    r"|recital\s+\d{1,4})",
     re.IGNORECASE,
 )
 
@@ -312,12 +324,33 @@ def _extract_provision_refs(question: str) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
     for m in _PROVISION_REF_RE.finditer(question):
-        parts = m.group(0).strip().split(None, 1)  # ["annex", "i"] or ["article", "5"]
+        parts = m.group(0).strip().split(None, 1)  # ["annex", "i"] or ["article", "2(65)"]
+        keyword = parts[0].capitalize()
         if len(parts) == 2:
-            normalized = parts[0].capitalize() + " " + parts[1].upper()
+            # Annex roman numerals uppercase ("annex i" -> "Annex I"); an article
+            # paragraph/point path keeps its case ("Article 2(58)(b)" — the point
+            # letter stays lowercase, matching the stored display_ref).
+            rest = parts[1].upper() if keyword == "Annex" else parts[1]
+            normalized = f"{keyword} {rest}"
         else:
-            normalized = parts[0].capitalize()
+            normalized = keyword
         if normalized not in seen:
             seen.add(normalized)
             result.append(normalized)
     return result
+
+
+def _normalize_ref_key(ref: str) -> str:
+    """Collapse a provision reference to a format-insensitive comparison key.
+
+    A user/model writes "Article 2(65)" or "Article 53(1)(a)"; the graph stores
+    the qualified display_ref "Article 2, point (65)" / "Article 53(1), point
+    (a)".  Folding ", point "/", indent " and spaces maps both to the same key
+    ("article2(65)"), so a sufficiency/coverage check keyed on this agrees with
+    the direct-ref lookup instead of flagging a retrieved point as "missing".
+
+    Delegates to :func:`retrieval._cypher.ref_norm_key` — the single Python
+    source shared with the retrieval fallback and mirrored by the ``_REF_NORM``
+    Cypher fold in the match query.
+    """
+    return _ref_norm_key(ref)

@@ -12,7 +12,7 @@ import os
 import re
 from typing import Any
 
-from application._config import _REG_NAME_TO_CELEX
+from application._config import _REG_NAME_TO_CELEX, _normalize_ref_key
 from application._routing import (
     _QuestionRoute,
     _ProvisionLookupTarget,
@@ -835,7 +835,15 @@ def _evaluate_route_sufficiency(
     context_celexes = _collect_context_celexes(provisions, definitions)
     context_refs = _collect_context_refs(all_provisions)
     context_communities = _collect_context_communities(all_provisions)
-    missing_refs = [ref for ref in explicit_refs if ref not in context_refs]
+    # Compare on the format-insensitive key: explicit_refs are in bare-paren form
+    # ("Article 2(65)") while retrieved refs are qualified ("Article 2, point
+    # (65)"), so a raw membership test would flag a point we DID retrieve as
+    # missing and fire needless corrective passes.
+    context_ref_keys = {_normalize_ref_key(ref) for ref in context_refs}
+    missing_refs = [
+        ref for ref in explicit_refs
+        if _normalize_ref_key(ref) not in context_ref_keys
+    ]
     missing_celexes = sorted((target_celexes or set()) - context_celexes)
     has_role_ctx = _has_role_context(provisions, role_provisions)
     missing_qualification_targets = [
