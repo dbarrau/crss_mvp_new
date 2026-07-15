@@ -66,14 +66,18 @@ _INTERP_CHARS = 600
 # tune, so it stays env-overridable via CRSS_CONTEXT_CHAR_BUDGET.
 _CONTEXT_CHAR_BUDGET = _int_env("CRSS_CONTEXT_CHAR_BUDGET", 140_000)
 
-# Only trim when the provision bag is large enough that bloat is a real risk
-# (plain constant, not env-tunable).  Single-regulation queries retrieve at most
-# k=20 provisions; even at max per-provision size (~17 KB) that stays around
-# 340 KB — the trim was designed for the 40+ provision cross-regulation case
-# (40 × 17 KB = 680 KB, compacted to 140 KB ≈ 35 K tokens).  At or below the
-# threshold every provision is preserved so the LLM gets complete coverage
-# (important for "what is X about" overview questions where every article matters).
-_TRIM_PROVISION_THRESHOLD = 25
+# Hard cap on a single rendered provision block.  The per-piece budgets above
+# bound each *component*, but their sum still lets one block reach ~23 KB
+# (observed: AI Act Article 3, whose 68 definitions are ALREADY extracted into
+# the separate definitions block).  Eight such giants at the head of a
+# legal-qualification backbone consumed 128 KB of a 131 KB provision budget,
+# so the head-first trim cut the entire role-obligation channel — the model
+# never saw Article 16 for a provider-obligations question and answered from
+# memory (v6 eval: HQ_003 key failure, fabrication cluster).  Direct-lookup
+# subjects (``_direct_ref_match``) are exempt: "what does Annex III list?"
+# must render its children complete (see the full_children rationale).
+_PROVISION_BLOCK_CAP = 9_000
+_BLOCK_TRUNCATION_MARK = "\n  […provision block truncated to context budget…]"
 
 # CELEX prefixes that identify MDCG guidance documents.
 _GUIDANCE_CELEX_PREFIXES = ("MDCG_",)
@@ -257,12 +261,14 @@ def _trim_provisions_to_budget(
     budget.  At least one provision is always kept.  Returns the input unchanged
     when it already fits, so narrow-scope queries are unaffected.
 
-    Skipped entirely for small bags (``len <= _TRIM_PROVISION_THRESHOLD``): only
-    broad cross-regulation routes accumulate enough provisions to need trimming,
-    and trimming a narrow query would silently drop relevant articles from an
-    overview answer.
+    Applied unconditionally: a previous count-threshold fast path
+    (``len <= 25`` → never trim) let a 25-provision legal-qualification bag
+    render a 222 KB context — far past the budget the trim exists to enforce —
+    inflating time-to-first-token and burying decisive provisions (v6 eval,
+    HQ_008).  With ``_PROVISION_BLOCK_CAP`` bounding each block, a narrow bag
+    that fits is returned unchanged anyway, so the fast path bought nothing.
     """
-    if not provisions or len(provisions) <= _TRIM_PROVISION_THRESHOLD:
+    if not provisions:
         return provisions
     kept: list[dict] = []
     total = 0
@@ -465,7 +471,17 @@ def _format_one_provision(index: int, p: dict, role: str) -> str:
     # from each node's own text. This faithful, referenceable view replaces both
     # the flattened embedding body and the separate child list — which duplicated
     # the body and leaked whole re-flattened ancestor articles/sections into it.
-    if p.get("_direct_ref_match") and not p.get("_pointer_expansion"):
+    # System-injected anchors (qualification backbone, status anchors, topic
+    # anchors) carry _direct_ref_match from the lookup path but are NOT the
+    # question's subject — the full-subtree render is reserved for the
+    # provision the user actually named (a force-loaded Annex I subtree
+    # starved the role channel out of the budget; v6 eval, HQ_003).
+    is_user_subject = bool(
+        p.get("_direct_ref_match")
+        and not p.get("_pointer_expansion")
+        and not p.get("_system_anchor")
+    )
+    if is_user_subject:
         subtree = p.get("subtree")
         if subtree:
             return _format_subject_provision(header, subtree, p)
@@ -490,9 +506,7 @@ def _format_one_provision(index: int, p: dict, role: str) -> str:
     # every child so a "what does X list?" question is answered completely.
     # Peripheral (cross-referenced / pointer-expanded) provisions stay capped so
     # the prompt does not re-inflate — the reason for _MAX_CHILD_LINES.
-    full_children = bool(
-        p.get("_direct_ref_match") and not p.get("_pointer_expansion")
-    )
+    full_children = is_user_subject
     rendered: list[str] = []       # every child line, in document order
     matched_lines: list[str] = []  # matched leaf(s), for the capped path
     for c in children:
@@ -538,4 +552,17 @@ def _format_one_provision(index: int, p: dict, role: str) -> str:
         section += "\n\nCross-references:\n" + "\n".join(cite_lines)
     if interp_lines:
         section += "\n\nInterpretive links:\n" + "\n".join(interp_lines)
+
+    # Total block cap: the per-piece budgets above still sum to ~23 KB for the
+    # definition-giant articles, and a handful of such blocks at the head of
+    # the bag starves every later provision out of the global budget (see
+    # _PROVISION_BLOCK_CAP). Direct-lookup subjects are exempt — their
+    # complete child rendering is the point of the lookup. Truncation lands on
+    # a line boundary so a child/cite line is never cut mid-sentence.
+    if len(section) > _PROVISION_BLOCK_CAP and not full_children:
+        cut = section[:_PROVISION_BLOCK_CAP]
+        last_nl = cut.rfind("\n")
+        if last_nl > _PROVISION_BLOCK_CAP // 2:
+            cut = cut[:last_nl]
+        section = cut + _BLOCK_TRUNCATION_MARK
     return section

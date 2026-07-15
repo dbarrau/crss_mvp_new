@@ -565,6 +565,50 @@ class GraphRetriever:
         _traversal.expand_cited_containers(self._driver, self._db, results)
         return results
 
+    def retrieve_recitals(
+        self,
+        question: str,
+        *,
+        k: int = 3,
+        target_celexes: set[str] | None = None,
+        query_vec: np.ndarray | None = None,
+    ) -> list[dict[str, Any]]:
+        """Dense-only recital retrieval for questions that invoke the preamble.
+
+        Recitals are deliberately excluded from the BM25 channel and rank
+        below operative articles in fused retrieval, so a question that
+        explicitly asks about the preamble ("what does the GDPR's preamble
+        say about consent imbalance?") never surfaces the reciting text
+        through the standard channels — the model then quotes it from memory
+        and the faithfulness guard (correctly) flags what it cannot verify.
+        This kind-scoped pass returns the top-``k`` recitals by cosine so the
+        preamble text the question asks for actually reaches the context.
+        """
+        dense = self._dense
+        if dense.matrix is None or not dense.ids:
+            return []
+        q_vec = query_vec if query_vec is not None else dense.encode_query(question)
+        scores = dense.matrix @ q_vec
+        order = np.argsort(scores)[::-1]
+        picked: list[int] = []
+        for idx in order:
+            if dense.kinds[idx] != "recital":
+                continue
+            if target_celexes and dense.celexes[idx] not in target_celexes:
+                continue
+            picked.append(int(idx))
+            if len(picked) >= k:
+                break
+        if not picked:
+            return []
+        score_by_id = {dense.ids[i]: float(scores[i]) for i in picked}
+        results = _traversal.expand(self._driver, self._db, [dense.ids[i] for i in picked])
+        for r in results:
+            r["score"] = score_by_id.get(r["article_id"], 0.0)
+            r["matched_leaf_id"] = None
+            r["_recital_supplement"] = True
+        return results
+
     def get_all_community_summaries(self, *, level: int = 1) -> list[dict]:
         """Return all Community summaries for the given level.
 

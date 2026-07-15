@@ -254,7 +254,53 @@ _CONTEXT_ANCHOR_REFS: list[tuple[re.Pattern, str, str]] = [
         r"\b(?:clinical\s+decision[\s-]?support|decision[\s-]?support\s+software|"
         r"cdss)\b", re.I),
         MDR_CELEX, "Annex VIII"),
+    # Application-date / timeline framing → AI Act Article 113 (entry into
+    # application), the sole authority for "from when do the obligations
+    # apply". The staggered dates (2 Feb 2025 / 2 Aug 2025 / 2 Aug 2026 /
+    # 2 Aug 2027) live nowhere else, and the vector channel surfaces the
+    # article only unreliably (v6 eval: HQ_038 answered without it and missed
+    # every date).
+    (re.compile(
+        r"\b(?:application\s+dates?|dates?\s+of\s+application|"
+        r"appl(?:y|ies|icable)\s+from|entry\s+into\s+application|"
+        r"already\s+appl(?:y|ies)|start\s+to\s+apply|exact\s+dates?|"
+        r"when\s+(?:do|does|will)\b[^?\n]{0,60}\bapply)\b", re.I),
+        AI_ACT_CELEX, "Article 113"),
 ]
+
+# Use-case cue → the specific Annex III point that governs it, registered as
+# context anchors so they fire on ANY route (HQ_008 routes role_obligations,
+# where the legal-qualification backbone never runs). The parent annex — when
+# force-loaded at all — renders capped as a system anchor and samples only its
+# head points, so for a domain-specific question the decisive point text must
+# be targeted directly: without it the employment point never reached context
+# and the model quoted Annex III 4(a)/(b) from training memory (v6 eval,
+# HQ_008: two fabrication flags). Point-level display_refs ("Annex III,
+# point 4") are first-class lookup targets under qualified refs.
+_ANNEX_III_POINT_BY_CUE: tuple[tuple[re.Pattern, str], ...] = (
+    (re.compile(r"\b(?:biometric|emotion\s+recognition|emotion\s+inference)\b", re.I),
+     "Annex III, point 1"),
+    (re.compile(r"\b(?:critical\s+infrastructure|road\s+traffic|"
+                r"supply\s+of\s+(?:water|gas|heating|electricity))\b", re.I),
+     "Annex III, point 2"),
+    (re.compile(r"\b(?:education|student|exam)\b", re.I), "Annex III, point 3"),
+    (re.compile(r"\b(?:employment|worker|recruitment|cv\s+screening|"
+                r"promotion|termination)\b", re.I),
+     "Annex III, point 4"),
+    (re.compile(r"\b(?:creditworthiness|credit\s+scor\w+|"
+                r"essential\s+(?:public\s+|private\s+)?services|"
+                r"public\s+assistance)\b", re.I),
+     "Annex III, point 5"),
+    (re.compile(r"\blaw\s+enforcement\b", re.I), "Annex III, point 6"),
+    (re.compile(r"\b(?:migration|asylum|border\s+control)\b", re.I),
+     "Annex III, point 7"),
+    (re.compile(r"\b(?:administration\s+of\s+justice|judicial)\b", re.I),
+     "Annex III, point 8"),
+)
+_CONTEXT_ANCHOR_REFS.extend(
+    (cue_re, AI_ACT_CELEX, point_ref)
+    for cue_re, point_ref in _ANNEX_III_POINT_BY_CUE
+)
 
 
 def _match_ref_table(

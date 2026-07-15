@@ -27,6 +27,10 @@ from domain.legislation_catalog import (
 
 logger = logging.getLogger(__name__)
 
+# Explicit preamble/recital invocation — triggers the kind-scoped recital
+# supplement (recitals are otherwise unreachable through the fused channels).
+_PREAMBLE_CUE_RE = re.compile(r"\b(?:preambles?|recitals?)\b", re.IGNORECASE)
+
 _AI_ACT_CELEX = AI_ACT_CELEX
 _AI_ACT_PROHIBITED_PRACTICES_RE = re.compile(
     r"\b(prohibit(?:ed|ion|ions)?|ban(?:ned)?|forbidden|not\s+allowed)\b",
@@ -157,16 +161,30 @@ def _merge_unique_provisions(
     *,
     prepend: bool = False,
 ) -> int:
-    """Merge provisions without duplicating ``article_id`` values."""
+    """Merge provisions without duplicating ``article_id`` values.
+
+    ``prepend=True`` asserts *priority*, not just membership: an addition
+    already present in ``base`` is hoisted to the front rather than left at
+    its original position. Without the hoist, a role-channel obligation that
+    happened to also arrive via the (lower-priority, later-positioned) vector
+    bag was deduped in place — and the context-budget trim, which keeps the
+    leading provisions, cut it (v6 eval: AI Act Article 16 vanished from a
+    provider-obligations context while the role channel had ranked it 8th).
+
+    Returns the number of *new* items added (hoists are not counted).
+    """
     existing_ids = {p.get("article_id") for p in base}
     new_items = [
         provision
         for provision in additions
         if provision.get("article_id") not in existing_ids
     ]
-    if not new_items:
-        return 0
     if prepend:
+        addition_ids = {p.get("article_id") for p in additions}
+        hoisted = [p for p in base if p.get("article_id") in addition_ids]
+        if hoisted:
+            base[:] = [p for p in base if p.get("article_id") not in addition_ids]
+            base[:0] = hoisted
         base[:0] = new_items
     else:
         base.extend(new_items)
@@ -196,13 +214,24 @@ def _retrieve_lookup_targets(
     retriever,
     targets: list[_ProvisionLookupTarget],
 ) -> list[dict]:
-    """Retrieve curated provision targets with per-target CELEX scoping."""
+    """Retrieve curated provision targets with per-target CELEX scoping.
+
+    Every caller of this function injects *system* anchors (qualification
+    backbone, status anchors, GDPR cross-reg backbone) — not provisions the
+    user named. They are stamped ``_system_anchor`` so the context renderer
+    does NOT give them the direct-subject full-subtree exemption: a
+    force-loaded Annex I rendered as its complete subtree consumed most of
+    the provision budget and starved the role channel out of the context
+    entirely (v6 eval, HQ_003 — the trim kept 9 of 49 provisions).
+    """
     provisions: list[dict] = []
     for target in targets:
         matches = retriever.retrieve_by_refs(
             [target.ref],
             celex_filter=set(target.celexes) if target.celexes else None,
         )
+        for m in matches:
+            m["_system_anchor"] = True
         _merge_unique_provisions(provisions, matches)
     return provisions
 
@@ -733,7 +762,33 @@ def _retrieve_route_provisions(
             target_celexes=target_celexes,
         )
         if anchors:
+            # System-injected topic anchors, not user-named subjects: no
+            # full-subtree render exemption (see _retrieve_lookup_targets).
+            for a in anchors:
+                a["_system_anchor"] = True
             _merge_unique_provisions(provisions, anchors, prepend=True)
+
+    # ── Preamble supplement ──────────────────────────────────────────────────
+    # A question that explicitly invokes the preamble ("what does the GDPR's
+    # preamble say…", "which recital covers…") needs the reciting text itself,
+    # but recitals are excluded from BM25 and rank below operative articles in
+    # fused retrieval, so no standard channel delivers them (v6 eval: HQ_041's
+    # answer quoted Recital 43 verbatim from memory because retrieval never
+    # surfaced it — correctly flagged, wrongly starved). A kind-scoped dense
+    # pass appends the top recitals; getattr keeps retriever doubles working.
+    if _PREAMBLE_CUE_RE.search(question):
+        _recital_fn = getattr(retriever, "retrieve_recitals", None)
+        if callable(_recital_fn):
+            recital_hits = _recital_fn(
+                question, k=3, target_celexes=target_celexes,
+            )
+            if recital_hits:
+                _merge_unique_provisions(provisions, recital_hits)
+                logger.info(
+                    "Preamble supplement: appended %d recital(s): %s",
+                    len(recital_hits),
+                    [p.get("article_ref") for p in recital_hits],
+                )
 
     # ── Safety-net phase ─────────────────────────────────────────────────────
     _inject_prohibited_practices_safety_net(
