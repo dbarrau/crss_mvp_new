@@ -58,7 +58,12 @@ retriever: GraphRetriever | None = None
 
 @app.route("/")
 def index():
-    return send_from_directory(STATIC_DIR, "index.html")
+    # no-cache so an edited index.html (markdown renderer, CSS) always takes
+    # effect on refresh — otherwise the browser serves a stale cached page and
+    # front-end fixes appear not to work.
+    resp = send_from_directory(STATIC_DIR, "index.html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
 
 
 @app.route("/api/ask", methods=["POST"])

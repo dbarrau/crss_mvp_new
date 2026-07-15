@@ -756,6 +756,123 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 
+// ── Legal-enumeration markdown normalizer ──────────────────────────────
+// EU legal text enumerates with (a)/(b) points, (i)/(ii) sub-points and "—"
+// indents. marked.js does not recognise these as list markers, so it renders
+// them as running text — the "all items on one line" collapse — in two ways
+// this fixes:
+//   1. line-start markers ("1.\n (a) …\n (b) …") whose soft line-breaks fold
+//      into the parent paragraph; and
+//   2. an INLINE run of markers inside ONE string — e.g. a quoted definition
+//      flattened to a single blockquote line ("… which: (a) … (i) …; (b) …").
+// Both are rewritten into real nested markdown lists BEFORE marked parses them,
+// so the legal hierarchy renders as it reads in the source. The verbatim
+// (a)/(i) labels are kept as text so citations stay intact.  Depth follows the
+// EU hierarchy — paragraph → (a)/(b) point → (i)/(ii) sub-point — and the
+// (i)/(v)/(x) roman-vs-letter ambiguity is resolved by letter continuity (a
+// single roman glyph that continues its predecessor letter, e.g. (i) after (h),
+// is a letter; otherwise it opens a roman sub-list).
+function normalizeLegalLists(md) {
+  const ROMAN = 'ivxlcdm';
+  const isListLine = (s) => /^\s*(?:[-*+]\s|\d+\.\s)/.test(s);
+
+  // Depth of a parenthetical marker relative to its enumeration: 0 = (a)/(b)
+  // letters and (1)/(2) numbers, 1 = (i)/(ii) roman sub-points.  `state.alpha`
+  // carries the last letter so a lone (i) after (h) reads as a continuing
+  // letter, not a roman.
+  function markerDepth(inner, state) {
+    if (/^\d+$/.test(inner)) return 0;
+    const low = inner.toLowerCase();
+    if (low.length > 1) return [...low].every((c) => ROMAN.includes(c)) ? 1 : 0;
+    if (!ROMAN.includes(low)) { state.alpha = low.charCodeAt(0); return 0; }
+    if (state.alpha && low.charCodeAt(0) === state.alpha + 1) { state.alpha = low.charCodeAt(0); return 0; }
+    return 1;
+  }
+
+  // Expand a line holding an INLINE run of legal enumerators into a nested list,
+  // preserving any "> " blockquote prefix. Returns replacement lines, or null
+  // when there is no run. Guarded so an isolated reference is never split: it
+  // needs >=2 markers AND at least one real (>40-char) item — "points (a) and
+  // (b)", "Directive (EU) 2019/790", "Article 4(3)", "(a legal person)" all
+  // stay untouched.
+  function expandInline(line) {
+    const bq = line.match(/^(\s*>[>\s]*)([\s\S]*)$/);
+    const prefix = bq ? bq[1] : '';
+    const body = bq ? bq[2] : line;
+    // Capturing split: a marker preceded by start/space/;/: and followed by a
+    // space becomes a delimiter; the "(x)" is captured, the surrounding
+    // whitespace consumed → parts = [lead, marker, text, marker, text, …].
+    const parts = body.split(/(?:^|[\s;:])(\((?:[A-Za-z]|[ivxlcdm]{2,4}|\d{1,3})\))\s/gi);
+    if (parts.length < 3) return null;
+    const items = [];
+    for (let i = 1; i + 1 < parts.length; i += 2) {
+      items.push({ marker: parts[i], text: (parts[i + 1] || '').trim() });
+    }
+    if (items.length < 2 || !items.some((it) => it.text.length > 40)) return null;
+    const res = [];
+    const lead = parts[0].trim();
+    // lead paragraph, then a blank blockquote line so marked starts the list
+    if (lead) { res.push(prefix + lead); if (prefix) res.push(prefix.trimEnd()); }
+    const state = { alpha: 0 };
+    for (const it of items) {
+      const depth = markerDepth(it.marker.slice(1, -1), state);
+      res.push(prefix + '   '.repeat(depth) + '- ' + it.marker + ' ' + it.text);
+    }
+    return res;
+  }
+
+  const out = [];
+  let inCode = false;
+  let lastAlpha = 0;   // char code of the last (a)-style letter point in the current run
+  for (const raw of (md || '').split('\n')) {
+    if (/^\s*```/.test(raw)) { inCode = !inCode; out.push(raw); continue; }
+    if (inCode) { out.push(raw); continue; }
+
+    // (2) inline enumerator run within a (possibly blockquote) line
+    const expanded = expandInline(raw);
+    if (expanded) { out.push(...expanded); lastAlpha = 0; continue; }
+
+    // "1." is already a valid ordered marker; leave it, but it opens a fresh
+    // point group, so letter continuity resets.
+    if (/^\s*\d+\.\s/.test(raw)) { lastAlpha = 0; out.push(raw); continue; }
+
+    const m = raw.match(/^(\s*)(\((?:\d+|[A-Za-z]+)\)|[—–•‣·])\s+(.+)$/);
+    if (!m) { lastAlpha = 0; out.push(raw); continue; }
+
+    const marker = m[2];
+    let depth, label = marker + ' ';
+    if (/^[—–•‣·]$/.test(marker)) {
+      depth = 2; label = '';                          // indent bullet: drop the glyph
+    } else {
+      const inner = marker.slice(1, -1);
+      if (/^\d+$/.test(inner)) {
+        depth = 0;                                    // (1) definition / top-level
+      } else {
+        const low = inner.toLowerCase();
+        const romanish = [...low].every((c) => ROMAN.includes(c));
+        if (low.length > 1) {
+          depth = romanish ? 2 : 1;                   // (ii) roman sub-point
+        } else if (!ROMAN.includes(low)) {
+          depth = 1; lastAlpha = low.charCodeAt(0);   // plain letter (a),(b)…
+        } else if (lastAlpha && low.charCodeAt(0) === lastAlpha + 1) {
+          depth = 1; lastAlpha = low.charCodeAt(0);   // (i) continuing (h) → letter
+        } else {
+          depth = 2;                                  // (i) opening a roman sub-list
+        }
+      }
+    }
+    // Separate a new list from a preceding paragraph so marked starts it.
+    const prev = out.length ? out[out.length - 1] : '';
+    if (prev !== '' && !isListLine(prev)) out.push('');
+    out.push('   '.repeat(depth) + '- ' + label + m[3]);
+  }
+  return out.join('\n');
+}
+
+function renderAnswer(md) {
+  return marked.parse(normalizeLegalLists(md));
+}
+
 async function sendQuestion() {
   if (busy) return;
   const q = input.value.trim();
@@ -825,7 +942,7 @@ async function sendQuestion() {
       if (renderScheduled) return;
       renderScheduled = true;
       requestAnimationFrame(() => {
-        agentBubble.innerHTML = marked.parse(fullAnswer);
+        agentBubble.innerHTML = renderAnswer(fullAnswer);
         smartScroll();
         renderScheduled = false;
       });
@@ -932,7 +1049,7 @@ async function sendQuestion() {
             draftBox.hidden = true;              // retire the live draft
             agentBubble.classList.remove('pending', 'stream-cursor');
             agentBubble.classList.add('md-ready');
-            agentBubble.innerHTML = marked.parse(fullAnswer);
+            agentBubble.innerHTML = renderAnswer(fullAnswer);
 
             // Add copy button
             const copyBtn = document.createElement('button');
@@ -1007,7 +1124,7 @@ async function sendQuestion() {
     if (data.error) {
       addMessage('agent', '<em>Error: ' + escapeHtml(data.error) + '</em>');
     } else {
-      const bubble = addMessage('agent', marked.parse(data.answer));
+      const bubble = addMessage('agent', renderAnswer(data.answer));
       conversationHistory.push({role: 'agent', content: data.answer});
       if (data.interaction_id) addFeedbackWidget(bubble, data.interaction_id);
       enableExportButtons();
