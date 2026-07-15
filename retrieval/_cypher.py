@@ -252,6 +252,36 @@ RETURN art.id AS article_id, art.celex AS celex, art.display_ref AS display_ref,
 ORDER BY art.hierarchy_depth ASC
 """
 
+# Ordered subtree of a directly-looked-up provision, for faithful structural
+# rendering.  Returns the root plus every HAS_PART descendant with its OWN text
+# (node.text, never the flattened text_for_analysis), its exact display_ref, and
+# a depth for indentation.  Ordering by the list of edge `order` values along the
+# path yields a pre-order depth-first walk, i.e. the provision exactly as it is
+# numbered in the source document — so "Article 53(1), point (b)(i)" renders as a
+# real, referenceable unit nested under its chapeau rather than as run-on prose.
+_SUBTREE_CYPHER = """\
+UNWIND $ids AS rootId
+MATCH (root {id: rootId})
+CALL {
+  WITH root
+  RETURN root AS node, 0 AS depth, [] AS ord
+  UNION
+  WITH root
+  MATCH path = (root)-[:HAS_PART*1..6]->(desc)
+  WHERE desc.text IS NOT NULL
+  RETURN desc AS node, length(path) AS depth,
+         [r IN relationships(path) | r.order] AS ord
+}
+RETURN rootId          AS root_id,
+       node.id         AS id,
+       node.display_ref AS ref,
+       node.number     AS number,
+       node.kind       AS kind,
+       node.text       AS text,
+       depth
+ORDER BY rootId, ord
+"""
+
 # Role-aware provision lookup. Starts from one or more ActorRole nodes,
 # expands through composite-role and curated equivalence edges, then returns
 # obligation-bearing provisions linked to any reachable role.

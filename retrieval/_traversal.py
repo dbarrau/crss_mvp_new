@@ -22,6 +22,7 @@ from retrieval._cypher import (
     _DIRECT_REF_CYPHER,
     _EXPAND_CYPHER,
     _ROLE_OBLIGATIONS_CYPHER,
+    _SUBTREE_CYPHER,
 )
 from retrieval._dense import DenseIndex
 
@@ -129,7 +130,42 @@ def retrieve_by_refs(
         r["matched_leaf_id"] = None
         r["_direct_ref_match"] = True
 
+    # Attach the ordered, faithfully-nested subtree for each directly-looked-up
+    # provision so the context renderer can show it exactly as numbered in the
+    # source document (chapeau → points → roman sub-items), rather than the
+    # flattened embedding string.  One batched query for the whole result set.
+    _attach_subtrees(driver, db, results)
+
     return results
+
+
+def _attach_subtrees(driver, db: str, results: list[dict[str, Any]]) -> None:
+    """Populate ``result["subtree"]`` with the ordered HAS_PART descendants.
+
+    Each subtree entry is ``{id, ref, number, kind, text, depth}`` in document
+    (pre-order) order, with the root at ``depth == 0``.  ``text`` is the node's
+    *own* text — not the flattened ``text_for_analysis`` — so every semantic unit
+    renders as the exact, referenceable text of the regulation.
+    """
+    ids = [r["article_id"] for r in results if r.get("article_id")]
+    if not ids:
+        return
+    with driver.session(database=db) as s:
+        rows = s.run(_SUBTREE_CYPHER, ids=ids).data()
+    by_root: dict[str, list[dict]] = {}
+    for row in rows:
+        by_root.setdefault(row["root_id"], []).append({
+            "id": row["id"],
+            "ref": row["ref"],
+            "number": row["number"],
+            "kind": row["kind"],
+            "text": row["text"],
+            "depth": row["depth"],
+        })
+    for r in results:
+        subtree = by_root.get(r["article_id"])
+        if subtree:
+            r["subtree"] = subtree
 
 
 def retrieve_by_ids(driver, db: str, ids: list[str]) -> list[dict[str, Any]]:

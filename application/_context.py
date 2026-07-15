@@ -324,6 +324,104 @@ def _format_context(provisions: list[dict]) -> str:
     return "\n\n".join(parts)
 
 
+def _cross_ref_and_interp_lines(p: dict) -> tuple[list[str], list[str]]:
+    """Return the capped cross-reference and interpretive-link lines for a block.
+
+    Shared by the compact and the full-subtree provision renderers so both
+    surface the same downstream context (e.g. the Annex a point cites, the MDCG
+    guidance that interprets an article) without duplicating the formatting.
+
+    Cross-regulation citations are more decisive than internal ones, so they are
+    kept first and the combined list is capped.  Interpretive links follow the
+    guidance<->legislation INTERPRETS edges in both directions.
+    """
+    cited = p.get("cited_provisions") or []
+    cross_reg_ids = {c.get("id") for c in (p.get("cross_reg_cited") or [])}
+    _xreg_cites: list[str] = []
+    _internal_cites: list[str] = []
+    for c in cited:
+        ref = c.get("ref", "")
+        is_xreg = c.get("id") in cross_reg_ids
+        text = (c.get("text") or "")[:_CITE_CHARS]
+        if text:
+            tag = " [CROSS-REG]" if is_xreg else ""
+            line = f"  -> {ref}{tag}: {text}"
+            (_xreg_cites if is_xreg else _internal_cites).append(line)
+    cite_lines = (_xreg_cites + _internal_cites)[:_MAX_CITE_LINES]
+
+    interp_lines: list[str] = []
+    for g in (p.get("interpreting_guidance") or [])[:_MAX_INTERP_LINES]:
+        ref = g.get("ref", "")
+        text = (g.get("text") or "")[:_INTERP_CHARS]
+        if text:
+            interp_lines.append(f"  [GUIDANCE interprets this] {ref}: {text}")
+    for ip in (p.get("interpreted_provisions") or [])[:_MAX_INTERP_LINES]:
+        ref = ip.get("ref", "")
+        text = (ip.get("text") or "")[:_INTERP_CHARS]
+        if text:
+            interp_lines.append(f"  [INTERPRETS legislation] {ref}: {text}")
+    return cite_lines, interp_lines
+
+
+def _render_subtree(subtree: list[dict]) -> str:
+    """Render an ordered HAS_PART subtree as faithfully-numbered, nested text.
+
+    ``subtree`` is the retriever's document-ordered (pre-order) list of nodes,
+    each ``{ref, number, kind, text, depth}`` with the looked-up provision at
+    ``depth == 0``.  Every line carries the node's OWN text (never the flattened
+    ``text_for_analysis``) and its enumerator, indented by depth, so a point's
+    roman sub-items nest visibly beneath their chapeau and each unit reads as the
+    exact, referenceable text of the regulation:
+
+        1.   Providers of general-purpose AI models shall:
+          (b) draw up, keep up-to-date and make available … shall:
+              (i) enable providers of AI systems to have a good understanding …;
+              (ii) contain, at a minimum, the elements set out in Annex XII;
+    """
+    lines: list[str] = []
+    for node in subtree:
+        depth = node.get("depth") or 0
+        text = (node.get("text") or "").replace("\xa0", " ").strip()
+        if not text:
+            continue
+        indent = "  " * depth
+        # The root paragraph/article already carries its own number ("1.  …");
+        # descendant points/items store the bare body, so prefix the enumerator
+        # the way the source cites it: "(a)" / "(i)" for lettered/roman points,
+        # an em-dash for unnumbered "indent" bullets (whose number is only an
+        # ordinal, not part of the text).
+        number = (node.get("number") or "").strip()
+        if depth == 0:
+            label = ""
+        elif node.get("kind") == "indent":
+            label = "— "
+        elif number:
+            label = f"({number}) "
+        else:
+            label = ""
+        lines.append(f"{indent}{label}{text}")
+    return "\n".join(lines)
+
+
+def _format_subject_provision(header: str, subtree: list[dict], p: dict) -> str:
+    """Render the direct-lookup subject as its faithful, ordered subtree.
+
+    Replaces the flattened-body + separate child-list layout for the one
+    provision the question actually names.  Cross-references and interpretive
+    links still follow (via :func:`_cross_ref_and_interp_lines`), but the body is
+    the real document structure.  Not subject to ``_PROVISION_BLOCK_CAP`` —
+    rendering the named provision completely is the whole point of the lookup,
+    exactly as the previous ``full_children`` path was exempt.
+    """
+    section = header + "\n" + _render_subtree(subtree)
+    cite_lines, interp_lines = _cross_ref_and_interp_lines(p)
+    if cite_lines:
+        section += "\n\nCross-references:\n" + "\n".join(cite_lines)
+    if interp_lines:
+        section += "\n\nInterpretive links:\n" + "\n".join(interp_lines)
+    return section
+
+
 def _format_one_provision(index: int, p: dict, role: str) -> str:
     """Render a single retrieved provision block.
 
@@ -360,6 +458,17 @@ def _format_one_provision(index: int, p: dict, role: str) -> str:
     path = p.get("article_path", "")
     if path:
         header += f"\n    Path: {path}"
+
+    # When this provision is the DIRECT SUBJECT of a structural lookup and its
+    # ordered HAS_PART subtree was attached, render that subtree exactly as
+    # numbered in the source document (chapeau -> points -> roman sub-items),
+    # from each node's own text. This faithful, referenceable view replaces both
+    # the flattened embedding body and the separate child list — which duplicated
+    # the body and leaked whole re-flattened ancestor articles/sections into it.
+    if p.get("_direct_ref_match") and not p.get("_pointer_expansion"):
+        subtree = p.get("subtree")
+        if subtree:
+            return _format_subject_provision(header, subtree, p)
 
     body = p.get("article_text", "") or ""
     if len(body) > _BODY_LIMIT:
@@ -416,40 +525,7 @@ def _format_one_provision(index: int, p: dict, role: str) -> str:
         tail = [ln for ln in rendered if ln not in seen]
         child_lines = (matched_lines + tail)[:_MAX_CHILD_LINES]
 
-    # Cross-referenced provisions (separate internal vs cross-regulation).
-    # Cross-regulation citations are more decisive than internal ones, so they
-    # are kept first and the combined list is capped.
-    cited = p.get("cited_provisions") or []
-    cross_reg = p.get("cross_reg_cited") or []
-    cross_reg_ids = {c.get("id") for c in cross_reg}
-    _xreg_cites: list[str] = []
-    _internal_cites: list[str] = []
-    for c in cited:
-        ref = c.get("ref", "")
-        is_xreg = c.get("id") in cross_reg_ids
-        text = (c.get("text") or "")[:_CITE_CHARS]
-        if text:
-            tag = " [CROSS-REG]" if is_xreg else ""
-            line = f"  -> {ref}{tag}: {text}"
-            (_xreg_cites if is_xreg else _internal_cites).append(line)
-    cite_lines = (_xreg_cites + _internal_cites)[:_MAX_CITE_LINES]
-
-    # Interpretive links — guidance↔legislation INTERPRETS edges.  For a
-    # legislation provision, surface the MDCG guidance that interprets it; for a
-    # guidance node, surface the binding provisions it interprets.  This anchors
-    # non-binding interpretation to its authority (and vice versa) without the
-    # LLM having to infer the link.
-    interp_lines: list[str] = []
-    for g in (p.get("interpreting_guidance") or [])[:_MAX_INTERP_LINES]:
-        ref = g.get("ref", "")
-        text = (g.get("text") or "")[:_INTERP_CHARS]
-        if text:
-            interp_lines.append(f"  [GUIDANCE interprets this] {ref}: {text}")
-    for ip in (p.get("interpreted_provisions") or [])[:_MAX_INTERP_LINES]:
-        ref = ip.get("ref", "")
-        text = (ip.get("text") or "")[:_INTERP_CHARS]
-        if text:
-            interp_lines.append(f"  [INTERPRETS legislation] {ref}: {text}")
+    cite_lines, interp_lines = _cross_ref_and_interp_lines(p)
 
     section = header + "\n" + body
     if p.get("_cross_reg_expansion"):
