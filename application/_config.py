@@ -302,6 +302,25 @@ _CONTEXT_ANCHOR_REFS.extend(
     for cue_re, point_ref in _ANNEX_III_POINT_BY_CUE
 )
 
+# Non-high-risk negative-space framing → the provider obligations that STILL
+# apply when a system is NOT high-risk: Article 4 (AI literacy — all providers
+# and deployers), Article 50 (transparency duties), Article 95 (voluntary codes
+# of conduct). This is a thin-corpus region the dense/lexical channels miss:
+# they key off "high-risk" and bury the low-frequency baseline duties. Worse,
+# graph expansion actively DISPLACES them — the ablation on HQ_039 showed a
+# decisive-cite swap (graph kept Art 4 but dropped Art 50; flat did the reverse;
+# net 50% cite-recall either way). Force-loading all three closes the swap and
+# grounds the "reserved for high-risk / does not apply" contrast the question
+# turns on. Guarded to AI-Act scope by _match_ref_table; the negation in the cue
+# keeps it off ordinary "is my system high-risk?" qualification questions.
+_NON_HIGH_RISK_CUE = re.compile(
+    r"\b(?:not\s+(?:an?\s+)?high[\s-]?risk|non[\s-]?high[\s-]?risk|"
+    r"reserved\s+for\s+high[\s-]?risk)\b", re.I)
+_CONTEXT_ANCHOR_REFS.extend(
+    (_NON_HIGH_RISK_CUE, AI_ACT_CELEX, ref)
+    for ref in ("Article 4", "Article 50", "Article 95")
+)
+
 
 def _match_ref_table(
     question: str,

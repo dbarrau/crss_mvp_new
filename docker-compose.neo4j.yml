@@ -1,0 +1,16 @@
+# Neo4j for CRSS. Data lives in ./neo4j (gitignored — rebuild via the ingest
+# pipeline, never from git). Bring up:  docker compose -f docker-compose.neo4j.yml up -d
+services:
+  neo4j:
+    image: neo4j:5.11
+    container_name: crss_neo4j
+    restart: unless-stopped
+    ports:
+      - "7474:7474"   # HTTP browser
+      - "7687:7687"   # Bolt (the app connects here)
+    environment:
+      - NEO4J_AUTH=neo4j/testpassword   # ignored once the DB is initialized
+    volumes:
+      - ./neo4j/data:/data
+      - ./neo4j/logs:/logs
+      - ./neo4j/import:/var/lib/neo4j/import

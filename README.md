@@ -1,19 +1,106 @@
 # CRSS — Compliance Readiness Support System
 
-A GraphRAG system for EU regulatory compliance analysis. It ingests EU regulations (MDR, IVDR, AI Act) from EUR-Lex and MDCG guidance documents from PDF, builds a knowledge graph in Neo4j with cross-references and embeddings, and provides an AI-powered agent that answers cross-regulation compliance questions grounded in the actual legal text.
+A GraphRAG system for EU regulatory compliance analysis. It ingests EU regulations (MDR, IVDR, AI Act, GDPR) from EUR-Lex and MDCG guidance documents from PDF, builds a knowledge graph in Neo4j with cross-references and embeddings, and provides an AI-powered agent that answers cross-regulation compliance questions grounded in the actual legal text.
 
 ## Architecture
+
+CRSS runs in two phases: an **offline build** (Act I) that turns official legal
+text into a knowledge graph, and an **online query** loop (Act II) that answers
+questions against it. Every step in the diagram is colour-coded by *how* it works
+— **deterministic** code, a single **LLM call**, **expert-curated** legal
+knowledge, or stored **data** — so it is clear at a glance which parts are rules
+and which involve a model (the model writes prose in exactly one online step).
+
+```mermaid
+%%{init: {"flowchart": {"nodeSpacing": 24, "rankSpacing": 30, "curve": "basis"}, "themeVariables": {"fontSize": "13px", "fontFamily": "Helvetica Neue, Arial"}}}%%
+flowchart TB
+
+subgraph DOMAIN["DOMAIN — curated legal knowledge, version-controlled Python (no runtime, no LLM)"]
+    direction LR
+    CAT["Legislation catalog<br/>which documents · CELEX ids<br/>consolidated versions"]:::cur
+    RSPEC["Actor-role ontology<br/>role specs · composites ·<br/>cross-reg equivalences"]:::cur
+    TAXO["Provision-role taxonomy<br/>closed set + deterministic<br/>classification rules"]:::cur
+    CHAINS["Legal reasoning chains<br/>cross-reg dependencies ·<br/>obligation patches"]:::cur
+    SCHEMA["Graph schema<br/>node label + edge<br/>type contract"]:::cur
+end
+
+subgraph BUILD["ACT I · OFFLINE BUILD — once per document set"]
+    direction LR
+    SRC["Official sources<br/>EUR-Lex + MDCG PDFs"]:::store
+    PARSE["Ingest &amp; parse<br/>structure tree · stable IDs"]:::det
+    LOAD["Load into Neo4j<br/>:Provision · :Guidance"]:::store
+    EMBED["Embed + index<br/>e5-base 768d · BM25"]:::det
+    SRC --> PARSE --> LOAD --> EMBED
+end
+
+subgraph CANON["CANONICALIZATION — 7 enrichment stages, strict order"]
+    direction LR
+    C1["1 · Cross-linker<br/>CITES · INTERPRETS"]:::det
+    C2["2 · Delegation<br/>DELEGATES_TO"]:::det
+    C3["3 · Terms<br/>USES_TERM"]:::det
+    C4["4 · Actor roles<br/>OBLIGATION_OF"]:::det
+    C5["5 · Classifier<br/>provision_role"]:::det
+    C6["6 · Reasoning ★<br/>cross-reg chains"]:::cur
+    C7["7 · Communities<br/>MEMBER_OF"]:::llm
+    C1 --> C2 --> C3 --> C4 --> C5 --> C6 --> C7
+end
+
+KG[("LEGAL KNOWLEDGE GRAPH — real legal text · semantic + curated edges")]:::store
+
+subgraph QUERY["ACT II · ONLINE — seconds per question"]
+    direction LR
+    Q(["Question"])
+    ROUTE["1 · Route<br/>rule-based"]:::det
+    GATE{"2 · Actor role<br/>known?"}:::det
+    ASK["Ask which role<br/>the user holds"]:::det
+    RETR["3 · Retrieve<br/>vectors + BM25 + graph<br/>RRF + rerank"]:::det
+    CTX["4 · Context<br/>defs · provisions<br/>in statutory order"]:::det
+    GEN["5 · Generate<br/>Mistral — only<br/>prose-writing step"]:::llm
+    VER["6 · Verify<br/>quotes · citations<br/>jurisdiction"]:::det
+    ANS(["Answer + citations<br/>+ confidence"]):::cur
+
+    Q --> ROUTE --> GATE
+    GATE -- "missing" --> ASK
+    ASK -. "next turn" .-> Q
+    GATE -- "known" --> RETR
+    RETR --> CTX --> GEN --> VER --> ANS
+end
+
+DOMAIN -- "doc set to ingest" --> BUILD
+DOMAIN -- "specs executed by stages 4 · 5 · 6" --> CANON
+DOMAIN -. "schema contract" .-> KG
+BUILD --> CANON --> KG --> QUERY
+
+subgraph LEGEND["Legend"]
+    direction LR
+    LD["Deterministic"]:::det
+    LL["LLM call"]:::llm
+    LC["Expert-curated"]:::cur
+    LS["Data"]:::store
+end
+
+classDef det fill:#E3F0EB,stroke:#1F7A66,color:#143229
+classDef llm fill:#F8EADE,stroke:#A34E1C,color:#3A2312
+classDef cur fill:#F6EFDC,stroke:#A87E24,color:#3C2E0C
+classDef store fill:#E6ECF8,stroke:#2C4E9E,color:#16264A
+```
+
+<details>
+<summary>Plain-text overview (fallback for viewers that don't render Mermaid)</summary>
 
 ```
 EUR-Lex HTML ──▶ Parse ──▶ parsed.json ──▶ Neo4j Graph ──▶ Embeddings
                                                 │
                Canonicalization Pipeline
-  (crosslinker → delegation → term → role → community linkers)
+   (crosslinker → delegation → term → role →
+    provision-role → reasoning → community)
                                                 │
                                           Retriever (vector + graph)
                                                 │
                                           Mistral LLM Agent ──▶ Answer
 ```
+
+</details>
 
 **Supported Regulations:**
 
@@ -22,7 +109,11 @@ EUR-Lex HTML ──▶ Parse ──▶ parsed.json ──▶ Neo4j Graph ──�
 | `32017R0745` | MDR 2017/745 | Consolidated (`02017R0745-20260101`) |
 | `32017R0746` | IVDR 2017/746 | Consolidated (`02017R0746-20250110`) |
 | `32024R1689` | EU AI Act 2024/1689 | Legal-basis act |
-| `32016R679` | GDPR 2016/679 | Consolidated (`02016R0679-20160504`) |
+| `32016R0679` | GDPR 2016/679 | Consolidated (`02016R0679-20160504`) |
+| `32026R0977` | CIR (EU) 2026/977 † | Implementing act |
+
+<sub>† The Commission Implementing Regulation is ingested and queryable, but its
+actor-role coverage is still partial — some obligations are not yet role-linked.</sub>
 
 **Supported MDCG Guidance Documents:**
 
@@ -41,6 +132,16 @@ EUR-Lex HTML ──▶ Parse ──▶ parsed.json ──▶ Neo4j Graph ──�
 ---
 
 ## Setup
+
+Clone the repository and `cd` into it before anything else:
+
+```bash
+git clone <repo-url> crss
+cd crss
+```
+
+The steps below assume you are at the repo root. End-to-end, a fresh setup is:
+**Python env → dependencies → Neo4j → `.env` → Mistral key → `build_all.py`.**
 
 ### 1. Python Environment
 
@@ -66,40 +167,36 @@ playwright install chromium
 
 ### 3. Neo4j
 
-Install and run Neo4j locally. Default ports: **Bolt 7687** / **Browser 7474**. No plugins required (embeddings use in-memory numpy, not Neo4j Vector Index).
+CRSS talks to Neo4j over **Bolt (7687)**; the browser UI is on **7474**. No
+plugins required — embeddings live in in-memory numpy, not the Neo4j Vector Index.
 
-**Option A — Docker (recommended):**
+**Option A — Docker Compose (bundled, recommended):**
+
+The repo ships [`docker-compose.neo4j.yml`](docker-compose.neo4j.yml), so one
+command brings up a correctly-configured container (named `crss_neo4j`):
 
 ```bash
-docker run -d \
-  --name crss-neo4j \
-  -p 7474:7474 \
-  -p 7687:7687 \
-  -e NEO4J_AUTH=neo4j/password \
-  -v crss_neo4j_data:/data \
-  neo4j:5-community
+docker compose -f docker-compose.neo4j.yml up -d
 ```
 
-The `-v crss_neo4j_data:/data` flag persists the database across container restarts. To verify it's running, open [http://localhost:7474](http://localhost:7474) in a browser.
+- Default credentials: **`neo4j` / `testpassword`** — use these in your `.env` (next step).
+- Data persists in `./neo4j/` at the repo root (gitignored — rebuild it via the
+  ingest pipeline, never from git).
+- Verify it's up at [http://localhost:7474](http://localhost:7474).
 
-To stop/start later:
-
-```bash
-docker stop crss-neo4j
-docker start crss-neo4j
-```
-
-To wipe and start fresh:
+Manage it later:
 
 ```bash
-docker rm -f crss-neo4j
-docker volume rm crss_neo4j_data
-# Then re-run the docker run command above
+docker compose -f docker-compose.neo4j.yml stop    # pause
+docker compose -f docker-compose.neo4j.yml start   # resume
+docker compose -f docker-compose.neo4j.yml down    # remove the container (keeps ./neo4j data)
+rm -rf ./neo4j                                      # wipe the database entirely
 ```
 
 **Option B — Neo4j Desktop:**
 
-Download from [neo4j.com/download](https://neo4j.com/download/), create a local DBMS, and start it.
+Download from [neo4j.com/download](https://neo4j.com/download/), create a local
+DBMS (Bolt on 7687), start it, and use its password in your `.env`.
 
 ### 4. Environment Variables
 
@@ -108,7 +205,7 @@ Create a `.env` file at the project root:
 ```env
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USERNAME=neo4j
-NEO4J_PASSWORD=your_password
+NEO4J_PASSWORD=your_password        # use "testpassword" if you started Neo4j via the bundled Compose file
 MISTRAL_API_KEY=your_mistral_api_key
 
 # Only required to ingest/re-parse MDCG guidance PDFs (the `MDCG_*` docs).
@@ -242,7 +339,7 @@ python scripts/load_neo4j.py --doc 32024R1689 32017R0745 --wipe
 - **Guidance nodes (base label `:Guidance`):** `GuidanceDocument`, `GuidanceSection`, `GuidanceSubsection`, `GuidanceParagraph`, `GuidanceChart`
 - **Other nodes:** `DefinedTerm`, `ExternalAct`, `ActorRole`, `Community`
 - **Structural edges:** `HAS_PART` (ordered containment)
-- **Semantic edges (added by canonicalization):** `CITES` (internal cross-refs), `INTERPRETS` (crosslinker), `CITES_EXTERNAL` / `AMENDS` (external acts), `DEFINED_BY` (term → definition provision), `DELEGATES_TO` (enacting → annex), `USES_TERM` (provision → `DefinedTerm`), `MEMBER_OF` (provision → `Community`), `INSTANTIATES` / `INCLUDES_ROLE` / `OBLIGATION_OF` / `EQUIVALENT_ROLE` (actor-role edges)
+- **Semantic edges (added by canonicalization):** `CITES` (internal cross-refs), `INTERPRETS` (crosslinker), `CITES_EXTERNAL` / `AMENDS` (external acts), `DEFINED_BY` (term → definition provision), `DELEGATES_TO` (enacting → annex), `USES_TERM` (provision → `DefinedTerm`), `MEMBER_OF` (provision → `Community`), `INSTANTIATES` / `INCLUDES_ROLE` / `OBLIGATION_OF` / `EQUIVALENT_ROLE` (actor-role edges), `TRIGGERS_OBLIGATION_CLUSTER` / `IS_PREREQUISITE_FOR` / `REQUIRES_PRIOR_CHECK` / `DEROGATES_FROM` (curated legal-reasoning edges)
 - **Indexes:** Unique constraints on `Provision.id`, `Guidance.id`, `DefinedTerm.id`, `ActorRole.id`, `Community.id`; lookup indexes on `.celex`, `.kind`, `.community_id` for `:Provision`; `.celex`, `.kind` for `:Guidance`; `DefinedTerm.term_normalized`, `DefinedTerm.category`; `ActorRole.term_normalized`, `ActorRole.source_type`, `ActorRole.celex`; `Community.level`
 
 ### 3. Embed Provisions — `scripts/embed_provisions.py`
@@ -264,7 +361,9 @@ Runs the full post-load canonicalization pipeline in a safe execution order:
 2. `delegation_linker` — materializes `DELEGATES_TO` edges from enacting provisions to annex provisions
 3. `term_linker` — materializes `USES_TERM` edges from provisions and guidance nodes to `DefinedTerm`
 4. `role_linker` — materializes `ActorRole`, `INSTANTIATES`, `INCLUDES_ROLE`, `OBLIGATION_OF`, and `EQUIVALENT_ROLE`
-5. `community_linker` — runs per-regulation Louvain community detection, writes `Community` nodes (Level 0 and Level 1), `MEMBER_OF` edges, and `community_id` on each `:Provision`
+5. `provision_role_classifier` — assigns a `provision_role` (closed taxonomy) to every `:Provision` via deterministic rules
+6. `reasoning_linker` — loads the curated legal-reasoning edges (`TRIGGERS_OBLIGATION_CLUSTER`, `IS_PREREQUISITE_FOR`, `REQUIRES_PRIOR_CHECK`, `DEROGATES_FROM`) and `OBLIGATION_OF` patches. **Without this stage the retriever's reasoning-chain traversals return nothing**, so it runs by default.
+7. `community_linker` — runs per-regulation Louvain community detection, writes `Community` nodes (Level 0 and Level 1), `MEMBER_OF` edges, and `community_id` on each `:Provision`
 
 ```bash
 # Preview all stages without writing
@@ -281,7 +380,7 @@ python -m canonicalization --cleanup --no-communities
 |---|---|
 | `--dry-run` | Preview all canonicalization stages without writing to Neo4j |
 | `--cleanup` | Remove stale `ExternalAct` nodes and resolved `CITES_EXTERNAL` edges in the crosslinker stage |
-| `--no-communities` | Skip stage 5 (community detection); useful for quick re-runs after text-only changes |
+| `--no-communities` | Skip stage 7 (community detection); useful for quick re-runs after text-only changes |
 | `--community-seed N` | Deterministic random seed for Louvain community detection (default: 42) |
 
 Run this after loading documents into Neo4j so cross-document relationships and derived semantic edges stay current.
