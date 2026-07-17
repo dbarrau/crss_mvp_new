@@ -168,23 +168,28 @@ python scripts/test_agent.py
 
 ### Answer-quality eval (LLM judge; requires Neo4j + MISTRAL_API_KEY)
 ```bash
-python scripts/eval_answer_quality.py --judge-runs 3 --out eval/quality_vN.json
+python scripts/eval_answer_quality.py --judge-runs 3 --out quality_vN.json
 # Cross-family panel judge (defuses same-model self-preference bias). Providers
 # with no SDK/key are skipped; runs Mistral-only until a second key is added
 # (openai already installed; `pip install anthropic` enables the Claude judge):
 python scripts/eval_answer_quality.py \
   --judge-panel "mistral:mistral-large-latest,anthropic:claude-sonnet-5,openai:gpt-4o" \
-  --judge-runs 3 --out eval/quality_vN.json    # or set CRSS_JUDGE_PANEL
+  --judge-runs 3 --out quality_vN.json    # or set CRSS_JUDGE_PANEL
 ```
 The panel medians across the pooled judge calls and prints a per-judge
 breakdown; a large spread between the Mistral judge and the cross-family judges
 is the self-preference bias made visible. Run role-less single-shot cases with
 `CRSS_CLARIFY=0` so the scope gate does not stub them.
 
+Result files are archived under `eval/runs/` automatically: a bare `--out`
+filename (e.g. `--out quality_vN.json`) resolves there, while an explicit path
+is used as-is. Only the three inputs — `quality_set.json`, `golden_set.json`,
+`rubric_prompt.txt` — live directly in `eval/`.
+
 ### Graph-ablation eval (isolates the graph's contribution; no LLM judge)
 ```bash
-python scripts/eval_graph_ablation.py --retrieval-only --out eval/ablation_retrieval.json
-python scripts/eval_graph_ablation.py --out eval/ablation.json    # answer-level (2× generation/case)
+python scripts/eval_graph_ablation.py --retrieval-only --out ablation_retrieval.json
+python scripts/eval_graph_ablation.py --out ablation.json    # answer-level (2× generation/case)
 python scripts/eval_graph_ablation.py --case HQ_001 HQ_005 --limit 6
 ```
 Runs each keyed case twice against the same retriever/model — `CRSS_GRAPH_EXPANSION`

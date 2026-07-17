@@ -131,6 +131,7 @@ def _timeout_result(case: dict) -> dict:
         "answer_chars": 0,
         "answer": "",
         "judge_text": f"TIMEOUT after {_CASE_TIMEOUT_S}s",
+        "judge_panel": {},
         "timed_out": True,
     }
     _apply_reliance_gate(r)
@@ -175,36 +176,156 @@ def _majority_reliance(verdicts: list[str]) -> str:
     return max(tied, key=_RELIANCE_PHRASES.index)
 
 
-def _judge(prompt: str, model: str, runs: int) -> tuple[float | None, list[float], str, str]:
-    """Run the judge `runs` times.
+# ---------------------------------------------------------------------------
+# Judge panel — cross-family judging to defuse self-preference bias
+#
+# The answer generator is Mistral; grading with a Mistral judge invites
+# self-preference bias — an LLM systematically scores its own family's outputs
+# higher and prefers low-perplexity/familiar text ("Self-Preference Bias in
+# LLM-as-a-Judge", arXiv:2410.21819). Median-of-N runs on one model reduces
+# variance but NOT this bias. A panel of diverse-family judges is the standard
+# mitigation (Ensemble/Panel-as-Judges). The panel is provider-agnostic and
+# degrades gracefully: any provider whose SDK or API key is missing is skipped
+# with a warning, so this runs Mistral-only today and activates cross-family the
+# moment a key is added (openai is already installed; `pip install anthropic`
+# enables the Claude judge). Keeping each judge's own median in ``per_model``
+# makes the self-preference gap *visible* instead of averaging it away.
+#
+# Panel spec: comma-separated "provider:model" via --judge-panel or
+# CRSS_JUDGE_PANEL, e.g. "mistral:mistral-large-latest,anthropic:claude-sonnet-5".
+# ---------------------------------------------------------------------------
 
-    Returns ``(median_score, all_scores, majority_reliance, last_text)``.
-    Median (not mean) across runs: judge noise is heavy-tailed — one aberrant
-    grading drags a mean but not a median, so multi-run numbers destined for a
-    report should be run with ``--judge-runs 3``. The reliance verdict is
-    majority-voted across the same runs (ties break to the worse verdict).
+
+def _has_module(name: str) -> bool:
+    import importlib.util
+    return importlib.util.find_spec(name) is not None
+
+
+def _provider_available(provider: str) -> tuple[bool, str]:
+    """Return ``(available, reason_if_not)`` for a judge provider."""
+    if provider == "mistral":
+        ok = bool(os.environ.get("MISTRAL_API_KEY"))
+        return ok, "" if ok else "MISTRAL_API_KEY not set"
+    if provider == "openai":
+        if not _has_module("openai"):
+            return False, "openai SDK not installed"
+        ok = bool(os.environ.get("OPENAI_API_KEY"))
+        return ok, "" if ok else "OPENAI_API_KEY not set"
+    if provider == "anthropic":
+        if not _has_module("anthropic"):
+            return False, "anthropic SDK not installed (pip install anthropic)"
+        ok = bool(os.environ.get("ANTHROPIC_API_KEY"))
+        return ok, "" if ok else "ANTHROPIC_API_KEY not set"
+    return False, f"unknown provider {provider!r}"
+
+
+def _call_mistral(model: str, prompt: str) -> str:
+    from mistralai.client import Mistral
+    client = Mistral(api_key=os.environ["MISTRAL_API_KEY"])
+    resp = client.chat.complete(
+        model=model, temperature=0,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return resp.choices[0].message.content or ""
+
+
+def _call_openai(model: str, prompt: str) -> str:
+    from openai import OpenAI
+    client = OpenAI()  # reads OPENAI_API_KEY
+    resp = client.chat.completions.create(
+        model=model, temperature=0,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return resp.choices[0].message.content or ""
+
+
+def _call_anthropic(model: str, prompt: str) -> str:
+    import anthropic
+    client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY
+    resp = client.messages.create(
+        model=model, max_tokens=2000, temperature=0,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return "".join(
+        b.text for b in resp.content if getattr(b, "type", "") == "text"
+    )
+
+
+_PROVIDER_CALL = {
+    "mistral": _call_mistral,
+    "openai": _call_openai,
+    "anthropic": _call_anthropic,
+}
+
+
+def _parse_panel_spec(spec: str) -> list[tuple[str, str]]:
+    """Parse ``"provider:model,provider:model"`` into ``[(provider, model), …]``.
+
+    A bare model with no ``provider:`` prefix defaults to ``mistral`` so an old
+    ``--judge-model`` value passed through here still works.
+    """
+    panel: list[tuple[str, str]] = []
+    for item in spec.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if ":" in item:
+            provider, model = item.split(":", 1)
+            panel.append((provider.strip().lower(), model.strip()))
+        else:
+            panel.append(("mistral", item))
+    return panel
+
+
+def _resolve_panel(panel_spec: str | None, judge_model: str) -> list[tuple[str, str]]:
+    """Resolve the effective panel, dropping providers with no SDK/key."""
+    raw = _parse_panel_spec(panel_spec) if panel_spec else [("mistral", judge_model)]
+    resolved: list[tuple[str, str]] = []
+    for provider, model in raw:
+        ok, reason = _provider_available(provider)
+        if ok:
+            resolved.append((provider, model))
+        else:
+            print(f"  ⚠ judge {provider}:{model} skipped — {reason}", file=sys.stderr)
+    return resolved
+
+
+def _judge(
+    prompt: str, panel: list[tuple[str, str]], runs: int,
+) -> tuple[float | None, list[float], str, str, dict]:
+    """Run every model in *panel* *runs* times; aggregate across all calls.
+
+    Returns ``(median_score, all_scores, majority_reliance, last_text, per_model)``.
+    Median over the *pooled* judge calls (models × runs): a cross-family panel
+    both lowers variance and cancels each model's self-preference, since no one
+    family dominates the pool. ``per_model`` retains each judge's own median and
+    verdict so the self-preference gap can be inspected rather than hidden.
     """
     import statistics
 
-    from mistralai.client import Mistral
-
-    client = Mistral(api_key=os.environ["MISTRAL_API_KEY"])
-    scores: list[float] = []
-    verdicts: list[str] = []
+    all_scores: list[float] = []
+    all_verdicts: list[str] = []
+    per_model: dict[str, dict] = {}
     last_text = ""
-    for _ in range(runs):
-        resp = client.chat.complete(
-            model=model,
-            temperature=0,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        last_text = resp.choices[0].message.content or ""
-        s = _parse_score(last_text)
-        if s is not None:
-            scores.append(s)
-        verdicts.append(_parse_reliance(last_text))
-    agg = round(statistics.median(scores), 2) if scores else None
-    return agg, scores, _majority_reliance(verdicts), last_text
+    for provider, model in panel:
+        m_scores: list[float] = []
+        m_verdicts: list[str] = []
+        for _ in range(runs):
+            last_text = _PROVIDER_CALL[provider](model, prompt)
+            s = _parse_score(last_text)
+            if s is not None:
+                m_scores.append(s)
+                all_scores.append(s)
+            v = _parse_reliance(last_text)
+            m_verdicts.append(v)
+            all_verdicts.append(v)
+        per_model[f"{provider}:{model}"] = {
+            "median": round(statistics.median(m_scores), 2) if m_scores else None,
+            "scores": m_scores,
+            "reliance": _majority_reliance(m_verdicts),
+        }
+    agg = round(statistics.median(all_scores), 2) if all_scores else None
+    return agg, all_scores, _majority_reliance(all_verdicts), last_text, per_model
 
 
 # ---------------------------------------------------------------------------
@@ -290,7 +411,7 @@ def _run_case(
     rubric: str,
     *,
     k: int,
-    judge_model: str,
+    judge_panel: list[tuple[str, str]],
     judge_runs: int,
     answer_override: str | None,
 ) -> dict:
@@ -345,7 +466,7 @@ def _run_case(
     )
 
     tj = time.perf_counter()
-    agg, scores, reliance, judge_text = _judge(prompt, judge_model, judge_runs)
+    agg, scores, reliance, judge_text, per_model = _judge(prompt, judge_panel, judge_runs)
     judge_s = time.perf_counter() - tj
 
     result = {
@@ -361,23 +482,69 @@ def _run_case(
         "answer_chars": len(answer),
         "answer": answer,
         "judge_text": judge_text,
+        "judge_panel": per_model,
     }
     _apply_reliance_gate(result)
     return result
+
+
+def _compute_graph_delta(case: dict, retriever, *, k: int) -> dict:
+    """Retrieval-level graph-ablation delta for one case, fused into the quality
+    run. Reuses the ablation's retrieval-only arm — NO second generation: the
+    graph-on answer was already produced and judged above; here we only diff
+    retrieved-context ``must_cite`` coverage graph-on vs graph-off (~2 cheap
+    retrieval passes). This is the *unconfounded* delta (retrieval, not answer
+    text), the one worth trusting. Restores CRSS_GRAPH_EXPANSION=1 afterwards so
+    the next case still generates on the production (graph-on) path.
+    """
+    from scripts.eval_graph_ablation import _run_arm_retrieval
+    try:
+        full = _run_arm_retrieval(case, retriever, k=k, graph_on=True)
+        flat = _run_arm_retrieval(case, retriever, k=k, graph_on=False)
+    except Exception as exc:  # noqa: BLE001 — a delta failure must not sink the case
+        return {"error": str(exc)}
+    finally:
+        os.environ["CRSS_GRAPH_EXPANSION"] = "1"
+    full_missed = set(full.get("missed_cites") or [])
+    flat_missed = set(flat.get("missed_cites") or [])
+    rf, rl = full.get("cite_recall"), flat.get("cite_recall")
+    return {
+        "cite_recall_full": rf,
+        "cite_recall_flat": rl,
+        "cite_recall_delta": round(rf - rl, 3) if rf is not None and rl is not None else None,
+        "recovered_by_graph": sorted(flat_missed - full_missed),
+        "lost_by_graph": sorted(full_missed - flat_missed),
+    }
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="CRSS answer-quality eval (LLM judge)")
     ap.add_argument("--case", nargs="+", metavar="ID", help="Run only these case IDs")
     ap.add_argument("--k", type=int, default=20, help="Retrieval budget k (default: 20)")
-    ap.add_argument("--judge-model", default=os.environ.get("CRSS_JUDGE_MODEL", "mistral-large-latest"))
+    ap.add_argument("--judge-model", default=os.environ.get("CRSS_JUDGE_MODEL", "mistral-large-latest"),
+                    help="Single-judge model (used when --judge-panel is not given)")
+    ap.add_argument("--judge-panel", default=os.environ.get("CRSS_JUDGE_PANEL"),
+                    help='Cross-family judge panel, e.g. "mistral:mistral-large-latest,'
+                         'anthropic:claude-sonnet-5,openai:gpt-4o". Providers with no '
+                         'SDK/key are skipped. Defuses same-model self-preference bias.')
     ap.add_argument("--judge-runs", type=int, default=1,
-                    help="Judge calls per case, median-aggregated (use 3 for report numbers)")
+                    help="Judge calls per case PER MODEL, median-aggregated (use 3 for report numbers)")
     ap.add_argument("--answer-file", help="Grade this answer file instead of regenerating (single case only)")
-    ap.add_argument("--out", help="Write full JSON results to this path")
+    ap.add_argument("--out", help="Write full JSON results to this path (bare filename -> eval/runs/)")
+    ap.add_argument("--with-graph-delta", action="store_true",
+                    help="Also compute the retrieval-level graph-ablation delta per keyed case "
+                         "(reuses the retrieval phase — NO second generation; ~2 cheap retrieval "
+                         "passes/case). Surfaces the graph's cite-recall contribution alongside "
+                         "the quality score. Restores CRSS_GRAPH_EXPANSION=1 after each case.")
     ap.add_argument("--quiet", action="store_true", help="Suppress per-case judge text")
     ap.add_argument("--label", default="", help="Free-text tag stored in output (e.g. commit sha)")
     args = ap.parse_args()
+
+    # Default: archive runs under eval/runs/. A bare --out filename (no directory)
+    # resolves there; an explicit path (with a directory) is used as-is.
+    if args.out and os.path.dirname(args.out) == "":
+        (ROOT / "eval" / "runs").mkdir(parents=True, exist_ok=True)
+        args.out = str(ROOT / "eval" / "runs" / args.out)
 
     rubric = RUBRIC_PATH.read_text()
     cases: list[dict] = json.loads(QUALITY_SET_PATH.read_text())
@@ -395,8 +562,15 @@ def main() -> int:
             return 2
         answer_override = Path(args.answer_file).read_text()
 
+    panel = _resolve_panel(args.judge_panel, args.judge_model)
+    if not panel:
+        print("No judge providers available — set MISTRAL_API_KEY (or another "
+              "provider's SDK+key for the panel).", file=sys.stderr)
+        return 2
+    panel_str = ", ".join(f"{p}:{m}" for p, m in panel)
+
     if not args.quiet:
-        print(f"\nCRSS Answer-Quality Eval — {len(cases)} case(s), judge={args.judge_model}, label={args.label or '(none)'}")
+        print(f"\nCRSS Answer-Quality Eval — {len(cases)} case(s), judge panel=[{panel_str}], label={args.label or '(none)'}")
         print("Connecting to Neo4j and loading embeddings …")
     from retrieval.graph_retriever import GraphRetriever
     retriever = GraphRetriever()
@@ -407,7 +581,7 @@ def main() -> int:
         # Kill-safe: persist after every case so a hang/kill never loses the run.
         if args.out:
             Path(args.out).write_text(json.dumps(
-                {"label": args.label, "judge_model": args.judge_model,
+                {"label": args.label, "judge_panel": panel_str,
                  "partial": True, "results": results}, indent=2))
 
     def _attempt_case(case: dict) -> dict:
@@ -417,7 +591,7 @@ def main() -> int:
         try:
             return _run_case(
                 case, retriever, rubric,
-                k=args.k, judge_model=args.judge_model, judge_runs=args.judge_runs,
+                k=args.k, judge_panel=panel, judge_runs=args.judge_runs,
                 answer_override=answer_override,
             )
         except Exception as exc:  # noqa: BLE001 — one bad case must not kill the run
@@ -452,6 +626,8 @@ def main() -> int:
             results.append(r)
             _flush_partial()
             continue
+        if args.with_graph_delta and (case.get("answer_key") or {}).get("must_cite"):
+            r["graph_delta"] = _compute_graph_delta(case, retriever, k=args.k)
         results.append(r)
         _flush_partial()
         score_str = f"{r['score']}" if r["score"] is not None else "PARSE_FAIL"
@@ -469,7 +645,15 @@ def main() -> int:
             key_str = f"  key={'PASS' if kc['passed'] else 'FAIL'}"
             if kc.get("missed_cites"):
                 key_str += f" missed={kc['missed_cites']}"
-        print(f"  {r['id']}  score={score_str}/10  [{verdict}]  {faith_str}{key_str}  "
+        gd_str = ""
+        g = r.get("graph_delta")
+        if g and g.get("cite_recall_delta") is not None:
+            gd_str = f"  graphΔ={g['cite_recall_delta']:+.0%}"
+            if g["recovered_by_graph"]:
+                gd_str += f" +{g['recovered_by_graph']}"
+            if g["lost_by_graph"]:
+                gd_str += f" ⚠-{g['lost_by_graph']}"
+        print(f"  {r['id']}  score={score_str}/10  [{verdict}]  {faith_str}{key_str}{gd_str}  "
               f"(gen {r['gen_s']}s, judge {r['judge_s']}s)")
         if not args.quiet:
             print("\n" + "─" * 70)
@@ -497,6 +681,36 @@ def main() -> int:
         round(sum(r["answer_key_check"]["cite_recall"] for r in keyed) / len(keyed), 3)
         if keyed else None
     )
+
+    # Per-judge means across cases. With a cross-family panel this exposes the
+    # self-preference gap directly: if the Mistral judge sits well above the
+    # Claude/GPT judges on Mistral-generated answers, that spread IS the bias
+    # the single-model score would have hidden.
+    per_judge_scores: dict[str, list[float]] = {}
+    for r in graded:
+        for model_key, info in (r.get("judge_panel") or {}).items():
+            if info.get("median") is not None:
+                per_judge_scores.setdefault(model_key, []).append(info["median"])
+    per_judge_mean = {
+        m: round(sum(v) / len(v), 2) for m, v in per_judge_scores.items() if v
+    }
+
+    # Fused retrieval-level graph-ablation delta (only when --with-graph-delta).
+    gd = [r["graph_delta"] for r in results
+          if (r.get("graph_delta") or {}).get("cite_recall_delta") is not None]
+    graph_delta_summary = None
+    if gd:
+        gd_full = round(sum(g["cite_recall_full"] for g in gd) / len(gd), 3)
+        gd_flat = round(sum(g["cite_recall_flat"] for g in gd) / len(gd), 3)
+        graph_delta_summary = {
+            "n_cases": len(gd),
+            "mean_cite_recall_full": gd_full,
+            "mean_cite_recall_flat": gd_flat,
+            "mean_cite_recall_delta": round(gd_full - gd_flat, 3),
+            "cites_recovered_only_by_graph": sum(len(g["recovered_by_graph"]) for g in gd),
+            "cites_lost_by_graph": sum(len(g["lost_by_graph"]) for g in gd),
+        }
+
     summary = {
         "n_cases": len(results),
         "zero_critical_defect_rate_pct": zcd_rate,
@@ -505,20 +719,36 @@ def main() -> int:
             r["id"]: r["critical_defects"] for r in defective
         },
         "mean_score": mean_score,
+        "per_judge_mean_score": per_judge_mean,
         "answer_key_pass": f"{key_pass}/{len(keyed)}" if keyed else None,
         "mean_cite_recall": mean_cite_recall,
         "fabricated_total": tot_fab,
         "misattributed_total": tot_mis,
         "near_verbatim_total": tot_near,
+        "graph_delta": graph_delta_summary,
     }
     print(f"\n{'─' * 60}")
     print(f"  Zero-critical-defect: {zcd_rate}%  ({len(clean)}/{len(results)} cases)  ← headline")
     print(f"  Mean rubric score:   {mean_score}/10  ({len(graded)}/{len(results)} graded)")
+    if len(per_judge_mean) > 1:
+        spread = max(per_judge_mean.values()) - min(per_judge_mean.values())
+        print("  Per-judge means (self-preference check):")
+        for m, v in sorted(per_judge_mean.items(), key=lambda kv: kv[1], reverse=True):
+            print(f"    {m:<34} {v}/10")
+        print(f"    spread {spread:+.2f}  (large gap ⇒ the same-family judge was inflating)")
     if keyed:
         print(f"  Answer-key pass:     {key_pass}/{len(keyed)}  (mean cite-recall {mean_cite_recall:.0%})")
     print(f"  Fabricated quotes:   {tot_fab}  (must be ≤ baseline)")
     print(f"  Misattributed quotes:{tot_mis}  (must be ≤ baseline)")
     print(f"  Near-verbatim quotes:{tot_near}")
+    if graph_delta_summary:
+        gds = graph_delta_summary
+        print(f"  Graph cite-recall:   full {gds['mean_cite_recall_full']:.0%}  "
+              f"flat {gds['mean_cite_recall_flat']:.0%}  Δ {gds['mean_cite_recall_delta']:+.0%}  "
+              f"(retrieval-level, {gds['n_cases']} keyed cases)  ← graph contribution")
+        lost = gds['cites_lost_by_graph']
+        print(f"  Cites recovered only by graph: {gds['cites_recovered_only_by_graph']}"
+              + (f"   ⚠ lost by graph: {lost}  (investigate)" if lost else ""))
     if defective:
         print("  Critical cases:")
         for r in defective:
@@ -527,7 +757,7 @@ def main() -> int:
 
     out = {
         "label": args.label,
-        "judge_model": args.judge_model,
+        "judge_panel": panel_str,
         "summary": summary,
         "results": results,
     }
