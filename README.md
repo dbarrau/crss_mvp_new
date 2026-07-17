@@ -4,9 +4,9 @@ A GraphRAG system for EU regulatory compliance analysis. It ingests EU regulatio
 
 ## Architecture
 
-CRSS runs in two phases: an **offline build** (Act I) that turns official legal
-text into a knowledge graph, and an **online query** loop (Act II) that answers
-questions against it. Every step in the diagram is colour-coded by *how* it works
+CRSS has two paths: a **write path** (the offline build) that turns official
+legal text into a knowledge graph, and a **read path** (the online query loop)
+that reads that graph to answer questions. Every step in the diagram is colour-coded by *how* it works
 — **deterministic** code, a single **LLM call**, **expert-curated** legal
 knowledge, or stored **data** — so it is clear at a glance which parts are rules
 and which involve a model (the model writes prose in exactly one online step).
@@ -24,7 +24,7 @@ subgraph DOMAIN["DOMAIN — curated legal knowledge, version-controlled Python (
     SCHEMA["Graph schema<br/>node label + edge<br/>type contract"]:::cur
 end
 
-subgraph BUILD["ACT I · OFFLINE BUILD — once per document set"]
+subgraph BUILD["WRITE PATH · OFFLINE BUILD — once per document set"]
     direction LR
     SRC["Official sources<br/>EUR-Lex + MDCG PDFs"]:::store
     PARSE["Ingest &amp; parse<br/>structure tree · stable IDs"]:::det
@@ -47,7 +47,7 @@ end
 
 KG[("LEGAL KNOWLEDGE GRAPH — real legal text · semantic + curated edges")]:::store
 
-subgraph QUERY["ACT II · ONLINE — seconds per question"]
+subgraph QUERY["READ PATH · ONLINE QUERY — seconds per question"]
     direction LR
     Q(["Question"])
     ROUTE["1 · Route<br/>rule-based"]:::det
