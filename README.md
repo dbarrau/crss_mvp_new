@@ -4,6 +4,90 @@ A GraphRAG system for EU regulatory compliance analysis. It ingests EU regulatio
 
 ## Architecture
 
+CRSS runs in two phases: an **offline build** (Act I) that turns official legal
+text into a knowledge graph, and an **online query** loop (Act II) that answers
+questions against it. Every step in the diagram is colour-coded by *how* it works
+— **deterministic** code, a single **LLM call**, **expert-curated** legal
+knowledge, or stored **data** — so it is clear at a glance which parts are rules
+and which involve a model (the model writes prose in exactly one online step).
+
+```mermaid
+%%{init: {"flowchart": {"nodeSpacing": 24, "rankSpacing": 30, "curve": "basis"}, "themeVariables": {"fontSize": "13px", "fontFamily": "Helvetica Neue, Arial"}}}%%
+flowchart TB
+
+subgraph DOMAIN["DOMAIN — curated legal knowledge, version-controlled Python (no runtime, no LLM)"]
+    direction LR
+    CAT["Legislation catalog<br/>which documents · CELEX ids<br/>consolidated versions"]:::cur
+    RSPEC["Actor-role ontology<br/>role specs · composites ·<br/>cross-reg equivalences"]:::cur
+    TAXO["Provision-role taxonomy<br/>closed set + deterministic<br/>classification rules"]:::cur
+    CHAINS["Legal reasoning chains<br/>cross-reg dependencies ·<br/>obligation patches"]:::cur
+    SCHEMA["Graph schema<br/>node label + edge<br/>type contract"]:::cur
+end
+
+subgraph BUILD["ACT I · OFFLINE BUILD — once per document set"]
+    direction LR
+    SRC["Official sources<br/>EUR-Lex + MDCG PDFs"]:::store
+    PARSE["Ingest &amp; parse<br/>structure tree · stable IDs"]:::det
+    LOAD["Load into Neo4j<br/>:Provision · :Guidance"]:::store
+    EMBED["Embed + index<br/>e5-base 768d · BM25"]:::det
+    SRC --> PARSE --> LOAD --> EMBED
+end
+
+subgraph CANON["CANONICALIZATION — 7 enrichment stages, strict order"]
+    direction LR
+    C1["1 · Cross-linker<br/>CITES · INTERPRETS"]:::det
+    C2["2 · Delegation<br/>DELEGATES_TO"]:::det
+    C3["3 · Terms<br/>USES_TERM"]:::det
+    C4["4 · Actor roles<br/>OBLIGATION_OF"]:::det
+    C5["5 · Classifier<br/>provision_role"]:::det
+    C6["6 · Reasoning ★<br/>cross-reg chains"]:::cur
+    C7["7 · Communities<br/>MEMBER_OF"]:::llm
+    C1 --> C2 --> C3 --> C4 --> C5 --> C6 --> C7
+end
+
+KG[("LEGAL KNOWLEDGE GRAPH — real legal text · semantic + curated edges")]:::store
+
+subgraph QUERY["ACT II · ONLINE — seconds per question"]
+    direction LR
+    Q(["Question"])
+    ROUTE["1 · Route<br/>rule-based"]:::det
+    GATE{"2 · Actor role<br/>known?"}:::det
+    ASK["Ask which role<br/>the user holds"]:::det
+    RETR["3 · Retrieve<br/>vectors + BM25 + graph<br/>RRF + rerank"]:::det
+    CTX["4 · Context<br/>defs · provisions<br/>in statutory order"]:::det
+    GEN["5 · Generate<br/>Mistral — only<br/>prose-writing step"]:::llm
+    VER["6 · Verify<br/>quotes · citations<br/>jurisdiction"]:::det
+    ANS(["Answer + citations<br/>+ confidence"]):::cur
+
+    Q --> ROUTE --> GATE
+    GATE -- "missing" --> ASK
+    ASK -. "next turn" .-> Q
+    GATE -- "known" --> RETR
+    RETR --> CTX --> GEN --> VER --> ANS
+end
+
+DOMAIN -- "doc set to ingest" --> BUILD
+DOMAIN -- "specs executed by stages 4 · 5 · 6" --> CANON
+DOMAIN -. "schema contract" .-> KG
+BUILD --> CANON --> KG --> QUERY
+
+subgraph LEGEND["Legend"]
+    direction LR
+    LD["Deterministic"]:::det
+    LL["LLM call"]:::llm
+    LC["Expert-curated"]:::cur
+    LS["Data"]:::store
+end
+
+classDef det fill:#E3F0EB,stroke:#1F7A66,color:#143229
+classDef llm fill:#F8EADE,stroke:#A34E1C,color:#3A2312
+classDef cur fill:#F6EFDC,stroke:#A87E24,color:#3C2E0C
+classDef store fill:#E6ECF8,stroke:#2C4E9E,color:#16264A
+```
+
+<details>
+<summary>Plain-text overview (fallback for viewers that don't render Mermaid)</summary>
+
 ```
 EUR-Lex HTML ──▶ Parse ──▶ parsed.json ──▶ Neo4j Graph ──▶ Embeddings
                                                 │
@@ -15,6 +99,8 @@ EUR-Lex HTML ──▶ Parse ──▶ parsed.json ──▶ Neo4j Graph ──�
                                                 │
                                           Mistral LLM Agent ──▶ Answer
 ```
+
+</details>
 
 **Supported Regulations:**
 
