@@ -44,6 +44,13 @@ CRSS_CLARIFY=1                         # ON by default: ask-first scope gate. Wh
                                        # question omits the decisive actor role, CRSS asks which
                                        # role before answering instead of silently assuming one.
                                        # Set to 0 to disable (always answer single-shot).
+CRSS_GRAPH_EXPANSION=1                 # ON by default. Set to 0 for the graph-ablation baseline:
+                                       # the retriever + agent fall back to a flat dense+lexical
+                                       # RAG (article body kept, but every graph-reasoning edge —
+                                       # CITES/INTERPRETS, reverse cross-reg, role/chain/community
+                                       # traversal, curated backbones, corrective pass — removed).
+                                       # Only scripts/eval_graph_ablation.py should flip this;
+                                       # unset/"1" is byte-for-byte the production path.
 ```
 
 **Ask-first scope gate** (`application/_scoping.py`, deterministic, no LLM):
@@ -94,11 +101,15 @@ from sentence_transformers import CrossEncoder
 CrossEncoder("BAAI/bge-reranker-v2-m3", max_length=512)
 ```
 
-Neo4j via Docker:
+Neo4j via Docker Compose (`docker-compose.neo4j.yml` at the repo root):
 ```bash
-docker run -d --name crss-neo4j -p 7474:7474 -p 7687:7687 \
-  -e NEO4J_AUTH=neo4j/password -v crss_neo4j_data:/data neo4j:5-community
+docker compose -f docker-compose.neo4j.yml up -d
 ```
+The container is named `crss_neo4j` and listens on Bolt `7687` / browser `7474`.
+Data persists in `./neo4j/` (gitignored — rebuild via the ingest pipeline, never
+from git). The default password is `testpassword`; match it in `.env`'s
+`NEO4J_PASSWORD`, and set `NEO4J_URI=bolt://localhost:7687` (Bolt scheme, not the
+`7474` browser port).
 
 ## Commands
 
@@ -154,6 +165,36 @@ python scripts/chat.py        # type `debug` to toggle retrieval trace, `k=N` to
 ```bash
 python scripts/test_agent.py
 ```
+
+### Answer-quality eval (LLM judge; requires Neo4j + MISTRAL_API_KEY)
+```bash
+python scripts/eval_answer_quality.py --judge-runs 3 --out eval/quality_vN.json
+# Cross-family panel judge (defuses same-model self-preference bias). Providers
+# with no SDK/key are skipped; runs Mistral-only until a second key is added
+# (openai already installed; `pip install anthropic` enables the Claude judge):
+python scripts/eval_answer_quality.py \
+  --judge-panel "mistral:mistral-large-latest,anthropic:claude-sonnet-5,openai:gpt-4o" \
+  --judge-runs 3 --out eval/quality_vN.json    # or set CRSS_JUDGE_PANEL
+```
+The panel medians across the pooled judge calls and prints a per-judge
+breakdown; a large spread between the Mistral judge and the cross-family judges
+is the self-preference bias made visible. Run role-less single-shot cases with
+`CRSS_CLARIFY=0` so the scope gate does not stub them.
+
+### Graph-ablation eval (isolates the graph's contribution; no LLM judge)
+```bash
+python scripts/eval_graph_ablation.py --retrieval-only --out eval/ablation_retrieval.json
+python scripts/eval_graph_ablation.py --out eval/ablation.json    # answer-level (2× generation/case)
+python scripts/eval_graph_ablation.py --case HQ_001 HQ_005 --limit 6
+```
+Runs each keyed case twice against the same retriever/model — `CRSS_GRAPH_EXPANSION`
+on (full GraphRAG) vs off (flat dense+lexical RAG) — and diffs deterministic
+`must_cite` recall. **Prefer `--retrieval-only`** (checks the retrieved context,
+no generation, runs in minutes): answer-level recall is confounded by the LLM
+citing provisions from parametric memory that were never retrieved (measured
+Jul 2026: retrieval-level Δ +9pp, answer-level Δ +1.4pp — the gap is flat-RAG
+answers citing decisive provisions with no retrieved text behind them).
+Forces `CRSS_CLARIFY=0` itself.
 
 ### Re-parse without re-scraping (HTML cached)
 ```bash

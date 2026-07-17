@@ -1,5 +1,8 @@
 /data/
+# Neo4j store — ~1.2GB binary runtime data; rebuild via the ingest pipeline, never commit
+/neo4j/
 .env
+.env.bak.*
 __pycache__/
 *.pyc
 *.pyo
