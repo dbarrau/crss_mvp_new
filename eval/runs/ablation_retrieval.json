@@ -1,0 +1,1079 @@
+{
+  "summary": {
+    "n_cases": 37,
+    "k": 20,
+    "mode": "retrieval_only",
+    "mean_cite_recall_full": 0.986,
+    "mean_cite_recall_flat": 0.896,
+    "mean_cite_recall_delta": 0.09,
+    "cites_recovered_only_by_graph": 6,
+    "cites_lost_by_graph": 1,
+    "cases_improved": 4,
+    "cases_unchanged": 33,
+    "cases_regressed": 0
+  },
+  "results": [
+    {
+      "id": "HQ_001",
+      "label": "German hospital \u2014 multi-stage actor status transition (MDR 5(5) + AI Act provider/deployer)",
+      "n_must_cite": 2,
+      "full": {
+        "answer": "",
+        "gen_s": 11.7,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 40,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 10.1,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_003",
+      "label": "Benchmark \u2014 Class IIb SaMD with continuous learning, PROVIDER obligations (AI Act + MDR)",
+      "n_must_cite": 2,
+      "full": {
+        "answer": "",
+        "gen_s": 10.2,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 39,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 10.2,
+        "cite_recall": 0.0,
+        "state_recall": null,
+        "missed_cites": [
+          "Article 43",
+          "Article 16 or Article 17 or Article 19"
+        ],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 0.0,
+      "cite_recall_delta": 1.0,
+      "recovered_by_graph": [
+        "Article 16 or Article 17 or Article 19",
+        "Article 43"
+      ],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_004",
+      "label": "AI Act high-risk qualification \u2014 triage chatbot (Annex III vs Article 6(1))",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 9.9,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 29,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 9.6,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_005",
+      "label": "AI Act GPAI model provider \u2014 systemic-risk obligations (Article 53 + 55)",
+      "n_must_cite": 2,
+      "full": {
+        "answer": "",
+        "gen_s": 0.2,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 15,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 10.4,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_006",
+      "label": "AI Act prohibited practices \u2014 workplace emotion recognition (Article 5)",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 11.8,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 9.7,
+        "cite_recall": 0.0,
+        "state_recall": null,
+        "missed_cites": [
+          "Article 5"
+        ],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 0.0,
+      "cite_recall_delta": 1.0,
+      "recovered_by_graph": [
+        "Article 5"
+      ],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_007",
+      "label": "AI Act substantial modification \u2014 re-conformity of a high-risk system (Article 43(4))",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 0.2,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 43,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 9.3,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_008",
+      "label": "AI Act deployer obligations \u2014 distinguish from provider (Article 26)",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 0.2,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 16,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 9.7,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_009",
+      "label": "AI Act / MDR lex specialis \u2014 serious incident reporting overlap (Article 73(10))",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 9.8,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 25,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 9.8,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_010",
+      "label": "AI Act importer \u2014 verification duties for a high-risk system (Article 23)",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 0.2,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 16,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 9.8,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_011",
+      "label": "Definition precision \u2014 'AI system' under Article 3(1)",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 10.2,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 10.0,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_012",
+      "label": "MDR manufacturer obligations \u2014 Article 10",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 0.2,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 15,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 10.2,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_013",
+      "label": "MDR Class IIb conformity assessment route (Annex IX vs Annex X)",
+      "n_must_cite": 3,
+      "full": {
+        "answer": "",
+        "gen_s": 0.1,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 12,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 10.7,
+        "cite_recall": 0.667,
+        "state_recall": null,
+        "missed_cites": [
+          "Article 52"
+        ],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 0.667,
+      "cite_recall_delta": 0.333,
+      "recovered_by_graph": [
+        "Article 52"
+      ],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_014",
+      "label": "IVDR classification \u2014 Class B vs C (notified body involvement)",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 0.3,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 12,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 10.3,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_015",
+      "label": "MDR Article 5(5) health institution exemption \u2014 conditions and limits",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 0.3,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 15,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 10.5,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_016",
+      "label": "MDR transitional provisions \u2014 significant change to a legacy device (Article 120)",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 10.5,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 21,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 10.7,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_017",
+      "label": "MDR post-market surveillance and PMCF (Articles 83-86)",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 0.2,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 15,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 10.6,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_018",
+      "label": "MDR importer vs distributor obligations (Article 13 vs 14)",
+      "n_must_cite": 2,
+      "full": {
+        "answer": "",
+        "gen_s": 0.2,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 9,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 10.7,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_019",
+      "label": "MDR authorised representative mandate for a non-EU manufacturer (Article 11)",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 0.3,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 15,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 10.8,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_020",
+      "label": "SaMD qualification \u2014 clinical decision support as a medical device (MDCG 2019-11)",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 11.1,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 21,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 12.9,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_021",
+      "label": "MDR vigilance \u2014 serious incident vs FSCA reporting (Article 87)",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 0.2,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 15,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 13.5,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_022",
+      "label": "GDPR controller vs processor \u2014 SaMD cloud vendor (Articles 4, 24, 28)",
+      "n_must_cite": 2,
+      "full": {
+        "answer": "",
+        "gen_s": 14.4,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 15.2,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_023",
+      "label": "GDPR Article 28 \u2014 mandatory content of a data processing agreement",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 0.3,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 15,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 15.9,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_024",
+      "label": "GDPR lawful basis for health data in clinical AI (Articles 6 + 9)",
+      "n_must_cite": 2,
+      "full": {
+        "answer": "",
+        "gen_s": 17.8,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 30,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 15.5,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 21,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_025",
+      "label": "DPIA + AI Act interplay for high-risk patient-data processing (GDPR Article 35)",
+      "n_must_cite": 2,
+      "full": {
+        "answer": "",
+        "gen_s": 17.4,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 31,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 19.0,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 21,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_026",
+      "label": "Automated decision-making rights \u2014 high-risk AI + GDPR Article 22",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 16.6,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 31,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 17.0,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 21,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_027",
+      "label": "Wrong-premise trap \u2014 'we only deploy, so we're not a provider' (fine-tune + market)",
+      "n_must_cite": 2,
+      "full": {
+        "answer": "",
+        "gen_s": 19.3,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 17.1,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_028",
+      "label": "Genuine ambiguity \u2014 wellness app borderline MDR qualification",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 17.7,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 21,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 18.3,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_031",
+      "label": "Temporal interplay \u2014 AI Act + MDR entry-into-force for a 2025 device",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 19.7,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 24,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 18.8,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_032",
+      "label": "MDR notified body role and obligations (Articles 35-50, Annex VII)",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 0.2,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 15,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 20.0,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_033",
+      "label": "Notified body surveillance duties after QMS certification (MDR Annex IX/VII + Article 56)",
+      "n_must_cite": 2,
+      "full": {
+        "answer": "",
+        "gen_s": 0.2,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 15,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 20.4,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_034",
+      "label": "CIR 2026/977 \u2014 notified body re-certification timelines and quotations",
+      "n_must_cite": 2,
+      "full": {
+        "answer": "",
+        "gen_s": 21.1,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 30,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 22.4,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_036",
+      "label": "Wrong-premise trap \u2014 MDD 93/42/EEC classification rules for software",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 0.2,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 12,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 22.5,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_037",
+      "label": "Multi-turn clarify loop \u2014 role reply resolves to deployer obligations (AI Act Art 26)",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 22.1,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 22.2,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_038",
+      "label": "AI Act application dates \u2014 Article 113 timeline for high-risk and prohibitions",
+      "n_must_cite": 1,
+      "full": {
+        "answer": "",
+        "gen_s": 0.2,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 6,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 23.5,
+        "cite_recall": 0.0,
+        "state_recall": null,
+        "missed_cites": [
+          "Article 113"
+        ],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 0.0,
+      "cite_recall_delta": 1.0,
+      "recovered_by_graph": [
+        "Article 113"
+      ],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_039",
+      "label": "Negative space \u2014 obligations for a NON-high-risk AI provider (draft-numbering trap)",
+      "n_must_cite": 2,
+      "full": {
+        "answer": "",
+        "gen_s": 0.2,
+        "cite_recall": 0.5,
+        "state_recall": null,
+        "missed_cites": [
+          "Article 50"
+        ],
+        "n_provisions": 15,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 22.6,
+        "cite_recall": 0.5,
+        "state_recall": null,
+        "missed_cites": [
+          "Article 4"
+        ],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 0.5,
+      "cite_recall_flat": 0.5,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [
+        "Article 4"
+      ],
+      "lost_by_graph": [
+        "Article 50"
+      ]
+    },
+    {
+      "id": "HQ_040",
+      "label": "Negative space \u2014 GPAI value chain under FINAL numbering (draft Article 28 trap)",
+      "n_must_cite": 2,
+      "full": {
+        "answer": "",
+        "gen_s": 26.0,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 25.4,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    },
+    {
+      "id": "HQ_041",
+      "label": "Negative space \u2014 GDPR consent validity under power imbalance (recital-grounded)",
+      "n_must_cite": 3,
+      "full": {
+        "answer": "",
+        "gen_s": 0.3,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 19,
+        "answer_chars": 0
+      },
+      "flat": {
+        "answer": "",
+        "gen_s": 28.2,
+        "cite_recall": 1.0,
+        "state_recall": null,
+        "missed_cites": [],
+        "n_provisions": 20,
+        "answer_chars": 0
+      },
+      "cite_recall_full": 1.0,
+      "cite_recall_flat": 1.0,
+      "cite_recall_delta": 0.0,
+      "recovered_by_graph": [],
+      "lost_by_graph": []
+    }
+  ]
+}
