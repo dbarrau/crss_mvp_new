@@ -216,6 +216,11 @@ def _provider_available(provider: str) -> tuple[bool, str]:
             return False, "anthropic SDK not installed (pip install anthropic)"
         ok = bool(os.environ.get("ANTHROPIC_API_KEY"))
         return ok, "" if ok else "ANTHROPIC_API_KEY not set"
+    if provider == "gemini":
+        if not _has_module("google.genai"):
+            return False, "google-genai SDK not installed (pip install google-genai)"
+        ok = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
+        return ok, "" if ok else "GEMINI_API_KEY/GOOGLE_API_KEY not set"
     return False, f"unknown provider {provider!r}"
 
 
@@ -251,10 +256,22 @@ def _call_anthropic(model: str, prompt: str) -> str:
     )
 
 
+def _call_gemini(model: str, prompt: str) -> str:
+    from google import genai
+    from google.genai import types
+    client = genai.Client()  # reads GEMINI_API_KEY or GOOGLE_API_KEY
+    resp = client.models.generate_content(
+        model=model, contents=prompt,
+        config=types.GenerateContentConfig(temperature=0),
+    )
+    return resp.text or ""
+
+
 _PROVIDER_CALL = {
     "mistral": _call_mistral,
     "openai": _call_openai,
     "anthropic": _call_anthropic,
+    "gemini": _call_gemini,
 }
 
 

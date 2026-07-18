@@ -170,10 +170,12 @@ python scripts/test_agent.py
 ```bash
 python scripts/eval_answer_quality.py --judge-runs 3 --out quality_vN.json
 # Cross-family panel judge (defuses same-model self-preference bias). Providers
-# with no SDK/key are skipped; runs Mistral-only until a second key is added
-# (openai already installed; `pip install anthropic` enables the Claude judge):
+# with no SDK/key are skipped; runs Mistral-only until a second key is added.
+# openai + google-genai SDKs are installed: set GEMINI_API_KEY (or GOOGLE_API_KEY)
+# for the Gemini judge, OPENAI_API_KEY for GPT, or `pip install anthropic` + key
+# for Claude. Any ONE cross-family judge already defuses the bias:
 python scripts/eval_answer_quality.py \
-  --judge-panel "mistral:mistral-large-latest,anthropic:claude-sonnet-5,openai:gpt-4o" \
+  --judge-panel "mistral:mistral-large-latest,gemini:gemini-2.5-pro" \
   --judge-runs 3 --out quality_vN.json    # or set CRSS_JUDGE_PANEL
 ```
 The panel medians across the pooled judge calls and prints a per-judge
