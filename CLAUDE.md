@@ -175,12 +175,15 @@ python scripts/eval_answer_quality.py --judge-runs 3 --out quality_vN.json
 # for the Gemini judge, OPENAI_API_KEY for GPT, or `pip install anthropic` + key
 # for Claude. Any ONE cross-family judge already defuses the bias:
 python scripts/eval_answer_quality.py \
-  --judge-panel "mistral:mistral-large-latest,openai:gpt-4.1,gemini:gemini-flash-latest" \
+  --judge-panel "mistral:mistral-large-latest,openai:gpt-4.1" \
   --judge-runs 3 --out quality_vN.json    # or set CRSS_JUDGE_PANEL
-# Use CURRENT model ids: gpt-4.1 (not gpt-4o — later cutoff, post-final-AI-Act) and
-# gemini-flash-latest (new Gemini keys 404 on pinned gemini-2.5-*/2.0-* ids; only
-# the -latest aliases resolve). Sanity-check any new judge model with ONE call
-# before a full run — a bad id or unsupported temperature errors every case.
+# mistral + gpt-4.1 are the two frontier-grade judges (measured Jul 2026: they agree
+# within 0.30, so the feared Mistral self-preference is small). Use gpt-4.1 not
+# gpt-4o (later cutoff, knows the final AI Act). For a 3rd family use gemini-2.5-pro
+# (needs the PAID Gemini tier); gemini-flash-latest is NOT judge-grade — it scored
+# ~1.3 low and, via tie-break-to-worse, vetoed clean answers. New Gemini keys 404 on
+# pinned gemini-2.5-*/2.0-* ids; only -latest aliases resolve. Sanity-check any new
+# judge model with ONE call first — a bad id / unsupported temperature errors every case.
 ```
 The panel medians across the pooled judge calls and prints a per-judge
 breakdown; a large spread between the Mistral judge and the cross-family judges
