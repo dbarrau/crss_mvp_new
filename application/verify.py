@@ -130,16 +130,49 @@ def _apply_faithfulness(
             # excised. Only the unrepairable remainder is redacted + flagged.
             # Disable with CRSS_QUOTE_REPAIR=0 (falls back to redact-only).
             if os.environ.get("CRSS_QUOTE_REPAIR", "1") != "0":
-                answer, residual, repair_notes = repair_and_redact(
-                    answer, report, provisions, definitions
-                )
+                if faith_mode == 2:
+                    # Strict tier: deterministic repairs first (leftovers kept in
+                    # place), then one narrowly-scoped LLM adjudication per
+                    # residual offender (replace-by-exact-copy / demote / delete
+                    # — see _faithfulness_repair), then a final deterministic
+                    # pass that redacts whatever still fails. The LLM authors no
+                    # free text (replacements must verify as exact corpus
+                    # substrings), so the worst case is byte-identical to mode 1.
+                    answer, _partial, repair_notes = repair_and_redact(
+                        answer, report, provisions, definitions,
+                        redact_residuals=False,
+                    )
+                    interim = check_faithfulness(
+                        answer, provisions, definitions, question=question
+                    )
+                    if not interim.ok:
+                        try:
+                            from application._faithfulness_repair import (
+                                llm_repair_residuals,
+                            )
+                            answer, llm_notes = llm_repair_residuals(
+                                answer, interim, provisions, definitions
+                            )
+                            repair_notes = list(repair_notes) + llm_notes
+                        except Exception as exc:  # noqa: BLE001 — strict tier is best-effort
+                            logger.warning("LLM quote repair skipped: %s", exc)
+                    residual = check_faithfulness(
+                        answer, provisions, definitions, question=question
+                    )
+                    if not residual.ok:
+                        answer = remove_unverified_quotes(answer, residual)
+                else:
+                    answer, residual, repair_notes = repair_and_redact(
+                        answer, report, provisions, definitions
+                    )
                 note = build_repair_note(repair_notes)
                 if note:
                     answer = f"{answer}\n\n{note}"
                 block = build_warning_block(residual)
                 if repair_notes:
                     logger.info(
-                        "Quote repair: %d repaired, %d still removed.",
+                        "Quote repair%s: %d repaired, %d still removed.",
+                        " (strict)" if faith_mode == 2 else "",
                         len(repair_notes), len(residual.removed),
                     )
             else:
@@ -162,11 +195,6 @@ def _apply_faithfulness(
         else:
             logger.debug(
                 "Faithfulness check: all %d quote(s) verified", report.total_quotes
-            )
-        if faith_mode == 2:
-            logger.warning(
-                "CRSS_FAITHFULNESS_CHECK=2 (strict) is not yet implemented; "
-                "behaving as flag mode."
             )
     except Exception as exc:  # noqa: BLE001 — self-check is best-effort
         logger.warning("Faithfulness check skipped: %s", exc)

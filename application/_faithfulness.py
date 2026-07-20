@@ -1015,14 +1015,47 @@ def _unique_grounding_ref(
     return max(candidates, key=len)
 
 
-def _citation_ref_span(answer: str, quote_start: int) -> tuple[int, int] | None:
-    """Span of the citation ref immediately preceding a quote, if any."""
+def _citation_ref_span(
+    answer: str, quote_start: int, quote_end: int | None = None
+) -> tuple[int, int] | None:
+    """Span of the citation label a repoint must edit for a quote.
+
+    Mirrors :func:`_nearest_citation_ref`'s selection exactly — last label in
+    the before-window vs the same-line cite-after label, nearest to the quote
+    wins — so the repair re-points the very label the checker adjudicated
+    against. Before this mirrored the checker, a cite-after misattribution
+    (``“…” (Article 10)``) was flaggable but structurally unfixable: both
+    repair tiers searched only the before-window, so the offender was redacted
+    on every run (HQ_006's chronic pattern).
+    """
     lo = max(0, quote_start - _ATTRIBUTION_WINDOW)
-    matches = list(_CITATION_REF_RE.finditer(answer[lo:quote_start]))
-    if not matches:
+    window = answer[lo:quote_start]
+    # (distance-to-quote, label match, absolute offset of the searched string)
+    best: tuple[int, "re.Match[str]", int] | None = None
+    matches = list(_ATTRIBUTION_LABEL_RE.finditer(window))
+    if matches:
+        last = matches[-1]
+        best = (len(window) - last.end(), last, lo)
+    if quote_end is not None:
+        after = answer[quote_end : quote_end + _ATTRIBUTION_AFTER_WINDOW]
+        newline = after.find("\n")
+        if newline != -1:
+            after = after[:newline]
+        trailing = _ATTRIBUTION_LABEL_RE.search(after)
+        if trailing and (best is None or trailing.start() < best[0]):
+            best = (trailing.start(), trailing, quote_end)
+    if best is None:
         return None
-    m = matches[-1]
-    return lo + m.start(1), lo + m.end(1)
+    _dist, label, base = best
+    if label.group("blocker"):
+        return None   # non-adjudicable label — the checker never flagged via it
+    head = _CITATION_REF_RE.search(label.group("cite"))
+    if not head:
+        return None
+    return (
+        base + label.start("cite") + head.start(1),
+        base + label.start("cite") + head.end(1),
+    )
 
 
 def repair_and_redact(
@@ -1030,8 +1063,16 @@ def repair_and_redact(
     report: FaithfulnessReport,
     provisions: list[dict[str, Any]],
     definitions: list[dict[str, Any]] | None = None,
+    *,
+    redact_residuals: bool = True,
 ) -> tuple[str, FaithfulnessReport, list[str]]:
     """Repair what verification already solved; redact only the remainder.
+
+    With ``redact_residuals=False`` the deterministic repairs are applied but
+    unrepairable offenders are left *in place* (their offsets in the residual
+    report may be stale after edits — re-run :func:`check_faithfulness` on the
+    returned text for fresh spans). This is the strict-mode (mode 2) entry: the
+    LLM repair tier gets one shot at the residuals before final redaction.
 
     Per offending quote, in one descending-offset pass (so earlier edits never
     invalidate later offsets):
@@ -1094,7 +1135,7 @@ def repair_and_redact(
             residual_misattributed.append(q)   # dump, not a quotation
             continue
         true_ref = _unique_grounding_ref(q.text, source_map)
-        ref_span = _citation_ref_span(answer, q.start)
+        ref_span = _citation_ref_span(answer, q.start, q.end)
         if true_ref and true_ref in raw_sources and ref_span:
             payload: dict[str, Any] = {
                 "ref_span": ref_span,
@@ -1130,8 +1171,9 @@ def repair_and_redact(
         if kind == "repoint":
             lo, hi = payload["ref_span"]
             edits.append((lo, hi, payload["ref_text"]))
-    for q in residual_unverified + residual_misattributed:
-        edits.append((q.start, q.end, _REDACTION_MARKER))
+    if redact_residuals:
+        for q in residual_unverified + residual_misattributed:
+            edits.append((q.start, q.end, _REDACTION_MARKER))
 
     repaired = answer
     for start, end, replacement in sorted(edits, key=lambda e: e[0], reverse=True):
@@ -1175,7 +1217,9 @@ def faithfulness_mode(value: str | None) -> int:
     """Parse the ``CRSS_FAITHFULNESS_CHECK`` env value to an integer mode.
 
     Returns 0 (off), 1 (flag), or 2 (strict).  Unknown values fall back to 0.
-    Mode 2 currently behaves as mode 1 at the integration layer.
+    Mode 2 (strict) adds the LLM-assisted repair tier for offenders the
+    deterministic repair cannot fix (see ``application/_faithfulness_repair``);
+    the integration lives in ``application/verify.py``.
     """
     if value is None:
         return 0

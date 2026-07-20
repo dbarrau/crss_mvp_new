@@ -38,8 +38,14 @@ CRSS_RERANKER=1                        # set to 0 to disable cross-encoder reran
 CRSS_RERANKER_MODEL=BAAI/bge-reranker-v2-m3  # default reranker; override if needed
 CRSS_FAITHFULNESS_CHECK=1              # ON by default: verify every verbatim quote against the
                                        # retrieved corpus (provisions + definitions + guidance);
-                                       # unverified quotes are redacted + a warning is prepended.
-                                       # Set to 0 to disable; 2 (strict) reserved for future re-prompt.
+                                       # unverified quotes are deterministically repaired where
+                                       # possible, else redacted + flagged. Set to 0 to disable.
+                                       # 2 (strict) adds an LLM repair tier for the residuals the
+                                       # deterministic repair can't fix (own-prose-in-quote-marks,
+                                       # memory quotes): replace-by-exact-copy / demote / delete,
+                                       # each gated on deterministic re-verification — worst case
+                                       # identical to mode 1 (application/_faithfulness_repair.py).
+CRSS_REPAIR_MODEL=mistral-medium-latest # strict-tier (mode 2) quote-repair model
 CRSS_CLARIFY=1                         # ON by default: ask-first scope gate. When an obligation
                                        # question omits the decisive actor role, CRSS asks which
                                        # role before answering instead of silently assuming one.
