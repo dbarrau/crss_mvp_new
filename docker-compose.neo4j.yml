@@ -14,3 +14,9 @@ services:
       - ./neo4j/data:/data
       - ./neo4j/logs:/logs
       - ./neo4j/import:/var/lib/neo4j/import
+    # Ephemeral run dir. A stale neo4j.pid left here by an unclean stop is what
+    # wedges `restart: unless-stopped` into the "Neo4j is already running (pid:N)"
+    # crash loop (hit twice this session). tmpfs is wiped on every container start,
+    # so the pidfile can never persist to block the next boot.
+    tmpfs:
+      - /var/lib/neo4j/run

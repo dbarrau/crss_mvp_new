@@ -38,8 +38,14 @@ CRSS_RERANKER=1                        # set to 0 to disable cross-encoder reran
 CRSS_RERANKER_MODEL=BAAI/bge-reranker-v2-m3  # default reranker; override if needed
 CRSS_FAITHFULNESS_CHECK=1              # ON by default: verify every verbatim quote against the
                                        # retrieved corpus (provisions + definitions + guidance);
-                                       # unverified quotes are redacted + a warning is prepended.
-                                       # Set to 0 to disable; 2 (strict) reserved for future re-prompt.
+                                       # unverified quotes are deterministically repaired where
+                                       # possible, else redacted + flagged. Set to 0 to disable.
+                                       # 2 (strict) adds an LLM repair tier for the residuals the
+                                       # deterministic repair can't fix (own-prose-in-quote-marks,
+                                       # memory quotes): replace-by-exact-copy / demote / delete,
+                                       # each gated on deterministic re-verification — worst case
+                                       # identical to mode 1 (application/_faithfulness_repair.py).
+CRSS_REPAIR_MODEL=mistral-medium-latest # strict-tier (mode 2) quote-repair model
 CRSS_CLARIFY=1                         # ON by default: ask-first scope gate. When an obligation
                                        # question omits the decisive actor role, CRSS asks which
                                        # role before answering instead of silently assuming one.
@@ -90,6 +96,11 @@ whose text is absent from the specific provision its nearest `[Article X]` label
 cites (parent articles count, e.g. Article 43 grounds an `Article 43(4)` cite).
 Misattribution stays silent when the cited provision was never retrieved, so it
 cannot adjudicate and never false-flags.
+
+For a full walkthrough of the runtime verify stage — the fixed order of the
+citation guards, the faithfulness check's classify→repair→redact flow, the
+strict-tier LLM repair, and the pre-repair-confidence rationale — see
+[`docs/faithfulness_check.md`](docs/faithfulness_check.md).
 
 Retrieval combines a dense (cosine) channel with a lexical (Neo4j BM25 full-text)
 channel fused via Reciprocal Rank Fusion; an optional cross-encoder reranker runs
@@ -168,23 +179,37 @@ python scripts/test_agent.py
 
 ### Answer-quality eval (LLM judge; requires Neo4j + MISTRAL_API_KEY)
 ```bash
-python scripts/eval_answer_quality.py --judge-runs 3 --out eval/quality_vN.json
+python scripts/eval_answer_quality.py --judge-runs 3 --out quality_vN.json
 # Cross-family panel judge (defuses same-model self-preference bias). Providers
-# with no SDK/key are skipped; runs Mistral-only until a second key is added
-# (openai already installed; `pip install anthropic` enables the Claude judge):
+# with no SDK/key are skipped; runs Mistral-only until a second key is added.
+# openai + google-genai SDKs are installed: set GEMINI_API_KEY (or GOOGLE_API_KEY)
+# for the Gemini judge, OPENAI_API_KEY for GPT, or `pip install anthropic` + key
+# for Claude. Any ONE cross-family judge already defuses the bias:
 python scripts/eval_answer_quality.py \
-  --judge-panel "mistral:mistral-large-latest,anthropic:claude-sonnet-5,openai:gpt-4o" \
-  --judge-runs 3 --out eval/quality_vN.json    # or set CRSS_JUDGE_PANEL
+  --judge-panel "mistral:mistral-large-latest,openai:gpt-4.1" \
+  --judge-runs 3 --out quality_vN.json    # or set CRSS_JUDGE_PANEL
+# mistral + gpt-4.1 are the two frontier-grade judges (measured Jul 2026: they agree
+# within 0.30, so the feared Mistral self-preference is small). Use gpt-4.1 not
+# gpt-4o (later cutoff, knows the final AI Act). For a 3rd family use gemini-2.5-pro
+# (needs the PAID Gemini tier); gemini-flash-latest is NOT judge-grade — it scored
+# ~1.3 low and, via tie-break-to-worse, vetoed clean answers. New Gemini keys 404 on
+# pinned gemini-2.5-*/2.0-* ids; only -latest aliases resolve. Sanity-check any new
+# judge model with ONE call first — a bad id / unsupported temperature errors every case.
 ```
 The panel medians across the pooled judge calls and prints a per-judge
 breakdown; a large spread between the Mistral judge and the cross-family judges
 is the self-preference bias made visible. Run role-less single-shot cases with
 `CRSS_CLARIFY=0` so the scope gate does not stub them.
 
+Result files are archived under `eval/runs/` automatically: a bare `--out`
+filename (e.g. `--out quality_vN.json`) resolves there, while an explicit path
+is used as-is. Only the three inputs — `quality_set.json`, `golden_set.json`,
+`rubric_prompt.txt` — live directly in `eval/`.
+
 ### Graph-ablation eval (isolates the graph's contribution; no LLM judge)
 ```bash
-python scripts/eval_graph_ablation.py --retrieval-only --out eval/ablation_retrieval.json
-python scripts/eval_graph_ablation.py --out eval/ablation.json    # answer-level (2× generation/case)
+python scripts/eval_graph_ablation.py --retrieval-only --out ablation_retrieval.json
+python scripts/eval_graph_ablation.py --out ablation.json    # answer-level (2× generation/case)
 python scripts/eval_graph_ablation.py --case HQ_001 HQ_005 --limit 6
 ```
 Runs each keyed case twice against the same retriever/model — `CRSS_GRAPH_EXPANSION`
