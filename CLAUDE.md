@@ -97,6 +97,11 @@ cites (parent articles count, e.g. Article 43 grounds an `Article 43(4)` cite).
 Misattribution stays silent when the cited provision was never retrieved, so it
 cannot adjudicate and never false-flags.
 
+For a full walkthrough of the runtime verify stage — the fixed order of the
+citation guards, the faithfulness check's classify→repair→redact flow, the
+strict-tier LLM repair, and the pre-repair-confidence rationale — see
+[`docs/faithfulness_check.md`](docs/faithfulness_check.md).
+
 Retrieval combines a dense (cosine) channel with a lexical (Neo4j BM25 full-text)
 channel fused via Reciprocal Rank Fusion; an optional cross-encoder reranker runs
 downstream. The BM25 index is created idempotently on first `GraphRetriever()` init.
