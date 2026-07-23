@@ -1,0 +1,47 @@
+%%{init: {"flowchart": {"nodeSpacing": 20, "rankSpacing": 28, "curve": "basis"}, "themeVariables": {"fontSize": "13px", "fontFamily": "Helvetica Neue, Arial"}}}%%
+flowchart TB
+
+DRAFT(["Draft answer<br/>from 5 · Generate"]):::store
+
+subgraph VER["STEP 6 · VERIFY — verify_answer()"]
+  direction TB
+
+  G1["6.1 · Citation-scope diagnostic<br/>single-reg only · logs unretrieved<br/>refs · answer NOT changed"]:::det
+  G2["6.2 · Jurisdiction guard<br/>strip non-EU statute cites<br/>(US 21 CFR) typed from memory"]:::det
+  G3["6.3 · Phantom guard<br/>strip cites to provisions absent<br/>from the graph (draft 'Art 4a')"]:::det
+
+  subgraph FC["6.4 · FAITHFULNESS CHECK"]
+    direction TB
+    EX["Extract quotes<br/>≥ 40 chars · smart/guillemet"]:::det
+    CL{"Ground each quote<br/>vs corpus + question"}:::det
+    KEPT["verified · near-verbatim ·<br/>illustrative<br/>→ KEPT (grounded)"]:::det
+    OFF["fabricated — grounds nowhere<br/>misattributed — real text, but<br/>not in the cited provision"]:::det
+    DR["Deterministic repair<br/>swap in the source's exact words ·<br/>re-point the wrong citation label"]:::det
+    RQ{"offenders<br/>still unfixed?"}:::det
+    SL["Strict tier · mode 2 ONLY<br/>one LLM call/quote:<br/>replace* · demote · delete<br/>*applied only if an exact corpus copy"]:::llm
+    RED["Re-verify · redact any remainder […]<br/>worst case = flag mode"]:::det
+
+    EX --> CL
+    CL -->|grounded| KEPT
+    CL -->|offender| OFF
+    OFF --> DR --> RQ
+    RQ -->|"mode 1"| RED
+    RQ -->|"mode 2"| SL --> RED
+  end
+
+  OUT["Append blocks<br/>repair note (if anything fixed)<br/>FAITHFULNESS / ATTRIBUTION FLAG<br/>(if any offender survives)"]:::cur
+  CONF["6.5 · Confidence<br/>reads the PRE-repair report —<br/>fabrication lowers the score even<br/>when the shipped answer is clean"]:::det
+
+  G1 --> G2 --> G3 --> EX
+  KEPT --> OUT
+  RED --> OUT
+  OUT --> CONF
+end
+
+DRAFT --> G1
+CONF --> ANS(["Answer + citations<br/>+ confidence → user"]):::cur
+
+classDef det fill:#E3F0EB,stroke:#1F7A66,color:#143229
+classDef llm fill:#F8EADE,stroke:#A34E1C,color:#3A2312
+classDef cur fill:#F6EFDC,stroke:#A87E24,color:#3C2E0C
+classDef store fill:#E6ECF8,stroke:#2C4E9E,color:#16264A
