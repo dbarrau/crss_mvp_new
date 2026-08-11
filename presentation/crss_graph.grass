@@ -1,0 +1,212 @@
+/* ============================================================================
+   CRSS — Neo4j Browser graph stylesheet (GRASS)
+   Standardises captions, colours and sizes so every node shows a legible
+   reference instead of a blank coloured circle.
+
+   HOW TO LOAD (Neo4j Browser at http://localhost:7474):
+     1. (optional, if the view looks messy)  type:  :style reset
+     2. Drag THIS FILE onto the Browser window  ->  it applies immediately
+        and persists in the browser's local storage.
+     To revert to Neo4j defaults at any time:  :style reset
+
+   CAPTION SOURCES (verified against the live graph, Aug 2026):
+     - every :Provision node (Article, Annex, Chapter, ...) -> {display_ref}
+     - :Document        -> {regulation_id}  ("EU AI Act", "IVDR 2017/746", ...)
+     - :Community       -> {label}          ("Chapter III (32016R0679)")
+     - :DefinedTerm     -> {term}           ("medical device")
+     - :ActorRole       -> {term}           ("manufacturer")
+     - :ExternalAct     -> {ref_text}       ("Council Directive 93/13/EEC")
+     - :Guidance*       -> {display_ref}     ("MDCG 2021-24", section titles)
+
+   Design note: every regulation node carries BOTH a specific label AND the
+   umbrella :Provision label. Colours are therefore defined ONLY on the
+   specific labels (Article, Annex, ...) and NEVER on :Provision, so there is
+   no label-precedence fight — each node has exactly one colour rule. The base
+   `node` caption ({display_ref}) is the catch-all that also covers the 96
+   bare-:Provision "indent" nodes.
+   ============================================================================ */
+
+/* ---- base defaults (catch-all; also styles bare :Provision indent nodes) ---- */
+node {
+  diameter: 45px;
+  color: #C7CAD1;
+  border-color: #A5ABB6;
+  border-width: 2px;
+  text-color-internal: #26282E;
+  font-size: 11px;
+  caption: '{display_ref}';
+}
+
+relationship {
+  color: #B0B6BF;
+  shaft-width: 1.5px;
+  font-size: 9px;
+  padding: 3px;
+  text-color-external: #4A4A4A;
+  text-color-internal: #FFFFFF;
+  caption: '<type>';
+}
+
+/* ======================= STRUCTURE / CONTAINERS (slate) ===================== */
+node.Document {
+  color: #5B6B7B;
+  border-color: #43505C;
+  text-color-internal: #FFFFFF;
+  diameter: 80px;
+  caption: '{regulation_id}';
+}
+/* Chapter/Section caption via {display_caption} = title (AI Act headings like
+   "HIGH-RISK AI SYSTEMS") or the ref ("Chapter II") where the older-reg parser
+   dropped the heading. Run scripts/backfill_display_captions.py to populate it. */
+node.Chapter {
+  color: #94A3B2;
+  border-color: #74828F;
+  text-color-internal: #FFFFFF;
+  diameter: 55px;
+  caption: '{display_caption}';
+}
+node.Section {
+  color: #AEB9C6;
+  border-color: #8D97A3;
+  text-color-internal: #26282E;
+  diameter: 48px;
+  caption: '{display_caption}';
+}
+node.Preamble      { color: #B9C2CE; text-color-internal: #26282E; diameter: 45px; caption: '{display_ref}'; }
+node.EnactingTerms { color: #B9C2CE; text-color-internal: #26282E; diameter: 45px; caption: '{display_ref}'; }
+node.FinalProvisions { color: #B9C2CE; text-color-internal: #26282E; diameter: 45px; caption: '{display_ref}'; }
+node.Annexes       { color: #B9C2CE; text-color-internal: #26282E; diameter: 45px; caption: '{display_ref}'; }
+
+/* ============================= ARTICLES (blue) ============================== */
+node.Article {
+  color: #4C8EDA;
+  border-color: #2F6FC0;
+  text-color-internal: #FFFFFF;
+  diameter: 60px;
+  caption: '{display_ref}';
+}
+
+/* ================= OPERATIVE SUB-PROVISIONS (light cyan-blue) =============== */
+node.Paragraph {
+  color: #6FC7E8;
+  border-color: #3FA9D4;
+  text-color-internal: #0F3340;
+  diameter: 42px;
+  caption: '{display_ref}';
+}
+node.Point {
+  color: #9BD8EF;
+  border-color: #63BEE0;
+  text-color-internal: #0F3340;
+  diameter: 38px;
+  caption: '{display_ref}';
+}
+node.Subparagraph {
+  color: #B7E2F3;
+  border-color: #7EC8E6;
+  text-color-internal: #0F3340;
+  diameter: 36px;
+  caption: '{display_ref}';
+}
+
+/* ============================ ANNEX FAMILY (green) ========================== */
+node.Annex {
+  color: #6DBE7A;
+  border-color: #4E9A5B;
+  text-color-internal: #FFFFFF;
+  diameter: 55px;
+  caption: '{display_ref}';
+}
+node.AnnexChapter { color: #8ECF98; border-color: #63B26F; text-color-internal: #10300F; diameter: 46px; caption: '{display_ref}'; }
+node.AnnexPart    { color: #8ECF98; border-color: #63B26F; text-color-internal: #10300F; diameter: 46px; caption: '{display_ref}'; }
+node.AnnexSection { color: #8ECF98; border-color: #63B26F; text-color-internal: #10300F; diameter: 44px; caption: '{display_ref}'; }
+node.AnnexPoint      { color: #B4E0BA; border-color: #86CA90; text-color-internal: #10300F; diameter: 38px; caption: '{display_ref}'; }
+node.AnnexSubpoint   { color: #B4E0BA; border-color: #86CA90; text-color-internal: #10300F; diameter: 36px; caption: '{display_ref}'; }
+node.AnnexSubsection { color: #B4E0BA; border-color: #86CA90; text-color-internal: #10300F; diameter: 36px; caption: '{display_ref}'; }
+node.AnnexBullet     { color: #CDEBD1; border-color: #9FD6A7; text-color-internal: #10300F; diameter: 34px; caption: '{display_ref}'; }
+
+/* ===================== PREAMBLE / INTERPRETIVE (parchment) ================== */
+node.Recital {
+  color: #E0C9A6;
+  border-color: #C7A970;
+  text-color-internal: #3A2E18;
+  diameter: 38px;
+  caption: '{display_ref}';
+}
+node.Citation {
+  color: #EBD9BF;
+  border-color: #D3BB93;
+  text-color-internal: #3A2E18;
+  diameter: 34px;
+  caption: '{display_ref}';
+}
+
+/* =========================== DEFINED TERMS (gold) ========================== */
+node.DefinedTerm {
+  color: #F2C14E;
+  border-color: #D19A1E;
+  text-color-internal: #3A2E00;
+  diameter: 46px;
+  caption: '{term}';
+}
+
+/* ============================ ACTOR ROLES (orange) ========================= */
+node.ActorRole {
+  color: #F0894E;
+  border-color: #D2661F;
+  text-color-internal: #FFFFFF;
+  diameter: 52px;
+  caption: '{term}';
+}
+
+/* ============================ COMMUNITIES (purple) ========================= */
+node.Community {
+  color: #B072B0;
+  border-color: #935293;
+  text-color-internal: #FFFFFF;
+  diameter: 55px;
+  caption: '{display_caption}';
+}
+
+/* ======================= EXTERNAL ACTS (muted rose) ======================= */
+node.ExternalAct {
+  color: #E0736F;
+  border-color: #C24B47;
+  text-color-internal: #FFFFFF;
+  diameter: 42px;
+  caption: '{ref_text}';
+}
+
+/* ===================== MDCG GUIDANCE (teal, non-binding) ================== */
+node.Guidance {
+  color: #4F9E8C;
+  border-color: #37796A;
+  text-color-internal: #FFFFFF;
+  diameter: 46px;
+  caption: '{display_ref}';
+}
+
+/* =============================== RELATIONSHIPS ============================= */
+/* structural / containment — faint so it never dominates */
+relationship.HAS_PART   { color: #CDD1D8; shaft-width: 1px; }
+relationship.MEMBER_OF  { color: #D6BCD6; shaft-width: 1px; }
+relationship.USES_TERM  { color: #EAD3A0; shaft-width: 1px; }        /* 13.8k of these — keep thin */
+relationship.DEFINED_BY { color: #F2C14E; shaft-width: 1.5px; }
+
+/* cross-references & delegation */
+relationship.CITES          { color: #4C8EDA; shaft-width: 2px; }
+relationship.CITES_EXTERNAL { color: #E0736F; shaft-width: 1.5px; }
+relationship.DELEGATES_TO   { color: #6DBE7A; shaft-width: 2px; }
+relationship.INTERPRETS     { color: #4F9E8C; shaft-width: 2px; }
+
+/* actor-role structure */
+relationship.OBLIGATION_OF  { color: #F0894E; shaft-width: 2px; }
+relationship.INSTANTIATES   { color: #F0A87A; shaft-width: 1.5px; }
+relationship.INCLUDES_ROLE  { color: #F0A87A; shaft-width: 1.5px; }
+relationship.EQUIVALENT_ROLE{ color: #D2661F; shaft-width: 2px; }
+
+/* curated legal-reasoning edges — the GraphRAG differentiator; make them pop */
+relationship.TRIGGERS_OBLIGATION_CLUSTER { color: #D2661F; shaft-width: 2.5px; }
+relationship.IS_PREREQUISITE_FOR         { color: #B072B0; shaft-width: 2px; }
+relationship.REQUIRES_PRIOR_CHECK        { color: #935293; shaft-width: 2px; }
+relationship.DEROGATES_FROM              { color: #C24B47; shaft-width: 2px; }
