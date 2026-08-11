@@ -14,6 +14,10 @@ from application._routing import (
     _has_multistage_question,
     _has_role_transition_focus,
 )
+from application._config import _TIMELINE_APPLICATION_RE
+from domain.legislation_catalog import AI_ACT_CELEX, LEGISLATION
+
+_AI_ACT_NAME = LEGISLATION[AI_ACT_CELEX]["name"]
 
 # ---------------------------------------------------------------------------
 # System prompt (static, shared across all requests)
@@ -673,6 +677,34 @@ def _build_route_answer_guidance(
 # ---------------------------------------------------------------------------
 
 
+# ── EPHEMERAL: AI Act application-date override directive ─────────────────────
+# The AI Act Article 113 high-risk dates were amended by Reg (EU) 2026/1744
+# (Digital Omnibus). Until the consolidated AI Act is re-ingested, the retrieved
+# REGULATORY CONTEXT still carries the pre-amendment Article 113 text, and the
+# model anchors on it — asserting the superseded dates and even reading Recital 40
+# as "confirming" them. This directive states the controlling dates as a hard rule
+# so the answer is correct. Paired with the retrieval-side _AMENDMENT_OVERRIDE_
+# ANCHORS bridge; remove both when the consolidated AI Act is ingested (Article 113
+# will then carry the amended dates natively).
+_AI_ACT_DATE_OVERRIDE_DIRECTIVE = (
+    "AI ACT APPLICATION DATES — AMENDED, READ BEFORE ANSWERING:\n"
+    "Article 113's application dates for HIGH-RISK AI obligations (Chapter III, "
+    "Sections 1-3) were amended by Regulation (EU) 2026/1744 (Digital Omnibus on "
+    "AI), Article 1(40) / Recital 40. The CONTROLLING dates are:\n"
+    "  - High-risk under Article 6(2) + Annex III (stand-alone use-case systems): "
+    "2 December 2027 (moved from 2 August 2026).\n"
+    "  - High-risk under Article 6(1) + Annex I (a safety component of, or itself, "
+    "a product under MDR/IVDR etc. — i.e. medical-device AI): 2 August 2028 "
+    "(moved from 2 August 2027).\n"
+    "The general application date (2 August 2026), the prohibitions date "
+    "(2 February 2025) and the GPAI date (2 August 2025) are UNCHANGED. "
+    "The REGULATORY CONTEXT may still show the pre-amendment Article 113 text: do "
+    "NOT state 2 August 2026 or 2 August 2027 as the current high-risk application "
+    "date. State the amended dates above and attribute them to Regulation (EU) "
+    "2026/1744."
+)
+
+
 def _build_user_message(
     *,
     question: str,
@@ -689,6 +721,15 @@ def _build_user_message(
         mentioned_regs=mentioned_regs,
     )
     parts: list[str] = []
+    # Amendment-override directive (EPHEMERAL) — fires on the same gate as the
+    # retrieval-side bridge (AI Act in scope + timeline framing), route-agnostic,
+    # and precedes route guidance so the corrected dates are read first.
+    if (
+        mentioned_regs
+        and _AI_ACT_NAME in mentioned_regs
+        and _TIMELINE_APPLICATION_RE.search(question)
+    ):
+        parts.append(_AI_ACT_DATE_OVERRIDE_DIRECTIVE)
     if route_guidance:
         parts.append(route_guidance)
     # Single-regulation scope constraint — prevents cross-regulation citation contamination.

@@ -228,6 +228,15 @@ _IMPLICIT_PROVISION_REFS: list[tuple[re.Pattern, str, str]] = [
     (re.compile(r"\btechnical\s+documentation\b", re.I), MDR_CELEX, "Annex II"),
 ]
 
+# Shared application-date / timeline trigger, referenced by BOTH the Article 113
+# context anchor below and the amendment-override bridge
+# (:data:`_AMENDMENT_OVERRIDE_ANCHORS`).
+_TIMELINE_APPLICATION_RE = re.compile(
+    r"\b(?:application\s+dates?|dates?\s+of\s+application|"
+    r"appl(?:y|ies|icable)\s+from|entry\s+into\s+application|"
+    r"already\s+appl(?:y|ies)|start\s+to\s+apply|exact\s+dates?|"
+    r"when\s+(?:do|does|will)\b[^?\n]{0,60}\bapply)\b", re.I)
+
 # Context-anchor refs: decisive provisions that must be *retrieved* for certain
 # topics but that should NOT, by themselves, reclassify the question as a direct
 # provision-lookup. They are added to the retrieval ref set *after* route
@@ -254,18 +263,14 @@ _CONTEXT_ANCHOR_REFS: list[tuple[re.Pattern, str, str]] = [
         r"\b(?:clinical\s+decision[\s-]?support|decision[\s-]?support\s+software|"
         r"cdss)\b", re.I),
         MDR_CELEX, "Annex VIII"),
-    # Application-date / timeline framing → AI Act Article 113 (entry into
-    # application), the sole authority for "from when do the obligations
-    # apply". The staggered dates (2 Feb 2025 / 2 Aug 2025 / 2 Aug 2026 /
-    # 2 Aug 2027) live nowhere else, and the vector channel surfaces the
-    # article only unreliably (v6 eval: HQ_038 answered without it and missed
-    # every date).
-    (re.compile(
-        r"\b(?:application\s+dates?|dates?\s+of\s+application|"
-        r"appl(?:y|ies|icable)\s+from|entry\s+into\s+application|"
-        r"already\s+appl(?:y|ies)|start\s+to\s+apply|exact\s+dates?|"
-        r"when\s+(?:do|does|will)\b[^?\n]{0,60}\bapply)\b", re.I),
-        AI_ACT_CELEX, "Article 113"),
+    # Application-date / timeline framing → AI Act Article 113, the framework for
+    # "from when do the obligations apply". It still holds the *unchanged* early
+    # dates (2 Feb 2025 prohibitions / 2 Aug 2025 GPAI / 2 Aug 2026 general), but
+    # its HIGH-RISK dates are SUPERSEDED by Reg (EU) 2026/1744 (Digital Omnibus):
+    # the corrected dates are force-loaded by _AMENDMENT_OVERRIDE_ANCHORS below.
+    # The vector channel surfaces Art 113 only unreliably (v6 eval: HQ_038
+    # answered without it and missed every date), hence the anchor.
+    (_TIMELINE_APPLICATION_RE, AI_ACT_CELEX, "Article 113"),
 ]
 
 # Use-case cue → the specific Annex III point that governs it, registered as
@@ -370,6 +375,52 @@ def _extract_context_anchor_refs(
     flipping a broad qualification question into a narrow provision-lookup.
     """
     return _match_ref_table(question, target_celexes, _CONTEXT_ANCHOR_REFS)
+
+
+# ── EPHEMERAL amendment-override bridge (Tier-2) ─────────────────────────────
+# Until a regulation's consolidated version (with its amendments applied) is
+# published and re-ingested, the base text in the graph can hold SUPERSEDED
+# provisions. Each entry force-loads — by stable node id — the amending
+# provision that carries the corrected text, gated on the base regulation being
+# in scope plus a topic regex. Resolution is by id (see retrieve_by_ids), so it
+# lands on the exact node even though the amending act is not in the question's
+# retrieval scope, and never suffers the display_ref cross-regulation ambiguity
+# ("Recital 40" exists in every regulation). Remove an entry once its base
+# regulation is re-ingested from the consolidated version.
+# Shape: (trigger_regex, gate_celex, [override_node_ids]).
+_AMENDMENT_OVERRIDE_ANCHORS: list[tuple[re.Pattern, str, list[str]]] = [
+    # AI Act Article 113 high-risk application dates are amended by Regulation
+    # (EU) 2026/1744 (Digital Omnibus), Article 1(40): high-risk under Art 6(2)
+    # + Annex III → 2 Dec 2027; under Art 6(1) + Annex I (product/embedded, i.e.
+    # medical-device AI) → 2 Aug 2028. Only the Omnibus RECITAL retained the
+    # dates after parsing (the operative amendment's quoted replacement block was
+    # dropped on ingest), so the recital node is the anchor.
+    (_TIMELINE_APPLICATION_RE, AI_ACT_CELEX, ["32026R1744_rct_40"]),
+]
+
+
+def _extract_amendment_override_ids(
+    question: str,
+    *,
+    target_celexes: set[str] | None,
+) -> list[str]:
+    """Return stable node ids of amending provisions to force-load.
+
+    Gated exactly like the ref anchors — only when the base regulation is in
+    scope and the topic regex matches — so the override never fires off-topic.
+    See :data:`_AMENDMENT_OVERRIDE_ANCHORS`.
+    """
+    if target_celexes is None:
+        return []
+    ids: list[str] = []
+    seen: set[str] = set()
+    for pattern, celex, node_ids in _AMENDMENT_OVERRIDE_ANCHORS:
+        if celex in target_celexes and pattern.search(question):
+            for nid in node_ids:
+                if nid not in seen:
+                    seen.add(nid)
+                    ids.append(nid)
+    return ids
 
 
 def _extract_provision_refs(question: str) -> list[str]:

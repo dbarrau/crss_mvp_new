@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from application.scenario import detect_scenario, Detection
 from application.contracts import Scenario
-from domain.legislation_catalog import AI_ACT_CELEX as _AI_ACT
+from application._config import _extract_amendment_override_ids
+from domain.legislation_catalog import AI_ACT_CELEX as _AI_ACT, MDR_CELEX as _MDR
 
 
 class _StubRetriever:
@@ -99,3 +100,40 @@ def test_cdss_question_anchors_classification_annex():
 def test_no_context_anchor_for_unrelated_question():
     det = _detect("What are the obligations of a provider under the EU AI Act?")
     assert det.context_anchor_refs == []
+
+
+# --- Amendment-override bridge (ephemeral: AI Act Art 113 dates amended by the
+# Digital Omnibus, Reg (EU) 2026/1744; see _AMENDMENT_OVERRIDE_ANCHORS). Gated on
+# the base regulation + a timeline regex; resolved downstream by stable node id. ---
+
+def test_amendment_override_fires_on_date_question_in_ai_act_scope():
+    # Timeline question + AI Act in scope → force-load the Omnibus recital that
+    # carries the corrected high-risk application dates.
+    ids = _extract_amendment_override_ids(
+        "when do the high-risk obligations apply to my medical device AI?",
+        target_celexes={_AI_ACT},
+    )
+    assert ids == ["32026R1744_rct_40"]
+
+
+def test_amendment_override_silent_without_base_reg_in_scope():
+    # Gated on the AI Act: same wording, AI Act NOT in scope → never fires.
+    ids = _extract_amendment_override_ids(
+        "when do the high-risk obligations apply?", target_celexes={_MDR}
+    )
+    assert ids == []
+
+
+def test_amendment_override_silent_without_timeline_language():
+    # AI Act in scope but no application-date framing → no fire.
+    ids = _extract_amendment_override_ids(
+        "what is a provider under the EU AI Act?", target_celexes={_AI_ACT}
+    )
+    assert ids == []
+
+
+def test_amendment_override_silent_when_nothing_in_scope():
+    ids = _extract_amendment_override_ids(
+        "when does it start to apply?", target_celexes=None
+    )
+    assert ids == []

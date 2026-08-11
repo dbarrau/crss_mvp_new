@@ -12,7 +12,11 @@ import os
 import re
 from typing import Any
 
-from application._config import _REG_NAME_TO_CELEX, _normalize_ref_key
+from application._config import (
+    _REG_NAME_TO_CELEX,
+    _normalize_ref_key,
+    _extract_amendment_override_ids,
+)
 from application._routing import (
     _QuestionRoute,
     _ProvisionLookupTarget,
@@ -767,6 +771,22 @@ def _retrieve_route_provisions(
             for a in anchors:
                 a["_system_anchor"] = True
             _merge_unique_provisions(provisions, anchors, prepend=True)
+
+    # ── Amendment-override bridge (EPHEMERAL) ────────────────────────────────
+    # Force-load, by stable node id, the amending provision(s) carrying corrected
+    # text where the graph still holds a superseded base version (currently the
+    # AI Act Article 113 dates, amended by Reg (EU) 2026/1744). Resolved by id so
+    # it lands regardless of retrieval celex scope; prepended as a system anchor.
+    # Remove when the base reg is re-ingested from its consolidated version.
+    # See _AMENDMENT_OVERRIDE_ANCHORS in _config.py.
+    override_ids = _extract_amendment_override_ids(
+        question, target_celexes=target_celexes
+    )
+    if override_ids:
+        overrides = retriever.retrieve_by_ids(override_ids)
+        for o in overrides:
+            o["_system_anchor"] = True
+        _merge_unique_provisions(provisions, overrides, prepend=True)
 
     # ── Preamble supplement ──────────────────────────────────────────────────
     # A question that explicitly invokes the preamble ("what does the GDPR's

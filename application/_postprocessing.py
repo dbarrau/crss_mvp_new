@@ -201,6 +201,40 @@ def _validate_legal_backbone(
     return warnings
 
 
+# ── EPHEMERAL: superseded AI Act application-date flag ────────────────────────
+# Deterministic, non-destructive safety net paired with the prompt directive
+# (_AI_ACT_DATE_OVERRIDE_DIRECTIVE) and the retrieval bridge. The directive
+# normally makes answers state the AMENDED high-risk dates (Reg (EU) 2026/1744);
+# this catches the residual case where the model reverts to the pre-amendment
+# "2 August 2027" (Art 6(1) / Annex I) date and never mentions its "2 August 2028"
+# replacement. Presence of the corrected date is the correctness signal, so a
+# correct "was 2027, now 2028" lineage answer is NOT flagged. Flag-only — it never
+# rewrites, so it cannot corrupt a correct answer. Remove with the rest of the
+# bridge once the consolidated AI Act is ingested.
+_STALE_HIGH_RISK_DATE_RE = re.compile(r"\b0?2(?:nd)?\s+august\s+2027\b", re.I)
+_CORRECTED_HIGH_RISK_DATE_RE = re.compile(r"\b0?2(?:nd)?\s+august\s+2028\b", re.I)
+_AI_ACT_DATE_CONTEXT = ("ai act", "2024/1689", "high-risk", "high risk", "article 6")
+_SUPERSEDED_DATE_FLAG = (
+    "> ⚠ **APPLICATION-DATE FLAG** — This answer states 2 August 2027, the "
+    "pre-amendment AI Act application date for high-risk AI systems under Article "
+    "6(1) / Annex I (e.g. medical-device AI). Regulation (EU) 2026/1744 (Digital "
+    "Omnibus) moved that date to 2 August 2028 (and the Article 6(2) / Annex III "
+    "date to 2 December 2027). Verify this answer uses the amended dates."
+)
+
+
+def _flag_superseded_ai_act_dates(answer: str) -> list[str]:
+    """Flag — never rewrite — an answer asserting the superseded AI Act high-risk
+    date without its corrected replacement.  See the EPHEMERAL note above."""
+    if not _STALE_HIGH_RISK_DATE_RE.search(answer):
+        return []
+    if _CORRECTED_HIGH_RISK_DATE_RE.search(answer):
+        return []
+    if not any(marker in answer.lower() for marker in _AI_ACT_DATE_CONTEXT):
+        return []
+    return [_SUPERSEDED_DATE_FLAG]
+
+
 def _build_confidence_banner(confidence: "dict[str, Any]") -> str:
     """Return a brief *Scope & limitations* note, or "" when nothing actionable.
 
@@ -265,11 +299,15 @@ def _postprocess_answer(
     processed = _RULE_LABEL_PATTERN.sub("", processed)
     processed = _CONTEXT_INDEX_PATTERN.sub("", processed)
     backbone_warnings = [] if audited else _validate_legal_backbone(processed, question, route)
+    # Deterministic, always-on (not suppressed by the auditor, which checks the
+    # legal backbone, not amendment dates): flag a superseded AI Act date. EPHEMERAL.
+    date_flags = _flag_superseded_ai_act_dates(processed)
     banner = _build_uncertainty_banner(route, sufficiency=sufficiency)
     parts: list[str] = []
     if banner:
         parts.append(banner)
     parts.extend(backbone_warnings)
+    parts.extend(date_flags)
     if parts:
         processed = "\n\n".join(parts) + "\n\n" + processed.lstrip()
     # Append confidence banner at the end (after the answer body)
