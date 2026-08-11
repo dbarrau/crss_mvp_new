@@ -640,6 +640,27 @@ def _retrieve_route_provisions(
     which seeds and which primary-bag expander run, in four phases —
     seed (direct + curated channels) → role → primary bag → merge → safety net.
     """
+    # Graph-reasoning ablation (CRSS_GRAPH_EXPANSION=0): bypass every
+    # graph-driven channel (direct-ref lookup, curated backbones, role/chain/
+    # community traversal, safety nets) and retrieve with a single flat
+    # HyDE-expanded vector pass. Combined with the retriever's own flag this
+    # yields a clean "vanilla RAG over the same corpus" baseline so the eval can
+    # measure the graph's contribution (scripts/eval_graph_ablation.py). Default
+    # (unset/"1") leaves the full policy below untouched.
+    if os.environ.get("CRSS_GRAPH_EXPANSION", "1") == "0":
+        provisions, hyde_text = _expand_hyde_vector(
+            question, retriever,
+            client=client, k=k, target_celexes=target_celexes,
+            hyde_builder=hyde_builder,
+        )
+        return {
+            "provisions": provisions,
+            "direct_provisions": [],
+            "role_provisions": [],
+            "hyde_text": hyde_text,
+            "legal_qualification_targets": [],
+        }
+
     direct_provisions: list[dict] = []
     role_provisions: list[dict] = []
     provisions: list[dict] = []
@@ -1149,6 +1170,13 @@ def _run_corrective_retrieval_pass(
     plan does, in priority order, with the running ``sufficiency`` shared so each
     later check sees what the earlier recoveries already filled.
     """
+    # Flat-RAG ablation (CRSS_GRAPH_EXPANSION=0): the corrective pass re-runs the
+    # graph-reasoning channels (curated targets, status anchors, role/chain
+    # recovery), which would smuggle the graph back into the baseline. No-op so
+    # the flat arm stays flat.
+    if os.environ.get("CRSS_GRAPH_EXPANSION", "1") == "0":
+        return {"actions": [], "hyde_text": hyde_text, "sufficiency": sufficiency}
+
     actions: list[str] = []
 
     def recompute() -> dict[str, Any]:

@@ -255,6 +255,15 @@ class GraphRetriever:
 
         top_ids = list(score_map.keys())
 
+        # Graph-reasoning ablation switch (CRSS_GRAPH_EXPANSION=0): when off, the
+        # retriever behaves like a flat dense+lexical RAG — it still assembles the
+        # matched provision's own body (HAS_PART parents/children/siblings), but
+        # drops every graph-reasoning edge (CITES cross-references, INTERPRETS
+        # guidance, reverse cross-reg links, cited-container drilldown). This
+        # isolates what the graph contributes for scripts/eval_graph_ablation.py.
+        # Default (unset/"1") is byte-for-byte the production path.
+        graph_on = os.environ.get("CRSS_GRAPH_EXPANSION", "1") != "0"
+
         # Graph expansion via Cypher
         results = _traversal.expand(self._driver, self._db, top_ids)
 
@@ -262,6 +271,15 @@ class GraphRetriever:
         for r in results:
             r["score"] = score_map.get(r["article_id"], 0.0)
             r["matched_leaf_id"] = leaf_map.get(r["article_id"])
+
+        # Flat baseline: strip the CITES/INTERPRETS-derived neighbours so no
+        # cross-referenced text reaches context, keeping only the article body.
+        if not graph_on:
+            for r in results:
+                r["cited_provisions"] = []
+                r["cross_reg_cited"] = []
+                r["interpreting_guidance"] = []
+                r["interpreted_provisions"] = []
 
         # Rerank the widened candidate pool to the final top-k, or fall back
         # to cosine ordering when no reranker is loaded.
@@ -293,14 +311,15 @@ class GraphRetriever:
 
         # Drill into cited container nodes (e.g. "Annex XIV" headings)
         # to surface their children's text for the LLM.
-        _traversal.expand_cited_containers(self._driver, self._db, results)
+        if graph_on:
+            _traversal.expand_cited_containers(self._driver, self._db, results)
 
         # Cross-regulation expansion: if the retrieved provisions have
         # cross-regulation CITES links, also retrieve the "other side"
         # provisions from the other regulation(s).  This ensures that
         # when a question spans multiple regulations, both sides of the
         # cross-reference chain appear in context.
-        if not target_celexes:
+        if graph_on and not target_celexes:
             with self._driver.session(database=self._db) as s:
                 reverse = s.run(
                     _REVERSE_XREF_CYPHER, ids=reranked_ids
