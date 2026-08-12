@@ -672,6 +672,27 @@ def _build_route_answer_guidance(
 # User message builder
 # ---------------------------------------------------------------------------
 
+# ── EPHEMERAL, generic: amendment-marker handling ────────────────────────────
+# A provision can carry an inline "[AMENDED by … : now <value>; the <old> here is
+# superseded]" note when a regulation has been amended but has no consolidated
+# version yet (set by scripts/annotate_ai_act_omnibus_dates.py). This mechanism is
+# GENERIC: the directive fires on the marker's presence in the retrieved context —
+# never on anything question- or date-specific — so it works for any annotated
+# amendment and stays silent otherwise. Remove together with the annotation and the
+# _flag_superseded_ai_act_dates backstop once the consolidated regulation is
+# ingested via source_celex.
+_AMENDMENT_CONTEXT_MARKER = "[AMENDED"
+_AMENDED_PROVISION_DIRECTIVE = (
+    "AMENDED PROVISIONS — READ BEFORE ANSWERING:\n"
+    "One or more retrieved provisions carry a bracketed editorial marker showing that "
+    "part of the text has been amended and is superseded — for example \"… 2 August "
+    "2027 [AMENDED by Reg (EU) 2026/1744: now 2 August 2028; the 2027 date here is "
+    "superseded]\". Where such a marker appears, the AMENDED value is the current law "
+    "and is CONTROLLING: state the amended value and attribute it to the amending act "
+    "named in the marker; do NOT present the superseded original as the current rule "
+    "(mention it only as prior history, if at all)."
+)
+
 
 def _build_user_message(
     *,
@@ -689,6 +710,12 @@ def _build_user_message(
         mentioned_regs=mentioned_regs,
     )
     parts: list[str] = []
+    # Amendment-marker directive (EPHEMERAL, generic) — fires only when an
+    # "[AMENDED …]" marker is actually present in the retrieved context, so the
+    # trigger is the data, not the question. Placed first so the amended value is
+    # read before anything else. See _AMENDED_PROVISION_DIRECTIVE above.
+    if _AMENDMENT_CONTEXT_MARKER in context:
+        parts.append(_AMENDED_PROVISION_DIRECTIVE)
     if route_guidance:
         parts.append(route_guidance)
     # Single-regulation scope constraint — prevents cross-regulation citation contamination.

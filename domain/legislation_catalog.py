@@ -27,6 +27,7 @@ AI_ACT_CELEX = "32024R1689"
 IVDR_CELEX = "32017R0746"
 GDPR_CELEX = "32016R0679"
 CIR_CELEX = "32026R0977"  # Commission Implementing Regulation (EU) 2026/977
+AI_OMNIBUS_CELEX = "32026R1744"
 
 #: Central metadata store for supported EU legislation.
 #:
@@ -69,7 +70,15 @@ LEGISLATION = {
         "number": "2026/977",
         "type": "medical_device_implementing_regulation",
         "jurisdiction": "EU",
-    }
+    },
+    AI_OMNIBUS_CELEX: {
+        "name": "Digital Omnibus on AI",
+        "number": "2026/1744",
+        "type": "ai_amending_regulation",   # descriptive only; nothing keys on it
+        "jurisdiction": "EU",
+        # no source_celex: 32026R1744 is a first-time amending act, not yet consolidated
+    },
+
 }
 
 # Backward-compatible alias

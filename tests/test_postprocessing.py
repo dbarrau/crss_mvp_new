@@ -70,3 +70,46 @@ def test_context_index_labels_are_stripped_keeping_the_real_ref():
     assert "[14]" not in out and "[5]" not in out
     assert "Article 10(2) MDR" in out
     assert "Article 43(4) AI Act" in out
+
+
+# ---------------------------------------------------------------------------
+# EPHEMERAL: superseded AI Act application-date flag (Reg (EU) 2026/1744 bridge).
+# Flag-only, never rewrites; fires only when the stale date appears WITHOUT its
+# corrected replacement, so correct "was 2027, now 2028" lineage answers are safe.
+# ---------------------------------------------------------------------------
+
+from application._postprocessing import _flag_superseded_ai_act_dates  # noqa: E402
+
+
+def test_superseded_date_flag_fires_on_stale_answer():
+    ans = "Under the AI Act, high-risk Article 6(1) systems apply from 2 August 2027."
+    flags = _flag_superseded_ai_act_dates(ans)
+    assert len(flags) == 1
+    assert "2 August 2028" in flags[0]
+
+
+def test_superseded_date_flag_silent_when_corrected_date_present():
+    # Presence of the amended date is the correctness signal.
+    ans = "High-risk AI under Article 6(1) applies from 2 August 2028 (Reg 2026/1744)."
+    assert _flag_superseded_ai_act_dates(ans) == []
+
+
+def test_superseded_date_flag_silent_on_lineage_answer():
+    # A CORRECT answer legitimately names the old date in the amendment lineage —
+    # it must NOT be flagged (this is precisely why the guard is not a strip).
+    ans = (
+        "Article 113 originally set 2 August 2027 for high-risk Annex I systems, "
+        "but this was amended to 2 August 2028 by Regulation (EU) 2026/1744."
+    )
+    assert _flag_superseded_ai_act_dates(ans) == []
+
+
+def test_superseded_date_flag_requires_ai_act_context():
+    # The bare date outside any AI Act context is not ours to flag.
+    assert _flag_superseded_ai_act_dates("The lease renews on 2 August 2027.") == []
+
+
+def test_superseded_date_flag_handles_nonbreaking_space():
+    # EUR-Lex dates use no-break spaces; the regex's \\s+ must still match.
+    ans = "AI Act high-risk under Article 6 applies from 2 August 2027."
+    assert len(_flag_superseded_ai_act_dates(ans)) == 1
