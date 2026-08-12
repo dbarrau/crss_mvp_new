@@ -8,6 +8,10 @@ def test_run_pipeline_orders_stages_and_passes_flags(monkeypatch):
         calls.append(("crosslink", dry_run, cleanup))
         return {"cites": 1, "interprets": 2}
 
+    def fake_amendments(*, dry_run):
+        calls.append(("amendments", dry_run, None))
+        return {"edges_written": 11}
+
     def fake_delegations(*, dry_run):
         calls.append(("delegations", dry_run, None))
         return {"edges_written": 3}
@@ -33,6 +37,7 @@ def test_run_pipeline_orders_stages_and_passes_flags(monkeypatch):
         return {"nodes": 6, "edges": 10, "communities": 3}
 
     monkeypatch.setattr(canonicalization_main, "crosslink", fake_crosslink)
+    monkeypatch.setattr(canonicalization_main, "link_amendments", fake_amendments)
     monkeypatch.setattr(canonicalization_main, "link_delegations", fake_delegations)
     monkeypatch.setattr(canonicalization_main, "link_terms", fake_terms)
     monkeypatch.setattr(canonicalization_main, "link_roles", fake_roles)
@@ -44,6 +49,7 @@ def test_run_pipeline_orders_stages_and_passes_flags(monkeypatch):
 
     assert calls == [
         ("crosslink", True, True),
+        ("amendments", True, None),
         ("delegations", True, None),
         ("terms", True, None),
         ("roles", True, None),
@@ -53,6 +59,7 @@ def test_run_pipeline_orders_stages_and_passes_flags(monkeypatch):
     ]
     assert summary == {
         "crosslinker": {"cites": 1, "interprets": 2},
+        "amendment_linker": {"edges_written": 11},
         "delegation_linker": {"edges_written": 3},
         "term_linker": {"edges": 4},
         "role_linker": {"actor_roles": 5, "obligation_of": 9},
@@ -66,6 +73,7 @@ def test_run_pipeline_skips_communities_when_flag_set(monkeypatch):
     calls: list[str] = []
 
     monkeypatch.setattr(canonicalization_main, "crosslink", lambda **_: calls.append("crosslink") or {})
+    monkeypatch.setattr(canonicalization_main, "link_amendments", lambda **_: calls.append("amendments") or {})
     monkeypatch.setattr(canonicalization_main, "link_delegations", lambda **_: calls.append("delegations") or {})
     monkeypatch.setattr(canonicalization_main, "link_terms", lambda **_: calls.append("terms") or {})
     monkeypatch.setattr(canonicalization_main, "link_roles", lambda **_: calls.append("roles") or {})

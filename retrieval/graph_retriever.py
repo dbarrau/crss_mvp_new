@@ -47,6 +47,7 @@ from retrieval._config import (  # noqa: F401  (prefixes re-exported for back-co
 from retrieval._cypher import (  # noqa: F401  (re-exported for structural tests)
     _EXPAND_CYPHER,
     _PARENT_KINDS,
+    _REVERSE_AMENDS_CYPHER,
     _REVERSE_XREF_CYPHER,
 )
 from retrieval._dense import DenseIndex
@@ -315,6 +316,39 @@ class GraphRetriever:
                 results.extend(rev_expanded)
 
         return results
+
+    def retrieve_amendments(self, ids: list[str]) -> list[dict[str, Any]]:
+        """Surface controlling amendments to any of ``ids`` (or their ancestors).
+
+        For every retrieved provision that is the target of an ``AMENDS`` edge —
+        directly or via an ancestor article, since amendments are materialised at
+        article granularity — return the amending provision's expanded subtree,
+        tagged ``_amends_expansion`` and carrying the amending act + target ref.
+        The amending subtree holds the operative replacement text, so the caller
+        can merge these into the bag and let the amended value be reported as the
+        current law (see ``_REVERSE_AMENDS_CYPHER`` and the context renderer).
+
+        This is called by the retrieval orchestrator over the *final* provision
+        bag, so it fires no matter which channel surfaced the amended provision —
+        dense/lexical ``retrieve``, a direct-ref lookup, or a forced context
+        anchor (e.g. AI Act Article 113 for a timing question).
+        """
+        if not ids:
+            return []
+        with self._driver.session(database=self._db) as s:
+            amends = s.run(_REVERSE_AMENDS_CYPHER, ids=ids).data()
+        if not amends:
+            return []
+        meta = {a["article_id"]: a for a in amends}
+        expanded = _traversal.expand(self._driver, self._db, list(meta))
+        for r in expanded:
+            m = meta.get(r["article_id"], {})
+            r["score"] = 0.0
+            r["matched_leaf_id"] = None
+            r["_amends_expansion"] = True
+            r["_amends_target_ref"] = m.get("target_ref")
+            r["amending_act"] = m.get("amending_act")
+        return expanded
 
     # ------------------------------------------------------------------
     # Whole-graph lookup indexes (cached)

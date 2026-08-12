@@ -191,6 +191,35 @@ def _merge_unique_provisions(
     return len(new_items)
 
 
+def _surface_amendments(retriever, provisions: list[dict]) -> None:
+    """Append controlling amendments for any provision now in the bag (in place).
+
+    Runs over the *final* assembled bag, so a superseding amendment rides along
+    regardless of which channel surfaced the amended provision — including a
+    force-loaded context anchor (AI Act Article 113 arrives via the direct-ref
+    path, which never runs the dense retriever's expansion). This is what makes
+    the correct amended dates appear for a question phrased about obligations,
+    not just one that names Article 113. See ``GraphRetriever.retrieve_amendments``.
+    """
+    fn = getattr(retriever, "retrieve_amendments", None)
+    if not callable(fn) or not provisions:
+        return
+    ids = [p.get("article_id") for p in provisions if p.get("article_id")]
+    ids += [p.get("matched_leaf_id") for p in provisions if p.get("matched_leaf_id")]
+    amendments = fn(list(dict.fromkeys(ids)))
+    if amendments:
+        # Prepend: a controlling amendment leads the context (adjacent to the
+        # base provision it supersedes) so the budget trim — which keeps the
+        # leading provisions and drops the tail — cannot cut it. Appending left
+        # it in the tail and it was trimmed before reaching the model.
+        added = _merge_unique_provisions(provisions, amendments, prepend=True)
+        if added:
+            logger.info(
+                "Amendment surfacing: added %d amending provision(s): %s",
+                added, [a.get("article_id") for a in amendments],
+            )
+
+
 # ---------------------------------------------------------------------------
 # Lookup-target retrieval helpers
 # ---------------------------------------------------------------------------
@@ -767,6 +796,15 @@ def _retrieve_route_provisions(
             for a in anchors:
                 a["_system_anchor"] = True
             _merge_unique_provisions(provisions, anchors, prepend=True)
+
+    # ── Amendment-surfacing phase: for ANY provision now in the bag — including
+    #    a force-loaded anchor (e.g. AI Act Article 113 on a timing question) —
+    #    surface a controlling amendment to it via the AMENDS edge. Data-driven:
+    #    fires whenever an amended provision is present, independent of route or
+    #    phrasing (the failure mode of the earlier question-gated date bridge).
+    #    The amending subtree carries the operative replacement text and is marked
+    #    CONTROLLING by the context renderer.
+    _surface_amendments(retriever, provisions)
 
     # ── Preamble supplement ──────────────────────────────────────────────────
     # A question that explicitly invokes the preamble ("what does the GDPR's

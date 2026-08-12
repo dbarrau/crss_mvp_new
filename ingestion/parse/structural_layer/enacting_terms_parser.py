@@ -18,6 +18,16 @@ from domain.ontology.eurlex_html import (
 )
 
 
+# Opening quotation marks EUR-Lex uses to delimit an amendment's quoted
+# replacement text ("… is replaced by the following: '…'"). U+2018 is the OJ
+# convention; the rest are defensive. A nested point-table whose content opens
+# with one of these is the operative new text an amending point enacts — not an
+# enumerated sub-item — so it is folded into the point's body instead of being
+# dropped with the sub-item tables (which left amendments as husks like
+# "point (c) is replaced by the following: ;").
+_QUOTE_OPENERS = ("\u2018", "\u201c", "\u00ab", "\u0027", "\u0022")
+
+
 def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 	enc_root = soup.find("div", id=ENACTING_TERMS_ID)
 	if not enc_root:
@@ -36,14 +46,50 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 			tbl.decompose()
 		return clone.get_text(" ", strip=True)
 
+	def _opens_with_quote(table) -> bool:
+		"""True when a nested table holds an amendment's quoted replacement text
+		(its content opens with a quotation mark) rather than an enumerated
+		sub-item — the signal to fold it in rather than recurse into it."""
+		return table.get_text(" ", strip=True)[:1] in _QUOTE_OPENERS
+
+	def _direct_child_tables(root_table) -> List:
+		"""Tables whose nearest enclosing table is root_table (its own level)."""
+		return [t for t in root_table.find_all("table")
+			if t.find_parent("table") is root_table]
+
 	def point_text_without_nested_tables(table) -> str:
+		"""Point body with enumerated sub-item tables stripped.
+
+		Enumerated ``(x)``/``—`` sub-items become their own child nodes, so their
+		text is removed here.  An amendment's quoted replacement block is *not* a
+		sub-item but the operative new text the point enacts, so it is folded in
+		(kept) — otherwise amending provisions parse to husks like
+		``"point (c) is replaced by the following: ;"``.
+		"""
 		clone = BeautifulSoup(str(table), "html.parser")
 		root_table = clone.find("table")
 		if not root_table:
 			return ""
-		for nested in root_table.find_all("table"):
-			nested.decompose()
+		for nested in _direct_child_tables(root_table):
+			if not _opens_with_quote(nested):
+				nested.decompose()
 		return root_table.get_text(" ", strip=True)
+
+	def _sub_item_tables(table) -> List:
+		"""Enumerated sub-item tables to recurse into: every descendant point
+		table except those inside a quoted replacement block (already folded into
+		the parent body by point_text_without_nested_tables)."""
+		out = []
+		for t in table.find_all("table", width=TABLE_POINTS_WIDTH):
+			anc, quoted = t, False
+			while anc is not None and anc is not table:
+				if anc.name == "table" and _opens_with_quote(anc):
+					quoted = True
+					break
+				anc = anc.find_parent("table")
+			if not quoted:
+				out.append(t)
+		return out
 
 	# Dash markers EUR-Lex uses for unnumbered "indent" sub-items.
 	_DASH_MARKERS = ("—", "–", "•")  # em-dash, en-dash, bullet
@@ -104,9 +150,7 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 			else:
 				continue
 			node = ctx.make_node(kind, html_id, content, parent_node, number=label)
-			parse_points_from_tables(
-				node, table.find_all("table", width=TABLE_POINTS_WIDTH)
-			)
+			parse_points_from_tables(node, _sub_item_tables(table))
 
 	def collect_subparagraph_blocks(para_div):
 		"""Group direct children into (p_element, [table_elements]) tuples."""

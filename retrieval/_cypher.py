@@ -171,6 +171,25 @@ ORDER BY citation_freq DESC
 LIMIT 10
 """
 
+# Reverse amendment expansion: find provisions that AMEND any retrieved
+# provision — or an ancestor of it, since AMENDS is materialised at article
+# granularity but retrieval often lands on a child (e.g. Article 113(3)(c)).
+# The amending provision's own subtree carries the operative replacement text,
+# so returning its id lets the caller run the shared HAS_PART expansion over it.
+# This is what surfaces "Article 113 is amended by → [new dates]" whenever the
+# base provision is retrieved, independent of how the question was phrased.
+_REVERSE_AMENDS_CYPHER = """\
+UNWIND $ids AS aid
+MATCH (r:Provision {id: aid})
+MATCH (r)<-[:HAS_PART*0..4]-(target:Provision)<-[am:AMENDS]-(amender:Provision)
+RETURN DISTINCT
+  amender.id         AS article_id,
+  am.target_ref      AS target_ref,
+  am.amending_act    AS amending_act,
+  am.operation       AS operation
+LIMIT 10
+"""
+
 # Cited-container drilldown: when a CITES edge points to a high-level
 # container node (e.g. "Annex XIV") whose own text is very short, fetch
 # the container's direct children so the LLM sees the actual content.
