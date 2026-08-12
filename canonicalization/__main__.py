@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 
+from .amendment_linker import link_amendments
 from .community_linker import link_communities
 from .crosslinker import crosslink
 from .delegation_linker import link_delegations
@@ -18,8 +19,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Run the full canonicalization pipeline: "
-            "crosslinker -> delegation_linker -> term_linker -> role_linker "
-            "-> provision_role_classifier -> reasoning_linker -> community_linker."
+            "crosslinker -> amendment_linker -> delegation_linker -> term_linker "
+            "-> role_linker -> provision_role_classifier -> reasoning_linker "
+            "-> community_linker."
         )
     )
     parser.add_argument(
@@ -59,33 +61,37 @@ def run_pipeline(
     print("\n=== Canonicalization Pipeline ===")
     print(f"  dry_run={dry_run}  cleanup={cleanup}  skip_communities={skip_communities}\n")
 
-    print("[1/7] Crosslinking external references...")
+    print("[1/8] Crosslinking external references...")
     crosslink_summary = crosslink(dry_run=dry_run, cleanup=cleanup)
 
-    print("[2/7] Materializing delegation edges...")
+    print("[2/8] Materializing amendment (AMENDS) edges...")
+    amendment_summary = link_amendments(dry_run=dry_run)
+
+    print("[3/8] Materializing delegation edges...")
     delegation_summary = link_delegations(dry_run=dry_run)
 
-    print("[3/7] Materializing defined-term usage edges...")
+    print("[4/8] Materializing defined-term usage edges...")
     term_summary = link_terms(dry_run=dry_run)
 
-    print("[4/7] Materializing actor-role awareness edges...")
+    print("[5/8] Materializing actor-role awareness edges...")
     role_summary = link_roles(dry_run=dry_run)
 
-    print("[5/7] Classifying provisions by legal role...")
+    print("[6/8] Classifying provisions by legal role...")
     provision_role_summary = classify_provision_roles(dry_run=dry_run)
 
-    print("[6/7] Loading curated legal-reasoning edges...")
+    print("[7/8] Loading curated legal-reasoning edges...")
     reasoning_summary = link_reasoning_chains(dry_run=dry_run)
 
     if skip_communities:
-        print("[7/7] Community detection skipped (--no-communities).")
+        print("[8/8] Community detection skipped (--no-communities).")
         community_summary: dict[str, int] = {"nodes": 0, "edges": 0, "communities": 0}
     else:
-        print("[7/7] Building graph communities...")
+        print("[8/8] Building graph communities...")
         community_summary = link_communities(dry_run=dry_run, seed=community_seed)
 
     return {
         "crosslinker": crosslink_summary,
+        "amendment_linker": amendment_summary,
         "delegation_linker": delegation_summary,
         "term_linker": term_summary,
         "role_linker": role_summary,

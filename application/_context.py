@@ -455,6 +455,19 @@ def _format_one_provision(index: int, p: dict, role: str) -> str:
         f"[{index}] {p.get('article_ref', 'Unknown')} \u2014 {regulation}"
         f"{celex_badge}{layer_tag}{force_badge}{role_badge}"
     )
+    # Amendment surfacing: this provision was pulled because it AMENDS a
+    # retrieved provision. Flag it as controlling so the model reports the
+    # amended text as current law (not the base provision's superseded wording).
+    # The block's own text is self-describing ("in Article 113 \u2026 is replaced by
+    # \u2026"), so the marker just makes its authority explicit. Keyed on by the
+    # _AMENDED_PROVISION_DIRECTIVE in _prompts.py.
+    if p.get("_amends_expansion"):
+        _tref = p.get("_amends_target_ref") or "the provision it references"
+        _act = p.get("amending_act") or "a later amending act"
+        header = (
+            f"\u26a0 AMENDING PROVISION \u2014 CONTROLLING (supersedes the "
+            f"original wording of {_tref}; source: {_act}):\n" + header
+        )
     # Stable node id the model points at under the grounded-citation contract
     # (see docs/grounded_generation_contract.md). This is the *only* citable key \u2014
     # never display_ref, which is None/non-unique on many nodes.

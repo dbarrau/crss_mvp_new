@@ -672,6 +672,25 @@ def _build_route_answer_guidance(
 # User message builder
 # ---------------------------------------------------------------------------
 
+# Amendment directive — fires only when the retriever has surfaced a controlling
+# amendment (a reverse-AMENDS expansion, marked "AMENDING PROVISION — CONTROLLING"
+# by _context). Data-driven, not question- or date-specific: the trigger is the
+# retrieved graph, so it covers any amendment and stays silent otherwise. This
+# supersedes the earlier question-gated date bridge (which missed classification
+# questions) and the inline date annotation. Retire once amended acts are ingested
+# in consolidated form — the amendment will then be native to the base text.
+_AMENDMENT_CONTEXT_MARKER = "AMENDING PROVISION"
+_AMENDED_PROVISION_DIRECTIVE = (
+    "AMENDED PROVISIONS — READ BEFORE ANSWERING:\n"
+    "The regulatory context contains one or more blocks flagged "
+    '"⚠ AMENDING PROVISION — CONTROLLING". Each is a later provision that amends '
+    "an earlier one whose original wording may also appear in context. Where a "
+    "provision has been so amended, the AMENDING text is the current law and is "
+    "CONTROLLING: state the amended rule, attribute it to the amending act named "
+    "in the marker, and present the superseded original only as prior history (if "
+    "at all) — never as the operative rule."
+)
+
 
 def _build_user_message(
     *,
@@ -689,6 +708,10 @@ def _build_user_message(
         mentioned_regs=mentioned_regs,
     )
     parts: list[str] = []
+    # Amendment directive first, so the controlling amended value is read before
+    # anything else. Fires only when the retriever surfaced a controlling amendment.
+    if _AMENDMENT_CONTEXT_MARKER in context:
+        parts.append(_AMENDED_PROVISION_DIRECTIVE)
     if route_guidance:
         parts.append(route_guidance)
     # Single-regulation scope constraint — prevents cross-regulation citation contamination.
