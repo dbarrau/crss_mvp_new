@@ -468,6 +468,15 @@ def _build_legal_qualification_targets(
     if ai_celex:
         add("Article 6", ai_celex)
         add("Annex I", ai_celex)
+        # The Article 6(1) product route turns on whether the AI system is a
+        # "safety component" — defined in Article 3(14). Article 3 (the whole
+        # 68-point definitions article) is already force-loaded when actor status
+        # is needed, but it renders capped and samples point (14) out; target the
+        # point directly so its text reaches context. Otherwise the concept is
+        # never named in the question, is not detected as a defined term, and the
+        # auditor requests it by a hallucinated number (observed: "Article 3(40)",
+        # which is 'biometric categorisation system').
+        add("Article 3(14)", ai_celex)
         if needs_annex_iii:
             add("Annex III", ai_celex)
         if {"MDR 2017/745", "IVDR 2017/746"} & mentioned_regs:
