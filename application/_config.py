@@ -237,6 +237,11 @@ _IMPLICIT_PROVISION_REFS: list[tuple[re.Pattern, str, str]] = [
 # These come straight from the quality eval's "fatal omission" findings: the
 # annex exists in the graph but is semantically too distant from the question's
 # surface terms for the dense/lexical channels to retrieve it. Both MDR-scoped.
+# LLM / general-purpose-AI cue → AI Act GPAI provisions (see the anchor below).
+_LLM_GPAI_RE = re.compile(
+    r"\b(?:LLMs?|large\s+language\s+models?|generative\s+AI|foundation\s+models?|"
+    r"general[\s-]?purpose\s+AI|GPAI)\b", re.I)
+
 _CONTEXT_ANCHOR_REFS: list[tuple[re.Pattern, str, str]] = [
     # Non-medical-purpose / wellbeing framing → MDR Annex XVI, the regime for
     # products *without* an intended medical purpose — the carve-out a wellbeing
@@ -266,6 +271,16 @@ _CONTEXT_ANCHOR_REFS: list[tuple[re.Pattern, str, str]] = [
         r"already\s+appl(?:y|ies)|start\s+to\s+apply|exact\s+dates?|"
         r"when\s+(?:do|does|will)\b[^?\n]{0,60}\bapply)\b", re.I),
         AI_ACT_CELEX, "Article 113"),
+    # LLM / general-purpose-AI framing → AI Act GPAI provisions. An LLM is almost
+    # always a general-purpose AI *model* with its own obligations under
+    # **Article 53** regardless of the high-risk question; **Article 51** is the
+    # test for whether it is a GPAI model. Retrieval otherwise routes these
+    # questions down the Article 6 high-risk path and never surfaces Chapter V, so
+    # the GPAI point can only come from model memory — ungrounded, it flickers and
+    # gets stripped (observed on the "LLM integrated into a device" question).
+    # Anchoring grounds the point so it surfaces consistently.
+    (_LLM_GPAI_RE, AI_ACT_CELEX, "Article 51"),
+    (_LLM_GPAI_RE, AI_ACT_CELEX, "Article 53"),
 ]
 
 # Use-case cue → the specific Annex III point that governs it, registered as
