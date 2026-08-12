@@ -241,6 +241,58 @@ def _audit_answer(
     return findings
 
 
+# A want that references a definition: the auditor names the provision by a
+# paragraph number recalled from memory, which for a definition is unreliable
+# (observed: "Article 3(40) AI Act (definition of 'safety component')" — safety
+# component is 3(14); 3(40) is 'biometric categorisation system'). When a want
+# signals a definition and names a defined term, resolve by TERM (deterministic)
+# instead of the cited number.
+_DEFINITION_WANT_RE = re.compile(r"\bdefin(?:ition|ed|es)\b", re.I)
+_QUOTED_TERM_RE = re.compile(r"[‘“\"']([^’”\"']{2,60})[’”\"']")
+_DEFINITION_OF_RE = re.compile(
+    r"\bdefinition\s+of\s+([a-z][\w\s\-/]{1,58}?)\s*(?:[)\.,;]|$)", re.I
+)
+
+
+def _extract_defined_term(ref: str) -> str | None:
+    """The defined term a want names — a quoted phrase, else a 'definition of X'
+    clause. ``None`` when the want does not name one."""
+    m = _QUOTED_TERM_RE.search(ref)
+    if m:
+        return m.group(1).strip()
+    m = _DEFINITION_OF_RE.search(ref)
+    if m:
+        return m.group(1).strip()
+    return None
+
+
+def _resolve_definition_want(
+    retriever: Any, term: str, target_celexes: set[str] | None,
+) -> list[dict[str, Any]]:
+    """Resolve *term* to its definition provision via the term channel
+    (deterministic exact-match on :DefinedTerm), scoped to *target_celexes*.
+    Returns retrieval-shaped provisions, or ``[]`` when nothing resolves."""
+    finder = getattr(retriever, "find_by_term", None)
+    by_ids = getattr(retriever, "retrieve_by_ids", None)
+    if not (callable(finder) and callable(by_ids)):
+        return []
+    try:
+        rows = finder(term) or []
+    except Exception:  # noqa: BLE001 — best-effort
+        return []
+    srcs = [
+        r.get("source_provision_id") for r in rows
+        if r and r.get("source_provision_id")
+        and (not target_celexes or r.get("celex") in target_celexes)
+    ]
+    if not srcs:
+        return []
+    try:
+        return by_ids(srcs[:1])
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def _gap_retrieve(
     findings: dict[str, Any],
     retriever: Any,
@@ -264,9 +316,27 @@ def _gap_retrieve(
                 return
 
     refs = findings.get("missing_provision_refs") or []
-    if refs and len(new) < max_add:
+    # Split definition-wants (resolve by term) from ordinary refs (resolve by
+    # number). For a definition the auditor's number is unreliable, and feeding it
+    # to retrieve_by_refs pulls the WRONG provision — actively polluting context
+    # with an unrelated definition while the needed one never arrives.
+    number_refs: list[str] = []
+    for ref in refs:
+        if len(new) >= max_add:
+            break
+        term = _extract_defined_term(ref) if _DEFINITION_WANT_RE.search(ref) else None
+        resolved = _resolve_definition_want(retriever, term, target_celexes) if term else []
+        if resolved:
+            _add(resolved)
+            logger.info(
+                "Audit gap: resolved %r by term %r (bypassing the cited number).",
+                ref, term,
+            )
+        else:
+            number_refs.append(ref)
+    if number_refs and len(new) < max_add:
         try:
-            _add(retriever.retrieve_by_refs(refs, celex_filter=target_celexes))
+            _add(retriever.retrieve_by_refs(number_refs, celex_filter=target_celexes))
         except Exception as exc:  # noqa: BLE001 — retrieval is best-effort
             logger.warning("Audit gap ref-retrieval failed: %s", exc)
 

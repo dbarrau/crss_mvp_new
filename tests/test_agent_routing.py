@@ -292,6 +292,7 @@ def test_retrieve_route_provisions_legal_qualification_forces_backbone_refs():
             [{"article_id": "mdr-art-5-dup", "article_ref": "Article 5", "celex": MDR_CELEX}],
             [{"article_id": "ai-art-6", "article_ref": "Article 6", "celex": AI_ACT_CELEX}],
             [{"article_id": "ai-annex-i", "article_ref": "Annex I", "celex": AI_ACT_CELEX}],
+            [{"article_id": "ai-art-3-14", "article_ref": "Article 3(14)", "celex": AI_ACT_CELEX}],
             [{"article_id": "ai-art-43", "article_ref": "Article 43", "celex": AI_ACT_CELEX}],
             [{"article_id": "ai-art-25", "article_ref": "Article 25", "celex": AI_ACT_CELEX}],
             [{"article_id": "mdcg-2025-6", "article_ref": "MDCG 2025-6", "celex": "MDCG_2025_6"}],
@@ -336,6 +337,7 @@ def test_retrieve_route_provisions_legal_qualification_forces_backbone_refs():
         "direct",
         "direct",
         "direct",
+        "direct",
         "encode_query",
         "roles",
         "encode",
@@ -347,6 +349,7 @@ def test_retrieve_route_provisions_legal_qualification_forces_backbone_refs():
         "Article 5",
         "Article 6",
         "Annex I",
+        "Article 3(14)",
         "Article 43",
         "Article 25",
         "MDCG 2025-6",
@@ -358,9 +361,9 @@ def test_retrieve_route_provisions_legal_qualification_forces_backbone_refs():
         "mdr-art-5-dup",
         "ai-art-6",
         "ai-annex-i",
+        "ai-art-3-14",
         "ai-art-43",
         "ai-art-25",
-        "art-role",
     ]
 
 
@@ -385,6 +388,7 @@ def test_build_legal_qualification_targets_skips_article_25_for_already_provider
         "Article 5",
         "Article 6",
         "Annex I",
+        "Article 3(14)",
         "Article 43",
         "MDCG 2025-6",
     ]
@@ -415,6 +419,7 @@ def test_build_legal_qualification_targets_only_adds_annex_iii_when_explicitly_s
         "Article 5",
         "Article 6",
         "Annex I",
+        "Article 3(14)",
         "Annex III",
         "Article 43",
         "MDCG 2025-6",
@@ -690,6 +695,7 @@ def test_evaluate_route_sufficiency_flags_missing_qualification_backbone():
         "Article 2",
         "Article 6",
         "Annex I",
+        "Article 3(14)",
         "Article 43",
         "Article 25",
         "MDCG 2025-6",
