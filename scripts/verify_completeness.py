@@ -434,7 +434,56 @@ def verify_legislation_source(celex: str) -> list[Check]:
         details=text_mismatches,
     ))
 
+    # Amendment-husk detector (sub-point text loss). The checks above see article
+    # presence/counts only; they cannot see a POINT whose nested quoted
+    # replacement text was dropped at parse — the article is present, only its
+    # sub-point text is lost. This is the class that hid the AI Act date amendment
+    # (Reg 2026/1744, Article 1(40): "point (c) is replaced by the following: ;"
+    # with the quoted "'(c) … 2 December 2027 … 2 August 2028 …'" discarded).
+    #
+    # A fuzzy source-vs-parsed text-coverage ratio cannot catch this — the drop is
+    # ~2% of a large article, below the noise the parser's legitimate
+    # restructuring (label stripping, node splitting) introduces. But the husk has
+    # an unambiguous SIGNATURE: an amendment instruction that ends at its colon
+    # with no replacement text, and no child carrying it. A genuine amendment
+    # keeps its quoted replacement inline (folded into the point body), so this is
+    # false-positive-free.
+    children_by_parent: dict[str, int] = defaultdict(int)
+    for p in provisions:
+        pid = p.get("parent_id")
+        if pid:
+            children_by_parent[pid] += len((p.get("text") or "").strip())
+    husks: list[str] = []
+    for p in provisions:
+        t = (p.get("text") or "").replace("\xa0", " ").strip()
+        if _AMENDMENT_HUSK_RE.search(t) and children_by_parent.get(p["id"], 0) < 30:
+            husks.append(f"{p['id']}: {t[:90]!r}")
+    checks.append(Check(
+        name="no_amendment_husks",
+        passed=len(husks) == 0,
+        expected=0,
+        actual=len(husks),
+        details=husks[:15],
+    ))
+
     return checks
+
+
+# An amendment instruction whose replacement text was dropped: the lead-in ends
+# at its colon with nothing but closing punctuation. A genuine amendment carries
+# the quoted replacement inline after the colon, so it does not match. Container
+# instructions ("… is amended as follows:") end this way too but have children
+# carrying the sub-amendments — the caller exempts those via a child-text guard.
+_AMENDMENT_HUSK_RE = re.compile(
+    r"(?:replaced by the following|(?:is|are|shall be)\s+(?:inserted|added|deleted)|"
+    r"amended as follows|amended to read(?:\s+as\s+follows)?|"
+    r"the following[^:]{0,40}?(?:is|are|shall be)\s+(?:inserted|added))"
+    r"\s*:\s*[;'‘’\"“”.\s]*$",
+    re.IGNORECASE,
+)
+
+
+# ── Layer 1c: MDCG Markdown → parsed.json ─────────────────────────────────
 
 
 # ── Layer 1c: MDCG Markdown → parsed.json ─────────────────────────────────
