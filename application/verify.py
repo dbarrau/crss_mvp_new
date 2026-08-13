@@ -56,11 +56,15 @@ class VerificationResult:
 
     ``answer`` is the (possibly redacted, warning-prefixed, scope-noted) text to
     show the user; ``confidence`` is the composite the agent yields as a
-    ``confidence`` event.
+    ``confidence`` event. ``report`` is the pre-redaction faithfulness report
+    (``FaithfulnessReport`` or ``None`` when the check is disabled / no quotes);
+    it is not used by the production path but lets an eval read the structured
+    fabrication counts (``unverified`` / ``misattributed``) the score folds away.
     """
 
     answer: str
     confidence: dict[str, Any]
+    report: Any | None = None
 
 
 def _apply_citation_scope_note(
@@ -281,4 +285,4 @@ def verify_answer(
         confidence["confidence_level"],
         confidence["confidence_score"] * 100,
     )
-    return VerificationResult(answer=answer, confidence=confidence)
+    return VerificationResult(answer=answer, confidence=confidence, report=faith_report)

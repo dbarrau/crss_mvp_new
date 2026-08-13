@@ -317,7 +317,27 @@ def _generate_grounded_answer(
 # ---------------------------------------------------------------------------
 
 
-def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, str]] | None = None):
+def _fab_counts(report: Any | None) -> dict[str, int]:
+    """Structured fabrication counts from a faithfulness ``report`` (eval only).
+
+    ``unverified`` (absent from the corpus) + ``misattributed`` (real text, wrong
+    provision) are the two classes the verify stage redacts/flags — their sum is
+    the "fabricated quotes" figure the audit-loop A/B is measured in. ``None``
+    (check disabled / no quotes) reads as all-zero.
+    """
+    if report is None:
+        return {"unverified": 0, "misattributed": 0, "near_verbatim": 0, "total_quotes": 0}
+    _n = lambda attr: len(getattr(report, attr, None) or [])  # noqa: E731
+    return {
+        "unverified": _n("unverified"),
+        "misattributed": _n("misattributed"),
+        "near_verbatim": _n("near_verbatim"),
+        "total_quotes": int(getattr(report, "total_quotes", 0) or 0),
+    }
+
+
+def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, str]] | None = None,
+               capture: dict[str, Any] | None = None):
     """Streaming version of :func:`ask`.
 
     Yields JSON-serializable dicts at each pipeline stage so the caller can
@@ -338,6 +358,23 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
         An exception was raised.  No further events will follow.
     ``{"type": "audit",      "trace": <dict>}``
         Structured retrieval/audit metadata emitted before generation.
+
+    Parameters
+    ----------
+    capture:
+        Opt-in eval hook (default ``None`` — the production path is byte-for-byte
+        unaffected). When a dict is passed, it is populated in place with the
+        pre-audit **draft** and post-audit **final** answers, each finalised
+        through the *identical* deterministic tail (pointer-resolution →
+        verification → bolding → post-processing) so the two are graded on equal
+        footing, plus their faithfulness fab-counts, confidence and retrieved
+        provision ids. This lets ``scripts/generate_eval_artifact.py`` measure
+        the audit/revision loop's contribution from a single generation without
+        reimplementing the pipeline. Keys written: ``draft``, ``final``,
+        ``revised`` (bool — did the audit loop change the answer), ``draft_fab``
+        / ``final_fab`` (fabrication counts: ``unverified`` + ``misattributed``),
+        ``draft_confidence`` / ``final_confidence``, ``provision_ids`` (final
+        bag) and ``draft_provision_ids`` (pre-audit bag).
     """
     from mistralai.client import Mistral
 
@@ -836,6 +873,14 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                 full_answer += delta
                 yield {"type": "draft", "content": delta}
 
+        # --- Eval capture: snapshot the pre-audit draft and its provision bag
+        # BEFORE the audit loop can mutate either. Guarded on `capture` so the
+        # production path takes only a cheap list() copy when eval is off. The
+        # snapshot still carries unresolved [quote:]/[cite:] pointers; the tail
+        # below re-runs pointer-resolution + verification on it identically. ---
+        _draft_snapshot = full_answer if capture is not None else None
+        _draft_provisions = list(provisions) if capture is not None else None
+
         # --- 7a. Bounded-agentic audit + revise loop ---
         # The Auditor verifies the draft's legal backbone and names provisions
         # to retrieve; gaps drive targeted re-retrieval; the Adjudicator
@@ -1026,6 +1071,53 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
             audited=audited,
         )
         yield {"type": "done", "answer": final_answer, "audit_trace": audit_trace}
+
+        # --- Eval capture: finalise the pre-audit draft through the IDENTICAL
+        # deterministic tail (pointer-resolution → verify → bold → post-process)
+        # so draft and final are graded on equal footing — the only difference
+        # between them is whether the audit/revision loop ran. No LLM calls. ---
+        if capture is not None:
+            _draft_text = _draft_snapshot or ""
+            if _draft_text:
+                _draft_text = resolve_pointers(
+                    _draft_text,
+                    build_pointer_index(_draft_provisions, definitions),
+                    fallback_refs=_fallback_refs,
+                ).text
+            _draft_verification = _verify_answer(
+                _draft_text,
+                provisions=_draft_provisions,
+                definitions=definitions,
+                role_provisions=role_provisions,
+                sufficiency=sufficiency,
+                target_celexes=target_celexes,
+                mentioned_regs=mentioned_regs,
+                role_specs=role_specs,
+                corrective_actions=corrective_actions,
+                question=retrieval_question,
+                reference_index=_fallback_refs,
+            )
+            _draft_final = _postprocess_answer(
+                _bold_references(_draft_verification.answer),
+                route,
+                question=question,
+                sufficiency=sufficiency,
+                confidence=_draft_verification.confidence,
+                audited=False,
+            )
+            capture.update({
+                "draft": _draft_final,
+                "final": final_answer,
+                "revised": bool(audited),
+                "draft_fab": _fab_counts(_draft_verification.report),
+                "final_fab": _fab_counts(_verification.report),
+                "draft_confidence": _draft_verification.confidence,
+                "final_confidence": confidence,
+                "provision_ids": [p.get("article_id") for p in provisions if p.get("article_id")],
+                "draft_provision_ids": [
+                    p.get("article_id") for p in (_draft_provisions or []) if p.get("article_id")
+                ],
+            })
 
     except Exception as exc:
         logger.exception("Error in ask_stream()")
