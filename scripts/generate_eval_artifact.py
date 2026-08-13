@@ -127,6 +127,26 @@ def _generate_case(case: dict, retriever, *, k: int) -> dict:
     }
 
 
+def _build_artifact(results: list[dict], *, k: int) -> dict:
+    """Assemble the artifact envelope from the results so far (also used for
+    the after-each-case checkpoint, so a long run survives a mid-run crash)."""
+    return {
+        "meta": {
+            "generated": _dt.datetime.now().isoformat(timespec="seconds"),
+            "n": len(results),
+            "n_ok": sum(1 for r in results if not r.get("error")),
+            "n_revised": sum(1 for r in results if r.get("revised")),
+            "k": k,
+            "clarify": os.environ.get("CRSS_CLARIFY", "1"),
+            "audit": os.environ.get("CRSS_AUDIT", "1"),
+            "graph_expansion": os.environ.get("CRSS_GRAPH_EXPANSION", "1"),
+            "model": os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
+            "audit_model": os.environ.get("CRSS_AUDIT_MODEL", "mistral-medium-latest"),
+        },
+        "results": results,
+    }
+
+
 def run(cases: list[dict], *, k: int, out: str | None) -> dict:
     from retrieval.graph_retriever import GraphRetriever
 
@@ -135,6 +155,10 @@ def run(cases: list[dict], *, k: int, out: str | None) -> dict:
               "for every case and the revision-delta grader will have nothing to "
               "measure. Unset CRSS_AUDIT (or set it to 1) to capture the loop.",
               file=sys.stderr)
+
+    out_path = _resolve_out(out)
+    if out_path:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
 
     retriever = GraphRetriever()
     signal.signal(signal.SIGALRM, _on_alarm)
@@ -162,31 +186,16 @@ def run(cases: list[dict], *, k: int, out: str | None) -> dict:
                 fab = (r.get("final_fab") or {})
                 print(f"{tag}  fab(final)={fab.get('unverified', 0)}+{fab.get('misattributed', 0)}  "
                       f"{r['gen_s']}s")
+            # Checkpoint after every case: a crash at case N keeps N-1 generations.
+            if out_path:
+                out_path.write_text(json.dumps(_build_artifact(results, k=k), indent=2))
     finally:
         retriever.close()
 
-    n_ok = sum(1 for r in results if not r.get("error"))
-    n_revised = sum(1 for r in results if r.get("revised"))
-    artifact = {
-        "meta": {
-            "generated": _dt.datetime.now().isoformat(timespec="seconds"),
-            "n": len(results),
-            "n_ok": n_ok,
-            "n_revised": n_revised,
-            "k": k,
-            "clarify": os.environ.get("CRSS_CLARIFY", "1"),
-            "audit": os.environ.get("CRSS_AUDIT", "1"),
-            "graph_expansion": os.environ.get("CRSS_GRAPH_EXPANSION", "1"),
-            "model": os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
-            "audit_model": os.environ.get("CRSS_AUDIT_MODEL", "mistral-medium-latest"),
-        },
-        "results": results,
-    }
-
-    print(f"\n  generated {n_ok}/{len(results)} case(s); revision fired on {n_revised}.")
-    out_path = _resolve_out(out)
+    artifact = _build_artifact(results, k=k)
+    print(f"\n  generated {artifact['meta']['n_ok']}/{len(results)} case(s); "
+          f"revision fired on {artifact['meta']['n_revised']}.")
     if out_path:
-        out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(artifact, indent=2))
         print(f"  wrote {out_path}")
     return artifact
