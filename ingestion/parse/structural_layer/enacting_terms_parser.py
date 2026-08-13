@@ -147,6 +147,20 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 				content = text[1:].strip()
 				kind = "indent"
 				html_id = f"{parent_html_id}_ind_{indent_seq}"
+			elif text[:1] in _QUOTE_OPENERS:
+				# A quoted block at this level is amendment replacement text that
+				# arrived without an enumerated label to become a child — an
+				# article body "…the following point is added:" followed by the
+				# quoted added point as a sibling table (AI Act Article 110 → the
+				# added point '(68) …' inserted into Directive 2020/1828 Annex I).
+				# Fold it into the parent's text so the added/replacement text is
+				# not lost — the same rescue point_text_without_nested_tables gives
+				# a quote nested inside a lead-in point, for the case where the
+				# quote sits at this level with no point to fold it into.
+				parent_node["text"] = (
+					(parent_node.get("text", "") or "").rstrip() + " " + text
+				).strip()
+				continue
 			else:
 				continue
 			node = ctx.make_node(kind, html_id, content, parent_node, number=label)
