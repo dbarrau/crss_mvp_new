@@ -6,9 +6,48 @@ pedigree deterministically from the AMENDS-edge metadata for every amended
 provision the answer actually cites — the traceability compliance teams need.
 """
 from application._postprocessing import (
+    _amendment_change_summary,
     _amendment_target_in_answer,
     _build_amendment_provenance,
 )
+
+
+# ── 'what changed' extraction from the amending provision's lead-in ──────────
+
+_HEAD = "Article 1 — Amendments to Regulation (EU) 2024/1689 | "
+
+
+def test_change_summary_insertion():
+    a = {"article_text": _HEAD + "in Article 6, the following paragraphs are inserted: ‘1a. …’"}
+    assert _amendment_change_summary(a, "Article 6") == "the following paragraphs are inserted"
+
+
+def test_change_summary_replacement_drops_by_the_following():
+    a = {"article_text": _HEAD + "in Article 43, paragraph 3 is replaced by the following: ‘3. …’"}
+    assert _amendment_change_summary(a, "Article 43") == "paragraph 3 is replaced"
+
+
+def test_change_summary_nested_amendment_drops_as_follows():
+    a = {"article_text": _HEAD + "Article 3 is amended as follows: point (14) is amended as follows: ‘…’"}
+    assert _amendment_change_summary(a, "Article 3") == "point (14) is amended"
+
+
+def test_change_summary_annex_multi_operation():
+    a = {"article_text": _HEAD + "Annex I is amended as follows: in Section A, point 1 is "
+         "deleted; in Section B, the following point is added: ‘…’"}
+    assert _amendment_change_summary(a, "Annex I") == (
+        "in Section A, point 1 is deleted; in Section B, the following point is added")
+
+
+def test_change_summary_empty_without_text():
+    assert _amendment_change_summary({}, "Article 6") == ""
+
+
+def test_provenance_renders_what_changed_when_text_present():
+    amds = [{"_amends_target_ref": "Article 6", "amending_act": "Regulation (EU) 2026/1744",
+             "article_text": _HEAD + "in Article 6, the following paragraphs are inserted: ‘1a. …’"}]
+    out = _build_amendment_provenance("high-risk under Article 6(1a)", amds)
+    assert "**Article 6** — the following paragraphs are inserted (**Regulation (EU) 2026/1744**)" in out
 
 _AMDS = [
     {"_amends_target_ref": "Article 6", "amending_act": "Regulation (EU) 2026/1744"},

@@ -284,6 +284,32 @@ def _amendment_target_in_answer(target_ref: str, answer: str) -> bool:
     return False
 
 
+def _amendment_change_summary(amendment: dict, target_ref: str) -> str:
+    """One-line 'what changed', from the amending provision's own lead-in — the
+    instruction that precedes the quoted replacement text.
+
+    EU amendment grammar is regular ('in Article 6, the following paragraphs are
+    inserted: ‘…’', 'in Article 43, paragraph 3 is replaced by the following: ‘…’',
+    'Article 3 is amended as follows: point (14) is amended…'). We take the text
+    up to the first quote, drop the heading prefix and the redundant restatement
+    of the target, and trim the 'by the following'/'as follows' tail. Returns ''
+    when no usable lead-in is present (falls back to a bare attribution).
+    """
+    text = re.sub(r"\s+", " ", (amendment.get("article_text") or amendment.get("text") or "")).strip()
+    if not text:
+        return ""
+    leadin = text.rsplit("|", 1)[-1]                       # drop 'Article 1 — Amendments … |'
+    leadin = re.split(r"[‘’'“”\"]", leadin, maxsplit=1)[0]  # up to the first quote
+    leadin = re.sub(rf"^\s*in\s+{re.escape(target_ref)}\b\s*,?\s*", "", leadin, flags=re.I)
+    leadin = re.sub(rf"^\s*{re.escape(target_ref)}\b\s+is\s+amended\s+as\s+follows\s*:?\s*",
+                    "", leadin, flags=re.I)
+    leadin = re.sub(r"\s*(?:by\s+the\s+following|as\s+follows)\s*:?\s*$", "", leadin, flags=re.I)
+    leadin = leadin.strip().rstrip(":").strip()
+    if len(leadin) > 180:
+        leadin = leadin[:177].rstrip() + "…"
+    return leadin
+
+
 def _build_amendment_provenance(answer: str, amendments: list[dict]) -> str:
     """Deterministic amendment-pedigree footer built from the AMENDS-edge metadata
     of the amendments surfaced into context (``_amends_target_ref`` +
@@ -307,7 +333,12 @@ def _build_amendment_provenance(answer: str, amendments: list[dict]) -> str:
         if not _amendment_target_in_answer(target, answer):
             continue
         seen.add((target, act))
-        lines.append(f"> - **{target}** — amended by **{act}** (amended text controlling)")
+        summary = _amendment_change_summary(a, target)
+        if summary:
+            # e.g. 'Article 6 — the following paragraphs are inserted (Reg 2026/1744)'
+            lines.append(f"> - **{target}** — {summary} (**{act}**)")
+        else:
+            lines.append(f"> - **{target}** — amended by **{act}**")
     if not lines:
         return ""
     return (
