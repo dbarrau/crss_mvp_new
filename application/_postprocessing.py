@@ -242,15 +242,46 @@ def _build_confidence_banner(confidence: "dict[str, Any]") -> str:
     return "\n".join(lines)
 
 
+# A reference qualified by ANOTHER regulation is not an AI Act citation, so an
+# AI Act amendment must not be attributed to it — 'Article 2(30) of the MDR' is
+# the MDR's manufacturer definition, which the AI Act Omnibus does not touch.
+# Matches a trailing '… of the MDR/IVDR/GDPR' (optionally after a '(30)' locator)
+# or a leading 'MDR/IVDR/GDPR Article …' — but deliberately NOT an incidental
+# mention like 'Annex I (which includes the MDR)', where Annex I IS the (amended)
+# AI Act annex and the MDR is only named as content.
+_FOREIGN_REG = r"MDR|IVDR|GDPR|Medical\s+Device\s+Regulation"
+_FOREIGN_REG_AFTER_RE = re.compile(
+    rf"^\s*(?:\([^)]*\)\s*)?,?\s*of\s+(?:the\s+)?(?:{_FOREIGN_REG})\b", re.I)
+_FOREIGN_REG_BEFORE_RE = re.compile(rf"(?:{_FOREIGN_REG})\s+$", re.I)
+
+
 def _amendment_target_in_answer(target_ref: str, answer: str) -> bool:
-    """Whole-reference match: 'Article 6' matches 'Article 6' and 'Article 6(1a)'
-    but not 'Article 60' / 'Article 63'; 'Annex I' matches 'Annex I' not 'Annex III'."""
+    """True when the answer cites ``target_ref`` **as an AI Act provision**.
+
+    Whole-reference match: 'Article 6' matches 'Article 6' and 'Article 6(1a)'
+    but not 'Article 60' / 'Article 63'; 'Annex I' matches 'Annex I' not 'Annex III'.
+    An occurrence explicitly scoped to another regulation ('Article 2(30) of the
+    MDR', 'MDR Annex I') is skipped — otherwise an AI Act amendment is wrongly
+    attributed to an MDR/GDPR citation (MDR/IVDR/GDPR each have their own
+    'Article 2' and 'Annex I'). Returns True on the first AI-Act (unscoped)
+    occurrence.
+    """
+    # Strip markdown emphasis so a bolded '**Article 2(30)** of the MDR' does not
+    # hide the trailing regulation qualifier behind '**'.
+    clean = re.sub(r"[*_`]", "", answer)
     parts = target_ref.split(None, 1)
     if len(parts) == 2:
         keyword, num = parts
-        return bool(re.search(
-            rf"\b{re.escape(keyword)}\s+{re.escape(num)}(?![0-9A-Za-z])", answer, re.I))
-    return bool(re.search(rf"\b{re.escape(target_ref)}\b", answer, re.I))
+        pattern = rf"\b{re.escape(keyword)}\s+{re.escape(num)}(?![0-9A-Za-z])"
+    else:
+        pattern = rf"\b{re.escape(target_ref)}\b"
+    for m in re.finditer(pattern, clean, re.I):
+        after = clean[m.end():m.end() + 40]
+        before = clean[max(0, m.start() - 12):m.start()]
+        if _FOREIGN_REG_AFTER_RE.match(after) or _FOREIGN_REG_BEFORE_RE.search(before):
+            continue  # scoped to MDR/IVDR/GDPR — not an AI Act citation
+        return True
+    return False
 
 
 def _build_amendment_provenance(answer: str, amendments: list[dict]) -> str:
