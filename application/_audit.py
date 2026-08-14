@@ -153,6 +153,27 @@ Rules:
 - Keep "issues" focused on backbone defects, not wording preferences.
 """
 
+# The auditor runs on a mid-tier model whose training may PREDATE a later
+# amending act (e.g. the 2026 Digital Omnibus): it then "corrects" real,
+# in-force inserted paragraphs (Article 6(1a)-(1c), narrowing 'safety component')
+# as fabrication and can set primary_route_correct=false on a false premise —
+# triggering a needless, potentially harmful revision. When the retrieved context
+# actually carries an amending provision, tell the auditor it is authoritative
+# over its own recollection. Only injected when the marker is present, so a
+# normal audit is unchanged.
+_AMENDMENT_MARKER = "AMENDING PROVISION"
+_AUDIT_AMENDMENT_DIRECTIVE = (
+    "AMENDMENTS — READ FIRST: the RETRIEVED PROVISIONS below may contain blocks "
+    'flagged "AMENDING PROVISION — CONTROLLING". These are LATER amending acts '
+    "(e.g. a 2026 Omnibus) that insert or replace text in the base regulation and "
+    "are CURRENT, IN-FORCE law — AUTHORITATIVE over your own training. A provision "
+    "or paragraph that appears in such a block (e.g. an inserted Article 6(1a)) is "
+    "REAL: do NOT flag it as non-existent, fabricated, or draft numbering, and do "
+    "NOT set initial_status_correct or primary_route_correct to false on that "
+    "basis. Audit the draft against the retrieved text, not your memory of the "
+    "base act's numbering."
+)
+
 
 def _truncate(text: str, budget: int) -> str:
     if len(text) <= budget:
@@ -215,8 +236,14 @@ def _audit_answer(
     model: str,
 ) -> dict[str, Any]:
     """Run one Auditor LLM call; return parsed findings."""
+    # Amendment awareness — only when the context actually carries a controlling
+    # amendment (prepended, so it survives truncation), so a normal audit is
+    # unchanged. Stops the pre-Omnibus auditor from vetoing real inserted law.
+    amend_note = (
+        _AUDIT_AMENDMENT_DIRECTIVE + "\n\n" if _AMENDMENT_MARKER in context else ""
+    )
     user = (
-        f"{_AUDIT_INSTRUCTIONS}\n\n"
+        f"{amend_note}{_AUDIT_INSTRUCTIONS}\n\n"
         f"## QUESTION\n{question}\n\n"
         f"## RETRIEVED PROVISIONS (what the draft was grounded in)\n"
         f"{_truncate(context, _CONTEXT_BUDGET)}\n\n"
