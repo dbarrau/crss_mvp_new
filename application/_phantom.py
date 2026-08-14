@@ -43,7 +43,15 @@ misattribution guard, validated against 108 stored eval answers):
   (article / annex / recital) it actually has families for in the graph.
   GDPR/MDR/IVDR recitals are not ingested, so "Recital 71 GDPR" — real law,
   absent from the graph — must stay silent, not flag (observed false
-  positive).
+  positive);
+- amendment scoping: an act reached via an amendment connective ("Article 113,
+  **as amended by** Regulation (EU) 2026/1744") is the *amending* act, not the
+  mention's home act, so it must not scope the mention. Without this, ingesting
+  an amending regulation (the Digital Omnibus, whose own articles stop at 4)
+  makes it the nearest alias to the amended article number and strips a
+  correctly-cited provision (observed: HQ_038 lost Article 113 and the 2 Aug
+  2028 date). A genuinely nonexistent number stays caught by the corpus-union
+  tier, which the in-corpus amender does not silence.
 
 **Boundary (stated, not hidden)**: this guard checks *existence*, not
 *semantics*.  "Article 28(2)" cited with draft-era meaning passes, because
@@ -211,6 +219,37 @@ def _span_gap(a_start: int, a_end: int, b_start: int, b_end: int) -> int:
     return 0
 
 
+# An act reached via an amendment connective is the *amending* act, not the home
+# of a neighbouring article: "Article 113, as amended by Regulation (EU) 2026/1744"
+# means Article 113 lives in the AMENDED act (the AI Act) and 2026/1744 only
+# changes it. Such an alias must not scope the mention, or a correctly-cited
+# amended provision is stripped whenever the amending regulation (which lacks
+# that article number) sits nearest — the flagship amendment/dates answer's
+# failure mode (HQ_038: Article 113 removed, the 2 Aug 2028 date lost with it).
+_AMENDER_BEFORE_RE = re.compile(
+    r"(?:amend(?:ed|ing)?|introduc(?:ed|ing)|insert(?:ed|ing)|"
+    r"replac(?:ed|ing)|add(?:ed|ing)|repeal(?:ed|ing))\s+by\s*$",
+    re.IGNORECASE,
+)
+_AMENDER_AFTER_RE = re.compile(
+    r"^\s*,?\s*(?:amend(?:s|ing)|introduc(?:es|ing)|insert(?:s|ing)|"
+    r"replac(?:es|ing)|add(?:s|ing)|repeal(?:s|ing))\b",
+    re.IGNORECASE,
+)
+
+
+def _is_amender_alias(scan_line: str, c_start: int, c_end: int) -> bool:
+    """True when the act alias at ``[c_start, c_end)`` is an *amending* act — it
+    is reached via an amendment connective ("… as amended by <ACT>") or is the
+    subject of one ("<ACT> amends …") — so it must not scope a neighbouring
+    provision mention. Existence of a truly-nonexistent article is still caught
+    by the corpus-union tier (the amender is in-corpus, so it does not silence
+    that tier); this only stops the mis-scoping of a *real* amended article."""
+    if _AMENDER_BEFORE_RE.search(scan_line[:c_start]):
+        return True
+    return bool(_AMENDER_AFTER_RE.match(scan_line[c_end:]))
+
+
 def _mention_tokens(scan_line: str) -> list[tuple[int, int, str]]:
     """Extract ``(start, end, base_family)`` for every provision mention."""
     out: list[tuple[int, int, str]] = []
@@ -267,11 +306,15 @@ def _line_phantoms(
                 phantoms.append(family)
             continue
         # Exists somewhere: flag only an explicit, adjacent mis-scoping
-        # ("MDR Article 110a" where MDR has no 110a).
+        # ("MDR Article 110a" where MDR has no 110a). An *amending* act adjacent
+        # via "as amended by" / "amends" is excluded — it is not the mention's
+        # home act, so scoping to it would strip a correctly-cited amended
+        # provision (HQ_038: "Article 113, as amended by Regulation 2026/1744").
         adjacent = [
             (c_start, c_end, celex)
             for c_start, c_end, celex in candidates
             if _span_gap(m_start, m_end, c_start, c_end) <= _ADJACENCY_GAP
+            and not _is_amender_alias(scan_line, c_start, c_end)
         ]
         if not adjacent:
             continue
