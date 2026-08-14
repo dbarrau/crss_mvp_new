@@ -191,7 +191,7 @@ def _merge_unique_provisions(
     return len(new_items)
 
 
-def _surface_amendments(retriever, provisions: list[dict]) -> None:
+def _surface_amendments(retriever, provisions: list[dict]) -> list[dict]:
     """Append controlling amendments for any provision now in the bag (in place).
 
     Runs over the *final* assembled bag, so a superseding amendment rides along
@@ -200,24 +200,30 @@ def _surface_amendments(retriever, provisions: list[dict]) -> None:
     path, which never runs the dense retriever's expansion). This is what makes
     the correct amended dates appear for a question phrased about obligations,
     not just one that names Article 113. See ``GraphRetriever.retrieve_amendments``.
+
+    Returns the controlling amending provisions surfaced (``[]`` when none), so
+    the caller can make the amendment phase visible in the trace — otherwise a
+    reader cannot tell the Omnibus was consulted at all.
     """
     fn = getattr(retriever, "retrieve_amendments", None)
     if not callable(fn) or not provisions:
-        return
+        return []
     ids = [p.get("article_id") for p in provisions if p.get("article_id")]
     ids += [p.get("matched_leaf_id") for p in provisions if p.get("matched_leaf_id")]
     amendments = fn(list(dict.fromkeys(ids)))
-    if amendments:
-        # Prepend: a controlling amendment leads the context (adjacent to the
-        # base provision it supersedes) so the budget trim — which keeps the
-        # leading provisions and drops the tail — cannot cut it. Appending left
-        # it in the tail and it was trimmed before reaching the model.
-        added = _merge_unique_provisions(provisions, amendments, prepend=True)
-        if added:
-            logger.info(
-                "Amendment surfacing: added %d amending provision(s): %s",
-                added, [a.get("article_id") for a in amendments],
-            )
+    if not amendments:
+        return []
+    # Prepend: a controlling amendment leads the context (adjacent to the base
+    # provision it supersedes) so the budget trim — which keeps the leading
+    # provisions and drops the tail — cannot cut it. Appending left it in the
+    # tail and it was trimmed before reaching the model.
+    added = _merge_unique_provisions(provisions, amendments, prepend=True)
+    if added:
+        logger.info(
+            "Amendment surfacing: added %d amending provision(s): %s",
+            added, [a.get("article_id") for a in amendments],
+        )
+    return amendments
 
 
 # ---------------------------------------------------------------------------
@@ -825,7 +831,7 @@ def _retrieve_route_provisions(
     #    phrasing (the failure mode of the earlier question-gated date bridge).
     #    The amending subtree carries the operative replacement text and is marked
     #    CONTROLLING by the context renderer.
-    _surface_amendments(retriever, provisions)
+    amendments_surfaced = _surface_amendments(retriever, provisions)
 
     # ── Preamble supplement ──────────────────────────────────────────────────
     # A question that explicitly invokes the preamble ("what does the GDPR's
@@ -863,6 +869,7 @@ def _retrieve_route_provisions(
         "role_provisions": role_provisions,
         "hyde_text": hyde_text,
         "legal_qualification_targets": legal_qualification_targets,
+        "amendments": amendments_surfaced,
     }
 
 

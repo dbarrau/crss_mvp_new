@@ -242,6 +242,51 @@ def _build_confidence_banner(confidence: "dict[str, Any]") -> str:
     return "\n".join(lines)
 
 
+def _amendment_target_in_answer(target_ref: str, answer: str) -> bool:
+    """Whole-reference match: 'Article 6' matches 'Article 6' and 'Article 6(1a)'
+    but not 'Article 60' / 'Article 63'; 'Annex I' matches 'Annex I' not 'Annex III'."""
+    parts = target_ref.split(None, 1)
+    if len(parts) == 2:
+        keyword, num = parts
+        return bool(re.search(
+            rf"\b{re.escape(keyword)}\s+{re.escape(num)}(?![0-9A-Za-z])", answer, re.I))
+    return bool(re.search(rf"\b{re.escape(target_ref)}\b", answer, re.I))
+
+
+def _build_amendment_provenance(answer: str, amendments: list[dict]) -> str:
+    """Deterministic amendment-pedigree footer built from the AMENDS-edge metadata
+    of the amendments surfaced into context (``_amends_target_ref`` +
+    ``amending_act``).
+
+    A consolidated legal text always carries provenance: which later act modified
+    each provision. The model repeats the context marker only unreliably, so this
+    renders it deterministically for every amended provision the answer actually
+    cites — the traceability compliance / regulatory-affairs teams need. Empty
+    when the answer cites no amended provision.
+    """
+    if not answer or not amendments:
+        return ""
+    seen: set[tuple[str, str]] = set()
+    lines: list[str] = []
+    for a in amendments:
+        target = a.get("_amends_target_ref")
+        act = a.get("amending_act")
+        if not (target and act) or (target, act) in seen:
+            continue
+        if not _amendment_target_in_answer(target, answer):
+            continue
+        seen.add((target, act))
+        lines.append(f"> - **{target}** — amended by **{act}** (amended text controlling)")
+    if not lines:
+        return ""
+    return (
+        "\n\n> **ⓘ AMENDMENTS APPLIED** — the provisions below, cited above, have been "
+        "modified by a later act; the amended wording is what currently applies. "
+        "Confirm the amending act's own application dates before relying on timing.\n"
+        + "\n".join(lines)
+    )
+
+
 def _postprocess_answer(
     answer: str,
     route: _QuestionRoute,
