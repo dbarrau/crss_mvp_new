@@ -159,6 +159,55 @@ def test_explicit_adjacent_phantom_in_named_act_flagged(ref_index):
     assert refs == ["article 113"]
 
 
+# ── amendment scoping (an amending act is not the mention's home act) ───────
+
+OMNIBUS = "32026R1744"  # Digital Omnibus — amends the AI Act; its own articles stop at 4
+
+
+@pytest.fixture()
+def ref_index_omnibus(ref_index) -> dict:
+    """``ref_index`` + the Digital Omnibus (an amending act with only Articles
+    1–4), so a correctly-cited amended AI Act article (113) has a rival nearest
+    alias that lacks it — the exact HQ_038 false-positive setup."""
+    for n in (1, 2, 3, 4):
+        ref_index[f"{OMNIBUS}_article_{n}"] = (f"Article {n}", "Digital Omnibus")
+    return ref_index
+
+
+def test_amended_article_not_scoped_to_amending_act(ref_index_omnibus):
+    """HQ_038: 'Article 113, as amended by Regulation (EU) 2026/1744' — Article
+    113 lives in the AI Act; the Omnibus only amends it (and has no Article 113).
+    The amending act must not scope the mention, or the correct provision — and
+    the 2 Aug 2028 date on that line — is stripped."""
+    for answer in (
+        "The dates are set by Article 113, as amended by Regulation (EU) 2026/1744.",
+        "Article 113 as amended by Regulation (EU) 2026/1744 applies from 2 August 2028.",
+        "Regulation (EU) 2026/1744 amends Article 113 to move the date to 2 August 2028.",
+        "Article 5 prohibitions, as introduced by Regulation (EU) 2026/1744, apply now.",
+    ):
+        _, refs = strip_phantom_citations(answer, ref_index_omnibus)
+        assert refs == [], f"amended article false-flagged: {answer!r} -> {refs}"
+
+
+def test_direct_miscitation_to_amending_act_still_flagged(ref_index_omnibus):
+    """The exemption is narrow — only amendment *connectives* are excused. A
+    direct 'Article 113 of Regulation (EU) 2026/1744' claims the Omnibus itself
+    contains an Article 113 (it stops at 4): a genuine mis-scoping that must
+    still flag, so the guard is not blindly weakened."""
+    answer = "This is governed by Article 113 of Regulation (EU) 2026/1744."
+    _, refs = strip_phantom_citations(answer, ref_index_omnibus)
+    assert refs == ["article 113"]
+
+
+def test_nonexistent_article_with_amendment_connective_still_flagged(ref_index_omnibus):
+    """The exemption opens no hole: a truly-nonexistent number (draft 'Article
+    4a') stays caught by the corpus-union tier even with an amendment connective
+    present — the in-corpus amender does not silence that tier."""
+    answer = "Title IA (Articles 4a–4c), as amended by Regulation (EU) 2026/1744, applies."
+    _, refs = strip_phantom_citations(answer, ref_index_omnibus)
+    assert "article 4a" in refs
+
+
 # ── plumbing ───────────────────────────────────────────────────────────────
 
 def test_family_index_skips_guidance_and_collapses_depth(ref_index):
