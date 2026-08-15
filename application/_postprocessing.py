@@ -242,6 +242,113 @@ def _build_confidence_banner(confidence: "dict[str, Any]") -> str:
     return "\n".join(lines)
 
 
+# A reference qualified by ANOTHER regulation is not an AI Act citation, so an
+# AI Act amendment must not be attributed to it — 'Article 2(30) of the MDR' is
+# the MDR's manufacturer definition, which the AI Act Omnibus does not touch.
+# Matches a trailing '… of the MDR/IVDR/GDPR' (optionally after a '(30)' locator)
+# or a leading 'MDR/IVDR/GDPR Article …' — but deliberately NOT an incidental
+# mention like 'Annex I (which includes the MDR)', where Annex I IS the (amended)
+# AI Act annex and the MDR is only named as content.
+_FOREIGN_REG = r"MDR|IVDR|GDPR|Medical\s+Device\s+Regulation"
+_FOREIGN_REG_AFTER_RE = re.compile(
+    rf"^\s*(?:\([^)]*\)\s*)?,?\s*of\s+(?:the\s+)?(?:{_FOREIGN_REG})\b", re.I)
+_FOREIGN_REG_BEFORE_RE = re.compile(rf"(?:{_FOREIGN_REG})\s+$", re.I)
+
+
+def _amendment_target_in_answer(target_ref: str, answer: str) -> bool:
+    """True when the answer cites ``target_ref`` **as an AI Act provision**.
+
+    Whole-reference match: 'Article 6' matches 'Article 6' and 'Article 6(1a)'
+    but not 'Article 60' / 'Article 63'; 'Annex I' matches 'Annex I' not 'Annex III'.
+    An occurrence explicitly scoped to another regulation ('Article 2(30) of the
+    MDR', 'MDR Annex I') is skipped — otherwise an AI Act amendment is wrongly
+    attributed to an MDR/GDPR citation (MDR/IVDR/GDPR each have their own
+    'Article 2' and 'Annex I'). Returns True on the first AI-Act (unscoped)
+    occurrence.
+    """
+    # Strip markdown emphasis so a bolded '**Article 2(30)** of the MDR' does not
+    # hide the trailing regulation qualifier behind '**'.
+    clean = re.sub(r"[*_`]", "", answer)
+    parts = target_ref.split(None, 1)
+    if len(parts) == 2:
+        keyword, num = parts
+        pattern = rf"\b{re.escape(keyword)}\s+{re.escape(num)}(?![0-9A-Za-z])"
+    else:
+        pattern = rf"\b{re.escape(target_ref)}\b"
+    for m in re.finditer(pattern, clean, re.I):
+        after = clean[m.end():m.end() + 40]
+        before = clean[max(0, m.start() - 12):m.start()]
+        if _FOREIGN_REG_AFTER_RE.match(after) or _FOREIGN_REG_BEFORE_RE.search(before):
+            continue  # scoped to MDR/IVDR/GDPR — not an AI Act citation
+        return True
+    return False
+
+
+def _amendment_change_summary(amendment: dict, target_ref: str) -> str:
+    """One-line 'what changed', from the amending provision's own lead-in — the
+    instruction that precedes the quoted replacement text.
+
+    EU amendment grammar is regular ('in Article 6, the following paragraphs are
+    inserted: ‘…’', 'in Article 43, paragraph 3 is replaced by the following: ‘…’',
+    'Article 3 is amended as follows: point (14) is amended…'). We take the text
+    up to the first quote, drop the heading prefix and the redundant restatement
+    of the target, and trim the 'by the following'/'as follows' tail. Returns ''
+    when no usable lead-in is present (falls back to a bare attribution).
+    """
+    text = re.sub(r"\s+", " ", (amendment.get("article_text") or amendment.get("text") or "")).strip()
+    if not text:
+        return ""
+    leadin = text.rsplit("|", 1)[-1]                       # drop 'Article 1 — Amendments … |'
+    leadin = re.split(r"[‘’'“”\"]", leadin, maxsplit=1)[0]  # up to the first quote
+    leadin = re.sub(rf"^\s*in\s+{re.escape(target_ref)}\b\s*,?\s*", "", leadin, flags=re.I)
+    leadin = re.sub(rf"^\s*{re.escape(target_ref)}\b\s+is\s+amended\s+as\s+follows\s*:?\s*",
+                    "", leadin, flags=re.I)
+    leadin = re.sub(r"\s*(?:by\s+the\s+following|as\s+follows)\s*:?\s*$", "", leadin, flags=re.I)
+    leadin = leadin.strip().rstrip(":").strip()
+    if len(leadin) > 180:
+        leadin = leadin[:177].rstrip() + "…"
+    return leadin
+
+
+def _build_amendment_provenance(answer: str, amendments: list[dict]) -> str:
+    """Deterministic amendment-pedigree footer built from the AMENDS-edge metadata
+    of the amendments surfaced into context (``_amends_target_ref`` +
+    ``amending_act``).
+
+    A consolidated legal text always carries provenance: which later act modified
+    each provision. The model repeats the context marker only unreliably, so this
+    renders it deterministically for every amended provision the answer actually
+    cites — the traceability compliance / regulatory-affairs teams need. Empty
+    when the answer cites no amended provision.
+    """
+    if not answer or not amendments:
+        return ""
+    seen: set[tuple[str, str]] = set()
+    lines: list[str] = []
+    for a in amendments:
+        target = a.get("_amends_target_ref")
+        act = a.get("amending_act")
+        if not (target and act) or (target, act) in seen:
+            continue
+        if not _amendment_target_in_answer(target, answer):
+            continue
+        seen.add((target, act))
+        summary = _amendment_change_summary(a, target)
+        if summary:
+            # e.g. 'Article 6 — the following paragraphs are inserted (Reg 2026/1744)'
+            lines.append(f"> - **{target}** — {summary} (**{act}**)")
+        else:
+            lines.append(f"> - **{target}** — amended by **{act}**")
+    if not lines:
+        return ""
+    return (
+        "\n\n> **ⓘ AMENDMENTS APPLIED** — the provisions below, cited above, have been "
+        "modified by a later act; the amended wording is what currently applies. "
+        "Confirm the amending act's own application dates before relying on timing.\n"
+        + "\n".join(lines)
+    )
+
+
 def _postprocess_answer(
     answer: str,
     route: _QuestionRoute,
