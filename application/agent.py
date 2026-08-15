@@ -128,6 +128,7 @@ from application._postprocessing import (                # noqa: F401
     _soften_categorical_language,
     _validate_legal_backbone,
     _postprocess_answer,
+    _build_amendment_provenance,
 )
 from application._confidence import (                    # noqa: F401
     compute_confidence,
@@ -761,6 +762,27 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
             os.environ.get("MISTRAL_MODEL", "mistral-large-latest"),
         )
 
+        # Make the amendment-surfacing phase visible: without this step a reader
+        # cannot tell an amending act (e.g. the Digital Omnibus) was consulted at
+        # all, even though its controlling text is in the context and drives the
+        # answer. Names the amending act + the base provisions it amends.
+        _amendments = retrieval_result.get("amendments") or []
+        if _amendments:
+            _acts = list(dict.fromkeys(
+                a.get("amending_act") for a in _amendments if a.get("amending_act")))
+            _targets = list(dict.fromkeys(
+                a.get("_amends_target_ref") for a in _amendments if a.get("_amends_target_ref")))
+            yield {
+                "type": "step",
+                "id": "amendments",
+                "label": (
+                    f"Amendments in force: {len(_amendments)} controlling provision(s) from "
+                    f"{', '.join(_acts) or 'an amending act'}"
+                    + (f" — amends {', '.join(_targets[:6])}"
+                       + ("…" if len(_targets) > 6 else "") if _targets else "")
+                ),
+            }
+
         yield {
             "type": "step",
             "id": "context",
@@ -1070,6 +1092,14 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
             confidence=confidence,
             audited=audited,
         )
+        # Deterministic amendment pedigree: name the later act that modified each
+        # amended provision the answer cites, from the AMENDS-edge metadata —
+        # traceability the model repeats only unreliably (see #2).
+        _provenance = _build_amendment_provenance(
+            final_answer, retrieval_result.get("amendments") or []
+        )
+        if _provenance:
+            final_answer += _provenance
         yield {"type": "done", "answer": final_answer, "audit_trace": audit_trace}
 
         # --- Eval capture: finalise the pre-audit draft through the IDENTICAL
