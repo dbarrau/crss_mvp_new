@@ -123,3 +123,36 @@ def test_confidence_faithfulness_full_when_no_quotes(monkeypatch):
     res = verify_answer("A paraphrased answer with no verbatim quotations.", **_kwargs())
     # No quotes to verify → neutral 1.0 (nothing to penalise).
     assert res.confidence["breakdown"]["faithfulness"] == 1.0
+
+
+# ---------------------------------------------------------------------------
+# VerificationResult.report — the pre-redaction faithfulness report is surfaced
+# (default None on the production path) so an eval can read the structured
+# fabrication counts the confidence score folds into one number. This is the
+# data source for the draft-vs-final revision-delta harness.
+# ---------------------------------------------------------------------------
+
+
+def test_verify_result_surfaces_faithfulness_report_on_fabrication(monkeypatch):
+    monkeypatch.setenv("CRSS_FAITHFULNESS_CHECK", "1")
+    answer = f'The regulation states: "{_FABRICATED}"'
+    res = verify_answer(answer, **_kwargs())
+    assert res.report is not None
+    # The fabricated quote lands in `unverified` (absent from the corpus) — the
+    # count the audit-loop A/B is measured in.
+    assert len(res.report.unverified) >= 1
+
+
+def test_verify_result_report_clean_for_grounded_quote(monkeypatch):
+    monkeypatch.setenv("CRSS_FAITHFULNESS_CHECK", "1")
+    answer = f'The rule is clear: "{_GROUNDED}"'
+    res = verify_answer(answer, **_kwargs())
+    assert res.report is not None
+    assert res.report.unverified == []
+    assert len(res.report.verified) >= 1
+
+
+def test_verify_result_report_none_when_check_disabled(monkeypatch):
+    monkeypatch.setenv("CRSS_FAITHFULNESS_CHECK", "0")
+    res = verify_answer(f'The rule: "{_FABRICATED}"', **_kwargs())
+    assert res.report is None
