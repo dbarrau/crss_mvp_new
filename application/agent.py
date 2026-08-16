@@ -1135,6 +1135,14 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                 confidence=_draft_verification.confidence,
                 audited=False,
             )
+            # Finalize the draft through the SAME tail as the final — including
+            # the amendment provenance footer — so the eval compares them on equal
+            # footing (the draft/final invariant this capture hook is built on).
+            _draft_prov = _build_amendment_provenance(
+                _draft_final, retrieval_result.get("amendments") or []
+            )
+            if _draft_prov:
+                _draft_final += _draft_prov
             capture.update({
                 "draft": _draft_final,
                 "final": final_answer,
