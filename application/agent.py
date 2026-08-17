@@ -79,6 +79,10 @@ from application._scoping import (                        # noqa: F401
     assess_scope as _assess_scope,
     render_clarification_markdown as _render_clarification_markdown,
 )
+from application._display import (                        # noqa: F401
+    render_provision_display as _render_provision_display,
+    wants_verbatim_display as _wants_verbatim_display,
+)
 from application._retrieval import (                     # noqa: F401
     _hyde_query,
     _merge_unique_provisions,
@@ -452,6 +456,30 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
             "id": "route",
             "label": f"Route: {route.label} — {route.rationale}",
         }
+
+        # --- 2a. Verbatim provision display (no LLM) ---
+        # A pure "show me Article X" request must return the AUTHORITATIVE text,
+        # not an LLM reconstruction — which fabricated base paragraphs (e.g. it
+        # invented AI Act Art 6(3)-(7)) while presenting them as controlling law.
+        # Detect the intent on the ORIGINAL question, bypassing the history
+        # rewrite that otherwise reframes it as analysis; when it names exactly
+        # one provision in one regulation, render the ordered HAS_PART subtree
+        # verbatim with in-force amendments spliced in. Deterministic; no LLM.
+        _disp = _wants_verbatim_display(question)
+        if _disp is not None:
+            _disp_ref, _disp_celex = _disp
+            _rendered = _render_provision_display(retriever, _disp_ref, _disp_celex)
+            if _rendered:
+                yield {
+                    "type": "step",
+                    "id": "verbatim",
+                    "label": (
+                        f"Direct provision lookup — rendering {_disp_ref} verbatim "
+                        "from source (no generation)"
+                    ),
+                }
+                yield {"type": "done", "answer": _rendered}
+                return
 
         # --- 2b. Ask-first scope gate ---
         # When an obligation question omits the decisive actor role, ask for it

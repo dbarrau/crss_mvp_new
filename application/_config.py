@@ -260,16 +260,23 @@ _CONTEXT_ANCHOR_REFS: list[tuple[re.Pattern, str, str]] = [
         r"cdss)\b", re.I),
         MDR_CELEX, "Annex VIII"),
     # Application-date / timeline framing → AI Act Article 113 (entry into
-    # application), the sole authority for "from when do the obligations
-    # apply". The staggered dates (2 Feb 2025 / 2 Aug 2025 / 2 Aug 2026 /
-    # 2 Aug 2027) live nowhere else, and the vector channel surfaces the
-    # article only unreliably (v6 eval: HQ_038 answered without it and missed
-    # every date).
+    # application), the sole authority for "from when do the obligations apply".
+    # The staggered dates live nowhere else, AND its Omnibus amendment carries the
+    # DEFERRED high-risk dates (2 Dec 2027 Annex III / 2 Aug 2028 Annex I) that
+    # supersede the model's pre-Omnibus training memory — so force-loading it lets
+    # the amendment ride in with the "CONTROLLING" marker. The vector channel
+    # surfaces the article only unreliably (v6 eval: HQ_038 missed every date).
+    # Cover the synonyms of "apply": a date question is as often phrased "when is
+    # it enforced / in force / does it take effect" (which otherwise misses the
+    # cue → the amended Article 113 never loads → wrong pre-Omnibus dates).
     (re.compile(
-        r"\b(?:application\s+dates?|dates?\s+of\s+application|"
-        r"appl(?:y|ies|icable)\s+from|entry\s+into\s+application|"
+        r"\b(?:application\s+dates?|dates?\s+of\s+application|enforcement\s+dates?|"
+        r"appl(?:y|ies|icable)\s+from|entr(?:y|ies)\s+into\s+(?:application|force)|"
+        r"com(?:e|es|ing)\s+into\s+(?:force|effect)|"
         r"already\s+appl(?:y|ies)|start\s+to\s+apply|exact\s+dates?|"
-        r"when\s+(?:do|does|will)\b[^?\n]{0,60}\bapply)\b", re.I),
+        r"when\s+(?:do|does|will|are|is)\b[^?\n]{0,90}\b"
+        r"(?:appl(?:y|ies|icable)|enforced?|enforceable|in\s+force|in\s+effect|"
+        r"take\s+effect|come\s+into\s+(?:force|effect)))\b", re.I),
         AI_ACT_CELEX, "Article 113"),
     # LLM / general-purpose-AI framing → AI Act GPAI provisions. An LLM is almost
     # always a general-purpose AI *model* with its own obligations under

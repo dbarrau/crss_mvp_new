@@ -7,6 +7,7 @@ provision the answer actually cites — the traceability compliance teams need.
 """
 from application._postprocessing import (
     _amendment_change_summary,
+    _amendment_new_wording,
     _amendment_target_in_answer,
     _build_amendment_provenance,
 )
@@ -47,7 +48,27 @@ def test_provenance_renders_what_changed_when_text_present():
     amds = [{"_amends_target_ref": "Article 6", "amending_act": "Regulation (EU) 2026/1744",
              "article_text": _HEAD + "in Article 6, the following paragraphs are inserted: ‘1a. …’"}]
     out = _build_amendment_provenance("high-risk under Article 6(1a)", amds)
-    assert "**Article 6** — the following paragraphs are inserted (**Regulation (EU) 2026/1744**)" in out
+    # the row carries the operation AND the actual new wording (in quotes)
+    assert "**Article 6** — the following paragraphs are inserted: “1a. …” (**Regulation (EU) 2026/1744**)" in out
+
+
+def test_provenance_row_shows_the_actual_amended_wording():
+    # The header promises "the amended wording is what currently applies" — the row
+    # must therefore show that wording (e.g. Article 113's deferred dates), not just
+    # the operation label.
+    amds = [{"_amends_target_ref": "Article 113", "amending_act": "Regulation (EU) 2026/1744",
+             "article_text": _HEAD + ("in Article 113, the third paragraph is amended as follows: "
+                                      "point (c) is replaced by the following: ‘(c) Chapter III shall "
+                                      "apply from: (i) 2 December 2027 as regards Article 6(2) and Annex III; "
+                                      "and (ii) 2 August 2028 as regards Article 6(1) and Annex I;’")}]
+    out = _build_amendment_provenance("enforcement under Article 113", amds)
+    assert "2 December 2027" in out and "2 August 2028" in out          # the substance, not just "replaced"
+
+
+def test_amendment_new_wording_truncates_at_a_word_boundary():
+    long = _HEAD + "the following point is added: ‘" + "word " * 200 + "’"
+    w = _amendment_new_wording({"article_text": long})
+    assert w.endswith("…") and " word…" not in w[:-1]                    # clean cut, no mid-word
 
 _AMDS = [
     {"_amends_target_ref": "Article 6", "amending_act": "Regulation (EU) 2026/1744"},
@@ -143,3 +164,22 @@ def test_provenance_flags_the_temporal_caveat():
     # act's own application dates (the amendment's timing, not the base act's).
     out = _build_amendment_provenance("Article 6(1a) applies", _AMDS)
     assert "application date" in out.lower()
+
+
+def test_provenance_header_names_the_act_with_its_catalog_name():
+    # The pedigree header must name the instrument (recognizable short name from
+    # the catalog), not hedge with a bare "a later act".
+    out = _build_amendment_provenance("Article 6(1a) applies", _AMDS)
+    assert "a later act" not in out
+    assert "modified by **Regulation (EU) 2026/1744 (Digital Omnibus on AI)**" in out
+
+
+def test_provenance_header_lists_multiple_acts_and_falls_back_for_unknown():
+    amds = [
+        {"_amends_target_ref": "Article 6", "amending_act": "Regulation (EU) 2026/1744"},
+        {"_amends_target_ref": "Article 9", "amending_act": "Regulation (EU) 2099/0001"},
+    ]
+    out = _build_amendment_provenance("Article 6 and Article 9 both apply.", amds)
+    assert "modified by later acts (" in out
+    assert "Regulation (EU) 2026/1744 (Digital Omnibus on AI)" in out   # known → named
+    assert "**Regulation (EU) 2099/0001**" in out                       # unknown → bare, no crash
