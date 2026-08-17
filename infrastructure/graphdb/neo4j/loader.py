@@ -723,7 +723,8 @@ class RegulationGraphLoader:
                 p.path_string     = n.path_string,
                 p.display_ref     = n.display_ref,
                 p.display_path    = n.display_path,
-                p.name            = n.name
+                p.name            = n.name,
+                p.amended_by      = n.amended_by
             RETURN count(p) AS c
         """
         for chunk in _batched(nodes, _BATCH):
