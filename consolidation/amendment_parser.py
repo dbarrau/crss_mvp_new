@@ -61,12 +61,14 @@ class Operation:
     target_ref: str             # human-readable locator into the BASE act
     content: List[ContentNode] = field(default_factory=list)
     directive: str = ""         # the raw directive prose (audit trail)
+    target: dict = field(default_factory=dict)   # structured locator for the applier
 
     def to_dict(self) -> dict:
         return {
             "op": self.op,
             "item_kind": self.item_kind,
             "target_ref": self.target_ref,
+            "target": self.target,
             "directive": self.directive,
             "content": [c.to_dict() for c in self.content],
         }
@@ -117,8 +119,19 @@ def _direct_child_tables(el) -> List:
 
 
 def _direct_paras(td) -> str:
-    """Joined text of the direct ``<p>`` children (excludes nested tables)."""
-    return _norm(" ".join(p.get_text(" ", strip=True) for p in td.find_all("p", recursive=False)))
+    """A cell's own body text — its direct ``<p>`` children, or (when the cell
+    holds bare text with no ``<p>``, as annex points do) its direct text with
+    nested tables excluded."""
+    paras = _norm(" ".join(p.get_text(" ", strip=True) for p in td.find_all("p", recursive=False)))
+    if paras:
+        return paras
+    parts = []
+    for ch in td.children:
+        name = getattr(ch, "name", None)
+        if name == "table":
+            continue
+        parts.append(ch.get_text(" ", strip=True) if name else str(ch))
+    return _norm(" ".join(parts))
 
 
 def _element_children(el) -> List:
@@ -203,6 +216,7 @@ class Locator:
     subpara: str = ""       # ordinal ("first") or number
     section: str = ""       # annex section ("A"/"B")
     intro: bool = False     # the introductory part (chapeau)
+    heading: bool = False   # the article heading (title), not its body
     point: str = ""         # "a" / "ba" / "14" / "1"
 
     def merged_under(self, parent: "Locator") -> "Locator":
@@ -215,6 +229,7 @@ class Locator:
             subpara=self.subpara or parent.subpara,
             section=self.section or parent.section,
             intro=self.intro or parent.intro,
+            heading=self.heading or parent.heading,
             point=self.point or parent.point,
         )
 
@@ -227,6 +242,8 @@ class Locator:
         return d
 
     def leaf_kind(self) -> str:
+        if self.heading:
+            return "heading"
         if self.point:
             return "point"
         if self.intro:
@@ -262,9 +279,15 @@ class Locator:
                         else f"{self.subpara} subparagraph")
         if self.intro:
             segs.append("introductory part")
+        if self.heading:
+            segs.append("heading")
         if self.point:
             segs.append(f"point {self.point}" if self.annex else f"point ({self.point})")
         return ", ".join(segs)
+
+    def to_fields(self) -> dict:
+        """The non-empty segments, for the applier to resolve without re-parsing."""
+        return {k: v for k, v in vars(self).items() if v}
 
 
 def _parse_locator(directive: str) -> Locator:
@@ -297,11 +320,13 @@ def _parse_locator(directive: str) -> Locator:
         m = re.search(r"\bsubparagraph\s+(\d+)\b", d, re.I)
         if m:
             loc.subpara = m.group(1)
-    m = re.search(r"\bSection\s+([A-Z0-9]+)\b", d)
+    m = re.search(r"\bSection\s+([A-Z0-9]+)\b", d, re.I)
     if m:
-        loc.section = m.group(1)
+        loc.section = m.group(1).upper()
     if re.search(r"\bintroductory part\b", d, re.I):
         loc.intro = True
+    if re.search(r"\bheading\b", d, re.I):
+        loc.heading = True
     m = re.search(r"\bpoint\s+\(([^)]+)\)", d, re.I)
     if m:
         loc.point = m.group(1)
@@ -364,6 +389,9 @@ def _split_enumerator(text: str) -> tuple[str, str]:
     m = re.match(r"^(\d+[a-z]?)\.\s+", s)                # 1a.  2.
     if m:
         return m.group(1), s[m.end():].strip()
+    m = re.fullmatch(r"(\d+[a-z]?)\.", s)                # standalone "21." (annex enum cell); not "6.1"
+    if m:
+        return m.group(1), ""
     m = re.match(r"^Article\s+(\d+[a-z]?)\b\.?\s*", s, re.I)  # inserted article header
     if m:
         return f"Article {m.group(1)}", s[m.end():].strip()
@@ -509,7 +537,7 @@ def _parse_unit(content_td, scope: Locator) -> List[Operation]:
         op = "replace"
 
     if op == "unknown":
-        return [Operation("unknown", "provision", here.render(), [], directive)]
+        return [Operation("unknown", "provision", here.render(), [], directive, here.to_fields())]
 
     kind = _item_kind(op, directive, own)
     content = ([] if op == "delete"
@@ -521,13 +549,13 @@ def _parse_unit(content_td, scope: Locator) -> List[Operation]:
         for label in labels:
             tgt = here.with_leaf(multi_kind, label)
             unit = [c for c in content if c.enumerator == label]
-            ops.append(Operation(op, multi_kind, tgt.render(), unit, directive))
+            ops.append(Operation(op, multi_kind, tgt.render(), unit, directive, tgt.to_fields()))
         return ops
 
     target = here.render()
     if op in ("insert", "add") and kind in ("article", "annex") and not target:
         target = _target_from_content(content)
-    return [Operation(op, kind, target, content, directive)]
+    return [Operation(op, kind, target, content, directive, here.to_fields())]
 
 
 # ── entry points ─────────────────────────────────────────────────────────────
