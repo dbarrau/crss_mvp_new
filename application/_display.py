@@ -87,6 +87,9 @@ def wants_verbatim_display(question: str) -> tuple[str, str] | None:
 
 # Paragraph-level kinds render flush and reset the indent origin; everything else
 # (points, roman sub-items, dash indents) nests beneath its paragraph.
+# Cell separator inside a data-table annex_row's text (matches the annex parser's
+# _CELL_SEP — a control char that survives whitespace normalisation).
+_CELL_SEP = "\x1f"
 _PARA_LEVEL = frozenset({"article", "paragraph", "subparagraph"})
 _INDENT = "    "    # one nesting level: four NON-BREAKING spaces (U+00A0); HTML keeps them, Markdown ignores them
 
@@ -116,23 +119,38 @@ def _render_nodes(nodes: list[dict]) -> str:
         if depth == 0:
             i += 1
             continue                                   # heading is rendered above the quote
-        # A run of annex_row leaves (Annex XIV's AIA codes) is tabular data —
-        # render it as ONE markdown table (contiguous, no blank '>' between rows),
-        # not a code-per-line prose dump.
+        # A run of annex_row leaves is tabular data — render it as ONE markdown
+        # table (contiguous, no blank '>' between rows), not a prose run-on. Two
+        # shapes: Annex XIV code rows (number = code, text = type) and generic
+        # data tables (cells joined by the _CELL_SEP control char, first row = header).
         if kind == "annex_row":
-            rows = []
+            table_rows: list[list[str]] = []
+            has_code = False
             while i < n and nodes[i].get("kind") == "annex_row":
-                code = (nodes[i].get("number") or "").strip()
-                desc = re.sub(r"\s+", " ", (nodes[i].get("text") or "").replace("\xa0", " ")).strip()
-                if code or desc:
-                    rows.append((code, desc))
+                nd2 = nodes[i]
+                num = (nd2.get("number") or "").strip()
+                raw = nd2.get("text") or ""
+                if num:
+                    has_code = True
+                    cells = [num, re.sub(r"\s+", " ", raw.replace("\xa0", " ")).strip()]
+                else:
+                    cells = [re.sub(r"\s+", " ", c.replace("\xa0", " ")).strip()
+                             for c in raw.split(_CELL_SEP)]
+                cells = [c.replace("|", r"\|") for c in cells]         # don't break the table
+                table_rows.append(cells or [""])
                 i += 1
-            if rows:
+            if table_rows:
+                if has_code:
+                    header, data = ["AIA Code", "Type of AI system"], table_rows
+                else:
+                    header, data = table_rows[0], table_rows[1:]
+                ncol = max([len(header)] + [len(r) for r in data]) or 1
+                pad = lambda r: (r + [""] * ncol)[:ncol]
                 if not first:
                     lines.append(">")
-                lines.append("> | AIA Code | Type of AI system |")
-                lines.append("> | --- | --- |")
-                lines.extend(f"> | {code} | {desc} |" for code, desc in rows)
+                lines.append("> | " + " | ".join(pad(header)) + " |")
+                lines.append("> | " + " | ".join(["---"] * ncol) + " |")
+                lines.extend("> | " + " | ".join(pad(r)) + " |" for r in data)
                 first = False
             continue
         text = re.sub(r"\s+", " ", (nd.get("text") or "").replace("\xa0", " ")).strip()
