@@ -464,6 +464,58 @@ def _parse_payload(elements: List, kind: str, skip_first_p: bool = False) -> Lis
     return nodes
 
 
+# A standalone article header line ("‘Article 4a"), NOT a directive ("Article 4
+# is replaced …") nor a cross-reference ("Article 6(2)").
+_ARTICLE_HEADER = re.compile(r"^[‘'\"\s]*Article\s+(\d+[a-z]?)\s*$", re.I)
+_PARA_ENUM = re.compile(r"^[‘'\"\s]*\d+[a-z]?\.\s")
+
+
+def _article_stream(elements: List) -> List[tuple]:
+    """Flatten a whole-article payload into ordered ``(role, element)`` items —
+    ``role`` ∈ {'header','p','table','para'}.  Unwraps the quoted-block wrapper
+    ``<div>`` but keeps a paragraph ``<div>`` (its first ``<p>`` is enumerated
+    "N.") intact as one unit, so an article's paragraphs survive as units."""
+    out: List[tuple] = []
+    for el in elements:
+        name = el.name
+        if name == "p":
+            out.append(("header" if _ARTICLE_HEADER.match(_norm(el.get_text())) else "p", el))
+        elif name == "table":
+            out.append(("table", el))
+        elif name == "div":
+            first_p = el.find("p", recursive=False)
+            if first_p and _PARA_ENUM.match(_norm(first_p.get_text())):
+                out.append(("para", el))                    # a paragraph unit
+            else:
+                out.extend(_article_stream(_element_children(el)))   # unwrap
+    return out
+
+
+def _parse_article_payload(elements: List) -> Optional[List[ContentNode]]:
+    """Parse a whole-article (or multi-article) quoted payload into article
+    ContentNodes with nested paragraphs/points.  The payload is a mini-document:
+    ``<p>Article N</p><p>Title</p>`` then paragraph units (each with its points).
+    ``None`` when no article header is present (caller falls back)."""
+    stream = _article_stream(elements)
+    header_idx = [i for i, (role, _) in enumerate(stream) if role == "header"]
+    if not header_idx:
+        return None
+    articles: List[ContentNode] = []
+    for k, start in enumerate(header_idx):
+        end = header_idx[k + 1] if k + 1 < len(header_idx) else len(stream)
+        number = _ARTICLE_HEADER.match(_norm(stream[start][1].get_text())).group(1)
+        rest = stream[start + 1:end]
+        title = ""
+        if rest and rest[0][0] == "p":
+            t_enum, t_text = _split_enumerator(_norm(rest[0][1].get_text()))
+            if not t_enum:                                  # the untitled heading line
+                title = _strip_quotes(t_text)
+                rest = rest[1:]
+        paragraphs = _parse_payload([el for _, el in rest], "paragraph")
+        articles.append(ContentNode(f"Article {number}", "article", title, paragraphs))
+    return articles
+
+
 def _payload_elements(content_td) -> List:
     """Direct children of a content cell that make up the quoted payload
     (everything after the leading directive ``<p>``)."""
@@ -540,8 +592,14 @@ def _parse_unit(content_td, scope: Locator) -> List[Operation]:
         return [Operation("unknown", "provision", here.render(), [], directive, here.to_fields())]
 
     kind = _item_kind(op, directive, own)
-    content = ([] if op == "delete"
-               else _parse_payload(_payload_elements(content_td), kind, skip_first_p=True))
+    if op == "delete":
+        content = []
+    elif kind == "article":
+        # A whole-article replace/insert carries a mini-article document (header,
+        # title, paragraphs) that must nest — not flatten like paragraph content.
+        content = _parse_article_payload(_payload_elements(content_td)) or []
+    else:
+        content = _parse_payload(_payload_elements(content_td), kind, skip_first_p=True)
 
     multi_kind, labels = _subject_multi(directive)
     if multi_kind and op in ("replace", "delete"):

@@ -193,10 +193,36 @@ def test_degenerate_amend_is_a_replace():
 
 def test_insert_new_article_takes_target_from_content():
     ops = _parse_one("<p>the following Article is inserted:</p>"
-                     "<div><p>‘Article 4a Bias detection</p></div>")
+                     "<div><p>‘Article 4a</p><p>Bias detection</p></div>")
     op = ops[0]
     assert op.op == "insert" and op.item_kind == "article"
     assert op.target_ref == "Article 4a"
+
+
+def test_whole_article_replace_nests_title_and_paragraphs():
+    # Article 4 is replaced by a mini-article document: header, title, then
+    # numbered paragraphs — which must NEST under the article, not flatten.
+    ops = _parse_one(
+        "<p>Article 4 is replaced by the following:</p>"
+        "<div><p>‘Article 4</p><p>AI literacy</p>"
+        "<div><p>1. Providers shall support AI literacy.</p></div>"
+        "<div><p>2. The Commission shall facilitate it.’</p></div></div>")
+    assert len(ops) == 1
+    art = ops[0].content
+    assert len(art) == 1
+    assert art[0].kind == "article" and art[0].text == "AI literacy"
+    assert [c.enumerator for c in art[0].children] == ["1", "2"]
+    assert art[0].children[0].kind == "paragraph"
+
+
+def test_multi_article_insert_splits_into_separate_articles():
+    ops = _parse_one(
+        "<p>the following articles are inserted:</p>"
+        "<div><p>‘Article 75a</p><p>Powers</p><div><p>1. First.</p></div>"
+        "<p>Article 75b</p><p>Commitments</p><div><p>1. Second.’</p></div></div>")
+    arts = ops[0].content
+    assert [a.enumerator for a in arts] == ["Article 75a", "Article 75b"]
+    assert arts[0].text == "Powers" and arts[1].text == "Commitments"
 
 
 def test_separator_semicolons_are_not_nodes():

@@ -303,6 +303,8 @@ def _apply_replace(provisions, byid, node, op, base_celex, amending_celex):
     if unit is not None:
         node["text"] = _node_text(unit)
         node["text_for_analysis"] = unit.text
+        if node.get("kind") == "article":
+            node["title"] = unit.text            # an article stores its heading as text + title
         for child in unit.children:
             child_node, descendants = _build_subtree(child, node, base_celex, amending_celex)
             node["children"].append(child_node["id"])
@@ -315,24 +317,29 @@ def _apply_replace(provisions, byid, node, op, base_celex, amending_celex):
 
 
 def _apply_insert_article(provisions, byid, op, base_celex, amending_celex):
-    """A new article ("the following Article is inserted: 'Article 4a …'") — its
-    parent is the chapter of the article it follows (anchor 4a → after 4)."""
-    if not op.content:
+    """Insert one or more new articles ("the following Article(s) is/are
+    inserted: 'Article 4a …'"). Each lands, in order, in the chapter of the
+    article it follows (anchor 4a → after 4); a run (75a–75d) is spliced as a
+    block after the first one's anchor so their sequence is preserved."""
+    articles = [c for c in op.content if c.enumerator.startswith("Article ")]
+    if not articles:
         return "skipped", "no article content", []
-    art_cn = op.content[0]
-    new_num = _art_num(art_cn.enumerator)
-    anchor = _find_article(byid, base_celex, _anchor_number(new_num))
+    first_num = _art_num(articles[0].enumerator)
+    anchor = _find_article(byid, base_celex, _anchor_number(first_num))
     if anchor is None:
-        return "skipped", f"anchor article {_anchor_number(new_num)} not found", []
+        return "skipped", f"anchor article {_anchor_number(first_num)} not found", []
     parent = byid.get(anchor.get("parent_id"))
     if parent is None:
         return "skipped", "anchor has no parent chapter", []
-    top, everything = _build_subtree(art_cn, parent, base_celex, amending_celex)
-    _splice(parent, [top["id"]], anchor["id"])
-    provisions.extend(everything)
-    for n in everything:
-        byid[n["id"]] = n
-    return "applied", f"inserted article {top['id']} after {anchor['id']}", [top["id"]]
+    top_ids: List[str] = []
+    for art_cn in articles:
+        top, everything = _build_subtree(art_cn, parent, base_celex, amending_celex)
+        provisions.extend(everything)
+        for n in everything:
+            byid[n["id"]] = n
+        top_ids.append(top["id"])
+    _splice(parent, top_ids, anchor["id"])
+    return "applied", f"inserted {len(top_ids)} article(s) after {anchor['id']}", top_ids
 
 
 def _apply_op(provisions, byid, op: Operation, celex: str, amending_celex: str) -> tuple:

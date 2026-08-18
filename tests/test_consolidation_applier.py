@@ -179,6 +179,18 @@ def test_omnibus_consolidates_the_decisive_articles():
     # Annex I Section A point 1 deleted
     assert "32024R1689_anx_I_sec_A_1" not in byid
 
+    # Whole-article ops must NEST, not leave an empty article node:
+    #  - Article 4 replaced (AI literacy) with its paragraphs
+    art4 = byid["32024R1689_art_4"]
+    assert art4["text"] == "AI literacy"
+    assert len([c for c in kids("32024R1689_art_4") if c["kind"] == "paragraph"]) == 3
+    #  - Article 4a inserted with its paragraphs
+    assert "AI literacy" not in byid["32024R1689_art_4a"]["text"]     # its own heading
+    assert kids("32024R1689_art_4a")                                  # non-empty
+    #  - the multi-article run 75a–75d all inserted (not just the first)
+    for aid in ("art_75a", "art_75b", "art_75c", "art_75d"):
+        assert kids(f"32024R1689_{aid}"), f"{aid} should have paragraphs"
+
     # coverage: only the free-form Annex XIV is deferred; nothing skipped
     from collections import Counter
     status = Counter(r.status for r in report)
