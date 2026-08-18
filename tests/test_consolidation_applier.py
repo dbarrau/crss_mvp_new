@@ -191,9 +191,14 @@ def test_omnibus_consolidates_the_decisive_articles():
     for aid in ("art_75a", "art_75b", "art_75c", "art_75d"):
         assert kids(f"32024R1689_{aid}"), f"{aid} should have paragraphs"
 
-    # coverage: only the free-form Annex XIV is deferred; nothing skipped
+    # the added Annex XIV is real law — consolidated (not deferred/denied) with
+    # its numbered sections
+    anx = byid["32024R1689_anx_XIV"]
+    assert anx["number"] == "XIV"
+    assert len([c for c in kids("32024R1689_anx_XIV") if c["kind"] == "annex_point"]) >= 3
+
+    # coverage: every operation applied — nothing skipped or deferred
     from collections import Counter
     status = Counter(r.status for r in report)
-    assert status["applied"] >= 70
-    assert status.get("skipped", 0) == 0
-    assert status.get("deferred", 0) == 1
+    assert status["applied"] == 74
+    assert status.get("skipped", 0) == 0 and status.get("deferred", 0) == 0

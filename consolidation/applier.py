@@ -63,6 +63,12 @@ def _art_num(text: str) -> str:
     return m.group(1) if m else text
 
 
+def _annex_num(text: str) -> str:
+    """"Annex XIV" / "XIV" → "XIV"."""
+    m = re.search(r"([IVXLCDM]+|\d+)\s*$", text.strip(), re.I)
+    return m.group(1) if m else text
+
+
 def _anchor_number(num: str) -> str:
     """The existing sibling an inserted label extends: "1a"→"1", "ba"→"b"."""
     return num[:-1] if (num and num[-1].isalpha() and num[:-1]) else num
@@ -169,7 +175,10 @@ _ANNEX_CHILD_KIND = {"annexes": "annex", "annex": "annex_section",
 
 
 def _effective_kind(parent_kind: str, cn_kind: str) -> str:
-    """Under an annex, a ContentNode's generic kind maps to the annex family."""
+    """Under an annex, a ContentNode's generic kind maps to the annex family.
+    A kind the annex parser already set (annex/annex_point/…) is kept as-is."""
+    if cn_kind.startswith("annex"):
+        return cn_kind
     return _ANNEX_CHILD_KIND.get(parent_kind, cn_kind)
 
 
@@ -180,7 +189,7 @@ def _derive_id(celex: str, parent: dict, kind: str, number: str) -> str:
     if kind == "paragraph":
         return f"{celex}_{_pad3(parent.get('number', ''))}.{_pad3(number)}"
     if kind == "annex":
-        return f"{celex}_anx_{number}"
+        return f"{celex}_anx_{_annex_num(number)}"
     if kind == "annex_section":
         return f"{pid}_sec_{number}"
     if kind == "annex_point":
@@ -216,14 +225,16 @@ def _build_subtree(cn: ContentNode, parent: dict, celex: str,
         "parent_id": parent["id"],
         "children": [],
         "lang": parent.get("lang", "EN"),
-        "number": cn.enumerator if kind != "article" else _art_num(cn.enumerator),
+        "number": (_art_num(cn.enumerator) if kind == "article"
+                   else _annex_num(cn.enumerator) if kind == "annex"
+                   else cn.enumerator),
         "binding_force": parent.get("binding_force", "binding"),
         "source_type": parent.get("source_type", "regulation"),
         "text_for_analysis": cn.text,
         "amended_by": amending_celex,
         "amendment_op": "new",
     }
-    if kind == "article":
+    if kind in ("article", "annex"):
         node["title"] = cn.text
     all_nodes = [node]
     for i, child in enumerate(cn.children, 1):
@@ -348,6 +359,27 @@ def _apply_insert_article(provisions, byid, op, base_celex, amending_celex):
     return "applied", f"inserted {len(top_ids)} article(s) after {anchor['id']}", top_ids
 
 
+def _apply_add_annex(provisions, byid, op, base_celex, amending_celex):
+    """A new annex ("the following Annex is added: 'Annex XIV …'") — appended to
+    the act's annex list so it is real, retrievable law (not denied as phantom)."""
+    annexes = [c for c in op.content if c.enumerator.startswith("Annex ")]
+    if not annexes:
+        return "skipped", "no annex content", []
+    parent = byid.get(f"{base_celex}_annexes")
+    if parent is None:
+        return "skipped", "annexes container not found", []
+    top_ids: List[str] = []
+    last = parent.get("children", [])[-1] if parent.get("children") else None
+    for annex_cn in annexes:
+        top, everything = _build_subtree(annex_cn, parent, base_celex, amending_celex)
+        provisions.extend(everything)
+        for n in everything:
+            byid[n["id"]] = n
+        top_ids.append(top["id"])
+    _splice(parent, top_ids, last)                       # append after the last annex
+    return "applied", f"added annex(es) {', '.join(top_ids)}", top_ids
+
+
 def _apply_op(provisions, byid, op: Operation, celex: str, amending_celex: str) -> tuple:
     tf = op.target or {}
     if op.op == "delete":
@@ -368,11 +400,7 @@ def _apply_op(provisions, byid, op: Operation, celex: str, amending_celex: str) 
         if op.item_kind == "article":
             return _apply_insert_article(provisions, byid, op, celex, amending_celex)
         if op.item_kind == "annex":
-            # A whole new annex (e.g. Annex XIV) is free-form content the article
-            # grammar does not parse faithfully — defer rather than inject garbled
-            # law into the corpus (same fail-safe as the verbatim display).
-            ref = op.content[0].enumerator if op.content else op.target_ref
-            return "deferred", f"free-form annex not consolidated: {ref}", []
+            return _apply_add_annex(provisions, byid, op, celex, amending_celex)
         parent = resolve(byid, celex, tf)
         if parent is None:
             return "skipped", "insert container not found", []

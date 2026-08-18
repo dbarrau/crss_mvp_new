@@ -516,6 +516,74 @@ def _parse_article_payload(elements: List) -> Optional[List[ContentNode]]:
     return articles
 
 
+_ANNEX_HEADER = re.compile(r"^[‘'\"\s]*Annex\s+([IVXLCDM]+|\d+)\s*$", re.I)
+# A numbered annex section: "1." or "1. Introduction" (number, then optional heading).
+_NUMBERED_ITEM = re.compile(r"^(\d+)\.\s*(.*)$")
+
+
+def _flatten_elements(elements: List) -> List:
+    """Ordered ``<p>``/``<table>`` stream, unwrapping ``<div>`` wrappers."""
+    out: List = []
+    for el in elements:
+        if el.name in ("p", "table"):
+            out.append(el)
+        elif el.name == "div":
+            out.extend(_flatten_elements(_element_children(el)))
+    return out
+
+
+def _flatten_table(table) -> str:
+    """A registry/data table → readable text: each row's cells joined by ' — ',
+    rows by '; ' (Annex XIV's code tables aren't enumerated points, they're data)."""
+    lines = []
+    for tr in _rows(table):
+        parts = [_norm(p.get_text(" ", strip=True)) for p in tr.find_all("p")]
+        parts = [p for p in parts if p]
+        if parts:
+            lines.append(" — ".join(parts))
+    return "; ".join(lines)
+
+
+def _parse_annex_payload(elements: List) -> Optional[List[ContentNode]]:
+    """Parse an added annex ("the following Annex is added: 'Annex XIV …'") into a
+    faithful annex node: numbered sections (1.,2.,…) as annex_point children, with
+    lettered sub-parts and their data tables flattened into the section's text.
+    Not enumerated-point-nested (annex data tables are content, not sub-items) —
+    but complete and referenceable, so it is real, retrievable law."""
+    stream = _flatten_elements(elements)
+    hi = next((i for i, el in enumerate(stream)
+               if el.name == "p" and _ANNEX_HEADER.match(_norm(el.get_text()))), None)
+    if hi is None:
+        return None
+    number = _ANNEX_HEADER.match(_norm(stream[hi].get_text())).group(1)
+    rest = stream[hi + 1:]
+    title = ""
+    if rest and rest[0].name == "p":
+        t = _strip_quotes(_norm(rest[0].get_text()))
+        if not _NUMBERED_ITEM.match(t) and not re.match(r"^\d+\.\s", t):
+            title, rest = t, rest[1:]
+    items: List[ContentNode] = []
+    cur: Optional[ContentNode] = None
+    for el in rest:
+        if el.name == "p":
+            txt = _strip_quotes(_norm(el.get_text()))
+            m = _NUMBERED_ITEM.match(txt)
+            if m:
+                cur = ContentNode(m.group(1), "annex_point", m.group(2).strip(), [])
+                items.append(cur)
+                continue
+            piece = txt
+        else:
+            piece = _flatten_table(el)
+        if not piece:
+            continue
+        if cur is None:
+            title = f"{title} {piece}".strip()
+        else:
+            cur.text = f"{cur.text}  {piece}".strip() if cur.text else piece
+    return [ContentNode(f"Annex {number}", "annex", title, items)]
+
+
 def _payload_elements(content_td) -> List:
     """Direct children of a content cell that make up the quoted payload
     (everything after the leading directive ``<p>``)."""
@@ -598,6 +666,8 @@ def _parse_unit(content_td, scope: Locator) -> List[Operation]:
         # A whole-article replace/insert carries a mini-article document (header,
         # title, paragraphs) that must nest — not flatten like paragraph content.
         content = _parse_article_payload(_payload_elements(content_td)) or []
+    elif kind == "annex":
+        content = _parse_annex_payload(_payload_elements(content_td)) or []
     else:
         content = _parse_payload(_payload_elements(content_td), kind, skip_first_p=True)
 

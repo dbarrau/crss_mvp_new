@@ -225,6 +225,24 @@ def test_multi_article_insert_splits_into_separate_articles():
     assert arts[0].text == "Powers" and arts[1].text == "Commitments"
 
 
+def test_added_annex_parses_sections_and_flattens_tables():
+    # Annex XIV: a real added annex (numbered sections + code-registry tables) —
+    # must be captured faithfully, not deferred (deferring made CRSS deny it).
+    ops = _parse_one(
+        "<p>the following Annex is added:</p>"
+        "<div><p>‘Annex XIV</p><p>The list of codes</p>"
+        "<p>1. Introduction</p><p>Conformity assessment codes.</p>"
+        "<p>2. List of Codes</p>"
+        "<table><tbody><tr><td><p>AIP 0102</p><p>AI systems subject to Annex I</p></td></tr></tbody></table>’</div>")
+    op = ops[0]
+    assert op.op == "add" and op.item_kind == "annex"
+    annex = op.content[0]
+    assert annex.enumerator == "Annex XIV" and annex.text == "The list of codes"
+    assert [s.enumerator for s in annex.children] == ["1", "2"]
+    assert "Conformity assessment codes." in annex.children[0].text
+    assert "AIP 0102 — AI systems subject to Annex I" in annex.children[1].text   # table flattened
+
+
 def test_separator_semicolons_are_not_nodes():
     ops = _parse_one("<p>in Article 42, the following paragraph is added:</p>"
                      "<div><p>‘4. Added paragraph.’</p></div><p>;</p>")
