@@ -17,7 +17,10 @@ from domain.ontology.eurlex_html import (
 )
 
 # ── Number / marker extraction ────────────────────────────────────────
-_DOTTED_NUM_RE = re.compile(r"^(\d+(?:\.\d+)*)\.\s+")     # "1.1.1.   text"
+# "1.1.1.   text" — and, for the older OJ format, "1.text" with NO space after
+# the period (a lookahead for a non-digit keeps "1.5" from being mistaken for a
+# marker).
+_DOTTED_NUM_RE = re.compile(r"^(\d+(?:\.\d+)*)\.(?:\s+|(?=[^\d\s]))")
 _NUM_MARKER_RE = re.compile(r"^(\d+(?:\.\d+)*)\.?$")       # "1." or "1.1." (cell marker)
 _LETTER_RE     = re.compile(r"^\(([a-zA-Z]{1,2})\)$")      # "(a)", "(aa)"
 _DASH_RE       = re.compile(r"^[—–\-•]$")                  # em-dash, en-dash, hyphen, bullet
@@ -83,6 +86,29 @@ def parse_annexes(soup, ctx: ParserContext, root: Dict) -> Optional[Dict]:
 	return annexes_root
 
 
+# ── Element collection ────────────────────────────────────────────────
+def _collect_elements(container: Tag) -> List[Tag]:
+	"""Annex content elements (p / table / oj-enumeration-spacing div) in
+	document order, recursively unwrapping plain (class-less / "centered") <div>
+	wrappers.  The older OJ format wraps each numbered item and each table in
+	such a <div>; the ELI/AI-Act format has none, so this is a no-op there."""
+	out: List[Tag] = []
+	for el in container.children:
+		if not isinstance(el, Tag):
+			continue
+		cls = el.get("class") or []
+		if CLASS_OJ_DOC_TI in cls:
+			continue
+		if el.name in ("p", "table"):
+			out.append(el)
+		elif el.name == "div":
+			if CLASS_OJ_ENUMERATION_SPACING in cls:
+				out.append(el)
+			else:
+				out.extend(_collect_elements(el))     # unwrap the wrapper
+	return out
+
+
 # ── Per-annex parser ──────────────────────────────────────────────────
 def _parse_single_annex(
 	annex_div: Tag, html_id: str, ctx: ParserContext,
@@ -100,12 +126,10 @@ def _parse_single_annex(
 		number=num_m.group(1) if num_m else None,
 	)
 
-	# Collect direct child elements (p, table, div) in document order.
-	elements: List[Tag] = [
-		el for el in annex_div.children
-		if isinstance(el, Tag) and el.name in ("p", "table", "div")
-		and CLASS_OJ_DOC_TI not in (el.get("class") or [])
-	]
+	# Collect annex content elements in document order, flattening plain <div>
+	# wrappers — the older OJ format wraps each numbered item (a <p oj-normal>)
+	# and each table in a class-less <div> the parser would otherwise skip.
+	elements: List[Tag] = _collect_elements(annex_div)
 
 	# ── Stack: (depth, node) ──
 	# depth -1 = annex root
@@ -287,13 +311,62 @@ def _on_paragraph(
 	return i + 1
 
 
+# Cell separator for a data table's row text (a control char: survives _norm's
+# whitespace collapse and never occurs in legal text; the display splits on it).
+_CELL_SEP = "\x1f"
+
+
+def _row_marker(cells: List[Tag]) -> str:
+	if len(cells) >= 3:
+		return _norm(cells[1].get_text(" ", strip=True))
+	if len(cells) == 2:
+		return _norm(cells[0].get_text(" ", strip=True))
+	return ""
+
+
+def _is_data_table(rows: List[Tag]) -> bool:
+	"""True when NO row carries an enumeration marker (number/letter/dash) — i.e.
+	the table is tabular DATA (e.g. a correlation table), not an enumerated list."""
+	seen = False
+	for row in rows:
+		cells = row.find_all("td", recursive=False)
+		if not cells:
+			continue
+		seen = True
+		m = _row_marker(cells)
+		if _NUM_MARKER_RE.match(m) or _LETTER_RE.match(m) or _DASH_RE.match(m):
+			return False
+	return seen
+
+
+def _emit_data_table(rows: List[Tag], stack: List[Tuple[int, Dict]], ctx: ParserContext) -> None:
+	"""Each data row → an ``annex_row`` leaf (cells joined by ``_CELL_SEP``), so the
+	display can render the whole table AS a table rather than a prose run-on."""
+	parent = stack[-1][1]
+	r = 0
+	for row in rows:
+		cells = [_norm(td.get_text(" ", strip=True)) for td in row.find_all("td", recursive=False)]
+		cells = [c for c in cells if c]
+		if not cells:
+			continue
+		r += 1
+		ctx.make_node(
+			"annex_row", f"{_suffix(parent, ctx.celex)}_r{r}",
+			_CELL_SEP.join(cells), parent, number="",
+		)
+
+
 # ── Table handler ─────────────────────────────────────────────────────
 def _on_table(
 	table: Tag, stack: List[Tuple[int, Dict]],
 	html_id: str, ctx: ParserContext, blt_cnt: Dict[str, int],
 ) -> None:
 	container = table.find("tbody", recursive=False) or table
-	for row in container.find_all("tr", recursive=False):
+	rows = container.find_all("tr", recursive=False)
+	if _is_data_table(rows):
+		_emit_data_table(rows, stack, ctx)
+		return
+	for row in rows:
 		cells = row.find_all("td", recursive=False)
 		if not cells:
 			continue

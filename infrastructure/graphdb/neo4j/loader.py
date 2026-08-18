@@ -673,6 +673,10 @@ class RegulationGraphLoader:
                 "hierarchy_depth": prov.get("hierarchy_depth", 0),
                 "number":          prov.get("number"),
                 "title":           prov.get("title"),
+                # Consolidation provenance: the CELEX of the act that inserted or
+                # rewrote this node (set by consolidation.applier). Absent on base
+                # nodes; drives the "as amended by …" display footer.
+                "amended_by":      prov.get("amended_by"),
                 "path_string":     "/".join(raw_path),
                 "display_ref":     self_ref,
                 "display_path":    " / ".join(segments),
@@ -719,7 +723,8 @@ class RegulationGraphLoader:
                 p.path_string     = n.path_string,
                 p.display_ref     = n.display_ref,
                 p.display_path    = n.display_path,
-                p.name            = n.name
+                p.name            = n.name,
+                p.amended_by      = n.amended_by
             RETURN count(p) AS c
         """
         for chunk in _batched(nodes, _BATCH):

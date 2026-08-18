@@ -43,6 +43,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip the community_linker stage (graph partitioning + Community nodes).",
     )
     parser.add_argument(
+        "--no-amendments",
+        action="store_true",
+        help=(
+            "Skip the amendment_linker stage (AMENDS edges). Use after loading a "
+            "CONSOLIDATED base act: the amendments are already applied to the base "
+            "nodes, so the amending act's directives must not be re-surfaced."
+        ),
+    )
+    parser.add_argument(
         "--community-seed",
         type=int,
         default=42,
@@ -56,16 +65,22 @@ def run_pipeline(
     dry_run: bool = False,
     cleanup: bool = False,
     skip_communities: bool = False,
+    skip_amendments: bool = False,
     community_seed: int = 42,
 ) -> dict[str, dict[str, int]]:
     print("\n=== Canonicalization Pipeline ===")
-    print(f"  dry_run={dry_run}  cleanup={cleanup}  skip_communities={skip_communities}\n")
+    print(f"  dry_run={dry_run}  cleanup={cleanup}  skip_communities={skip_communities}"
+          f"  skip_amendments={skip_amendments}\n")
 
     print("[1/8] Crosslinking external references...")
     crosslink_summary = crosslink(dry_run=dry_run, cleanup=cleanup)
 
-    print("[2/8] Materializing amendment (AMENDS) edges...")
-    amendment_summary = link_amendments(dry_run=dry_run)
+    if skip_amendments:
+        print("[2/8] Amendment (AMENDS) edges skipped (--no-amendments; base is consolidated).")
+        amendment_summary = {"edges": 0}
+    else:
+        print("[2/8] Materializing amendment (AMENDS) edges...")
+        amendment_summary = link_amendments(dry_run=dry_run)
 
     print("[3/8] Materializing delegation edges...")
     delegation_summary = link_delegations(dry_run=dry_run)
@@ -108,6 +123,7 @@ def main() -> dict[str, dict[str, int]]:
         dry_run=args.dry_run,
         cleanup=args.cleanup,
         skip_communities=args.no_communities,
+        skip_amendments=args.no_amendments,
         community_seed=args.community_seed,
     )
 

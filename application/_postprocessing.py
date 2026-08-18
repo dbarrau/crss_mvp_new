@@ -10,6 +10,7 @@ import re
 from typing import Any
 
 from application._routing import _QuestionRoute, _has_inhouse_developer_signal
+from domain.legislation_catalog import LEGISLATION
 
 # ---------------------------------------------------------------------------
 # Language-softening patterns (legal qualification route only)
@@ -310,6 +311,42 @@ def _amendment_change_summary(amendment: dict, target_ref: str) -> str:
     return leadin
 
 
+def _amendment_new_wording(amendment: dict, cap: int = 440) -> str:
+    """The actual amended/inserted wording — the curly-quoted replacement/insertion
+    blocks the amending act enacts, joined and truncated at a word boundary. Lets
+    the footer show WHAT the new text says (e.g. Article 113's deferred dates,
+    Article 6's safety-component carve-out), not merely that something changed. The
+    full text is available on demand via "show me <provision>"."""
+    text = re.sub(r"\s+", " ", (amendment.get("article_text") or amendment.get("text") or "")).replace("\xa0", " ")
+    blocks = re.findall(r"‘(.+?)’", text)                  # each replacement/insertion block
+    wording = " … ".join(b.strip() for b in blocks).strip()
+    if len(wording) > cap:
+        wording = wording[:cap].rsplit(" ", 1)[0].rstrip(" ,;.") + "…"
+    return wording
+
+
+# Recognizable short name for an amending act, keyed by the exact ``amending_act``
+# string the amendment_linker builds ("Regulation (EU) <number>") and resolved
+# from the catalog — the single source of truth for an act's name. Both ends
+# derive from the same catalog ``number`` field, so the key matches by
+# construction; if the format ever diverges, the footer simply falls back to the
+# bare id (never crashes).
+_ACT_SHORT_NAME = {
+    f"Regulation (EU) {meta['number']}": meta["name"]
+    for meta in LEGISLATION.values()
+    if meta.get("number") and meta.get("name")
+}
+
+
+def _act_display(act: str) -> str:
+    """Formal act id, plus its recognizable catalog name when the id alone is not
+    self-describing — 'Regulation (EU) 2026/1744' →
+    'Regulation (EU) 2026/1744 (Digital Omnibus on AI)'. A compliance reader
+    traces the *instrument*, not a bare number."""
+    name = _ACT_SHORT_NAME.get(act)
+    return f"{act} ({name})" if name and name.lower() not in act.lower() else act
+
+
 def _build_amendment_provenance(answer: str, amendments: list[dict]) -> str:
     """Deterministic amendment-pedigree footer built from the AMENDS-edge metadata
     of the amendments surfaced into context (``_amends_target_ref`` +
@@ -325,6 +362,7 @@ def _build_amendment_provenance(answer: str, amendments: list[dict]) -> str:
         return ""
     seen: set[tuple[str, str]] = set()
     lines: list[str] = []
+    act_labels: list[str] = []          # distinct amending acts (named), in order of appearance
     for a in amendments:
         target = a.get("_amends_target_ref")
         act = a.get("amending_act")
@@ -333,17 +371,37 @@ def _build_amendment_provenance(answer: str, amendments: list[dict]) -> str:
         if not _amendment_target_in_answer(target, answer):
             continue
         seen.add((target, act))
+        label = _act_display(act)
+        if label not in act_labels:
+            act_labels.append(label)
         summary = _amendment_change_summary(a, target)
-        if summary:
-            # e.g. 'Article 6 — the following paragraphs are inserted (Reg 2026/1744)'
-            lines.append(f"> - **{target}** — {summary} (**{act}**)")
+        wording = _amendment_new_wording(a)
+        # Show the operation AND the actual new wording, so the row delivers on the
+        # header's promise ("the amended wording is what currently applies") —
+        # e.g. Article 113's deferred dates, not just "point (a) is replaced".
+        if summary and wording:
+            detail = f"{summary}: “{wording}”"
+        elif wording:
+            detail = f"“{wording}”"
+        elif summary:
+            detail = summary
+        else:
+            detail = None
+        if detail:
+            lines.append(f"> - **{target}** — {detail} (**{act}**)")
         else:
             lines.append(f"> - **{target}** — amended by **{act}**")
     if not lines:
         return ""
+    # Name the amending act(s) in the header — the whole point of the pedigree is
+    # that the reader can trace the instrument, so "a later act" is not enough.
+    if len(act_labels) == 1:
+        modifier = f"modified by **{act_labels[0]}**"
+    else:
+        modifier = "modified by later acts (" + ", ".join(f"**{x}**" for x in act_labels) + ")"
     return (
         "\n\n> **ⓘ AMENDMENTS APPLIED** — the provisions below, cited above, have been "
-        "modified by a later act; the amended wording is what currently applies. "
+        f"{modifier}; the amended wording is what currently applies. "
         "Confirm the amending act's own application dates before relying on timing.\n"
         + "\n".join(lines)
     )

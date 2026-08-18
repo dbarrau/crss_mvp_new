@@ -99,3 +99,29 @@ def test_cdss_question_anchors_classification_annex():
 def test_no_context_anchor_for_unrelated_question():
     det = _detect("What are the obligations of a provider under the EU AI Act?")
     assert det.context_anchor_refs == []
+
+
+def test_timing_question_anchors_article_113_across_apply_synonyms():
+    # AI Act Article 113 is the sole authority for application dates, and its
+    # Omnibus amendment carries the DEFERRED high-risk dates (2 Dec 2027 / 2 Aug
+    # 2028) that supersede the model's pre-Omnibus training memory. A date
+    # question is as often phrased "enforced / in force / comes into force" as
+    # "apply" — every synonym must force-load Article 113, or the amended dates
+    # never reach the model and it answers the stale pre-Omnibus dates.
+    for q in (
+        "When will high-risk AI systems under the EU AI Act be enforced for route I and route II?",
+        "What is the enforcement date for high-risk AI systems under the EU AI Act?",
+        "When do the high-risk obligations of the EU AI Act come into force?",
+        "When does the EU AI Act apply?",
+    ):
+        assert "Article 113" in _detect(q).context_anchor_refs, q
+
+
+def test_timing_anchor_stays_off_non_timing_ai_act_questions():
+    # The cue must not fire on ordinary obligation/classification questions.
+    assert "Article 113" not in _detect(
+        "What are the obligations of a provider under Article 16 of the EU AI Act?"
+    ).context_anchor_refs
+    assert "Article 113" not in _detect(
+        "Is my medical device with an integrated LLM high-risk under the EU AI Act?"
+    ).context_anchor_refs

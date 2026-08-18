@@ -119,7 +119,24 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("NEO4J_DATABASE", "neo4j"),
         help="Neo4j database name  (env: NEO4J_DATABASE).",
     )
+    p.add_argument(
+        "--consolidated",
+        action="store_true",
+        help="prefer parsed.consolidated.json (amendments applied) when it exists, "
+             "falling back to parsed.json per document.",
+    )
     return p
+
+
+def _prefer_consolidated(path: Path, consolidated: bool) -> Path:
+    """When ``--consolidated`` is set, load ``parsed.consolidated.json`` if it
+    exists next to ``parsed.json`` (only the amended act has one; others fall
+    back to their normal parsed.json)."""
+    if consolidated:
+        alt = path.with_name("parsed.consolidated.json")
+        if alt.exists():
+            return alt
+    return path
 
 
 def resolve_files(args: argparse.Namespace) -> list[Path]:
@@ -133,10 +150,11 @@ def resolve_files(args: argparse.Namespace) -> list[Path]:
             if not p.exists():
                 logger.error("File not found for: %s", doc_id)
                 sys.exit(1)
-            files.append(p)
+            files.append(_prefer_consolidated(p, args.consolidated))
         return files
 
-    files = discover_parsed_files(args.lang)
+    files = [_prefer_consolidated(f, args.consolidated)
+             for f in discover_parsed_files(args.lang)]
     if not files:
         logger.error(
             "No parsed.json files found under %s/<celex>/%s/",

@@ -190,6 +190,7 @@ def _attach_subtrees(driver, db: str, results: list[dict[str, Any]]) -> None:
             "kind": row["kind"],
             "text": row["text"],
             "depth": row["depth"],
+            "amended_by": row.get("amended_by"),
         })
     for r in results:
         subtree = by_root.get(r["article_id"])

@@ -821,6 +821,19 @@ function normalizeLegalLists(md) {
     return res;
   }
 
+  // The generation model signals a nested list item with a SINGLE leading
+  // space (measured stable across 150+ logged answers: bullets appear at 0 or
+  // exactly 1 space, never more). CommonMark/marked needs >=2 spaces to nest
+  // under a "- "/"N." marker, so at 1 space every child renders as a sibling —
+  // the "hierarchy lost" flatten. Re-expand each leading space into the same
+  // 3-space step the enumerator rewriter above uses, so native markdown
+  // bullets/ordered items nest at the depth the model intended. Monotonic:
+  // 0->0, 1->3, and any already-valid >=2 indent only deepens (never un-nests).
+  const reindentListLine = (s) => {
+    const mm = s.match(/^( +)((?:[-*+]|\d+\.)\s)/);
+    return mm ? '   '.repeat(mm[1].length) + s.slice(mm[1].length) : s;
+  };
+
   const out = [];
   let inCode = false;
   let lastAlpha = 0;   // char code of the last (a)-style letter point in the current run
@@ -834,10 +847,10 @@ function normalizeLegalLists(md) {
 
     // "1." is already a valid ordered marker; leave it, but it opens a fresh
     // point group, so letter continuity resets.
-    if (/^\s*\d+\.\s/.test(raw)) { lastAlpha = 0; out.push(raw); continue; }
+    if (/^\s*\d+\.\s/.test(raw)) { lastAlpha = 0; out.push(reindentListLine(raw)); continue; }
 
     const m = raw.match(/^(\s*)(\((?:\d+|[A-Za-z]+)\)|[—–•‣·])\s+(.+)$/);
-    if (!m) { lastAlpha = 0; out.push(raw); continue; }
+    if (!m) { lastAlpha = 0; out.push(reindentListLine(raw)); continue; }
 
     const marker = m[2];
     let depth, label = marker + ' ';
