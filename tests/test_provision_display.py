@@ -152,6 +152,29 @@ def test_roman_subitems_nest_deeper_than_their_point():
     assert indent_of("**(ii)** effective measures to prevent") > indent_of("**(k)**")
 
 
+def test_annex_code_rows_render_as_a_markdown_table():
+    # Annex XIV's AIA-code registry must render as a TABLE, not a prose run-on.
+    subtree = [
+        {"id": "anx", "depth": 0, "kind": "annex", "number": "XIV", "ref": "Annex XIV",
+         "text": "The list of codes"},
+        {"id": "s2", "depth": 1, "kind": "annex_point", "number": "2", "ref": "Annex XIV, 2",
+         "text": "List of Codes"},
+        {"id": "sa", "depth": 2, "kind": "annex_point", "number": "a", "ref": "Annex XIV, 2, a",
+         "text": "AI systems subject to Annex I"},
+        {"id": "r1", "depth": 3, "kind": "annex_row", "number": "AIP 0102",
+         "text": "AI systems subject to point 2 of Section A of Annex I"},
+        {"id": "r2", "depth": 3, "kind": "annex_row", "number": "AIP 0103",
+         "text": "AI systems subject to point 3 of Section A of Annex I"},
+    ]
+    out = render_provision_display(_Retriever(subtree, "Annex XIV"), "Annex XIV", "32024R1689")
+    assert "| AIA Code | Type of AI system |" in out
+    assert "| --- | --- |" in out
+    assert "| AIP 0102 | AI systems subject to point 2 of Section A of Annex I |" in out
+    # the code rows are contiguous (a real table), not blank-line-separated units
+    assert ("| AIP 0102 | AI systems subject to point 2 of Section A of Annex I |\n"
+            "> | AIP 0103 |") in out
+
+
 def test_render_returns_none_when_unresolved():
     class _Empty:
         def retrieve_by_refs(self, refs, celex_filter):

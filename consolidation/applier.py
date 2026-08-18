@@ -194,6 +194,8 @@ def _derive_id(celex: str, parent: dict, kind: str, number: str) -> str:
         return f"{pid}_sec_{number}"
     if kind == "annex_point":
         return f"{pid}_{number}"
+    if kind == "annex_row":
+        return f"{pid}_{re.sub(r'[^A-Za-z0-9]+', '', number)}"      # "AIP 0102" → "…_AIP0102"
     suffix = {"subparagraph": "sp", "point": "pt", "roman_item": "rm", "indent": "ind"}
     return f"{pid}_{suffix.get(kind, 'x')}_{number}"
 

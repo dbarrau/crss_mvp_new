@@ -544,12 +544,28 @@ def _flatten_table(table) -> str:
     return "; ".join(lines)
 
 
+_LETTER_ITEM = re.compile(r"^([a-z])\.\s*(.*)$")
+_CODE = re.compile(r"^AI[A-Z]\s*\d")            # AIP 0102 / AIB 0201 / AIH 0101
+
+
+def _table_code_rows(table) -> List[tuple]:
+    """(code, description) per data row of a code-registry table — the header
+    row ('AIA Code'/'Type…') and any non-code row are skipped."""
+    out: List[tuple] = []
+    for tr in _rows(table):
+        parts = [_norm(p.get_text(" ", strip=True)) for p in tr.find_all("p")]
+        parts = [p for p in parts if p]
+        if len(parts) >= 2 and _CODE.match(parts[0]):
+            out.append((parts[0], " ".join(parts[1:])))
+    return out
+
+
 def _parse_annex_payload(elements: List) -> Optional[List[ContentNode]]:
     """Parse an added annex ("the following Annex is added: 'Annex XIV …'") into a
-    faithful annex node: numbered sections (1.,2.,…) as annex_point children, with
-    lettered sub-parts and their data tables flattened into the section's text.
-    Not enumerated-point-nested (annex data tables are content, not sub-items) —
-    but complete and referenceable, so it is real, retrievable law."""
+    faithful STRUCTURED annex: numbered sections (1.,2.,…) as annex_point children,
+    lettered sub-parts (a.,b.,…) beneath them, and each code-registry table's rows
+    as ``annex_row`` leaves (number = AIA code, text = type) — so a code is a real,
+    referenceable provision AND the display can render the tables as tables."""
     stream = _flatten_elements(elements)
     hi = next((i for i, el in enumerate(stream)
                if el.name == "p" and _ANNEX_HEADER.match(_norm(el.get_text()))), None)
@@ -560,28 +576,32 @@ def _parse_annex_payload(elements: List) -> Optional[List[ContentNode]]:
     title = ""
     if rest and rest[0].name == "p":
         t = _strip_quotes(_norm(rest[0].get_text()))
-        if not _NUMBERED_ITEM.match(t) and not re.match(r"^\d+\.\s", t):
+        if not _NUMBERED_ITEM.match(t):
             title, rest = t, rest[1:]
-    items: List[ContentNode] = []
-    cur: Optional[ContentNode] = None
+    sections: List[ContentNode] = []
+    section: Optional[ContentNode] = None
+    sub: Optional[ContentNode] = None
     for el in rest:
         if el.name == "p":
             txt = _strip_quotes(_norm(el.get_text()))
-            m = _NUMBERED_ITEM.match(txt)
-            if m:
-                cur = ContentNode(m.group(1), "annex_point", m.group(2).strip(), [])
-                items.append(cur)
-                continue
-            piece = txt
-        else:
-            piece = _flatten_table(el)
-        if not piece:
-            continue
-        if cur is None:
-            title = f"{title} {piece}".strip()
-        else:
-            cur.text = f"{cur.text}  {piece}".strip() if cur.text else piece
-    return [ContentNode(f"Annex {number}", "annex", title, items)]
+            m_num = _NUMBERED_ITEM.match(txt)
+            m_let = _LETTER_ITEM.match(txt)
+            if m_num:
+                section = ContentNode(m_num.group(1), "annex_point", m_num.group(2).strip(), [])
+                sections.append(section)
+                sub = None
+            elif m_let and section is not None:
+                sub = ContentNode(m_let.group(1), "annex_point", m_let.group(2).strip(), [])
+                section.children.append(sub)
+            elif section is not None and txt:
+                target = sub or section
+                target.text = f"{target.text} {txt}".strip() if target.text else txt
+        else:                                           # a code-registry table
+            target = sub or section
+            if target is not None:
+                for code, desc in _table_code_rows(el):
+                    target.children.append(ContentNode(code, "annex_row", desc, []))
+    return [ContentNode(f"Annex {number}", "annex", title, sections)]
 
 
 def _payload_elements(content_td) -> List:

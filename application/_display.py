@@ -106,15 +106,38 @@ def _render_nodes(nodes: list[dict]) -> str:
     lines: list[str] = []
     first = True
     baseline = 0                                       # depth of the nearest paragraph-level ancestor
-    for nd in nodes:
+    i, n = 0, len(nodes)
+    while i < n:
+        nd = nodes[i]
         depth = nd.get("depth") or 0
         kind = nd.get("kind")
         if kind in _PARA_LEVEL:
             baseline = depth                           # paragraphs/subparagraphs reset the indent origin
         if depth == 0:
+            i += 1
             continue                                   # heading is rendered above the quote
+        # A run of annex_row leaves (Annex XIV's AIA codes) is tabular data —
+        # render it as ONE markdown table (contiguous, no blank '>' between rows),
+        # not a code-per-line prose dump.
+        if kind == "annex_row":
+            rows = []
+            while i < n and nodes[i].get("kind") == "annex_row":
+                code = (nodes[i].get("number") or "").strip()
+                desc = re.sub(r"\s+", " ", (nodes[i].get("text") or "").replace("\xa0", " ")).strip()
+                if code or desc:
+                    rows.append((code, desc))
+                i += 1
+            if rows:
+                if not first:
+                    lines.append(">")
+                lines.append("> | AIA Code | Type of AI system |")
+                lines.append("> | --- | --- |")
+                lines.extend(f"> | {code} | {desc} |" for code, desc in rows)
+                first = False
+            continue
         text = re.sub(r"\s+", " ", (nd.get("text") or "").replace("\xa0", " ")).strip()
         if not text:
+            i += 1
             continue
         number = (nd.get("number") or "").strip()
         if kind in _PARA_LEVEL:
@@ -136,6 +159,7 @@ def _render_nodes(nodes: list[dict]) -> str:
             lines.append(">")                          # blank quote line between every unit
         lines.append(f"> {indent}{body}")
         first = False
+        i += 1
     return "\n".join(lines)
 
 

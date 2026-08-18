@@ -225,22 +225,30 @@ def test_multi_article_insert_splits_into_separate_articles():
     assert arts[0].text == "Powers" and arts[1].text == "Commitments"
 
 
-def test_added_annex_parses_sections_and_flattens_tables():
-    # Annex XIV: a real added annex (numbered sections + code-registry tables) —
-    # must be captured faithfully, not deferred (deferring made CRSS deny it).
+def test_added_annex_parses_sections_subparts_and_code_rows():
+    # Annex XIV: a real added annex (numbered sections → lettered sub-parts →
+    # code-registry tables). Captured as STRUCTURE (each code a referenceable
+    # annex_row), not deferred (deferring made CRSS deny real law).
     ops = _parse_one(
         "<p>the following Annex is added:</p>"
         "<div><p>‘Annex XIV</p><p>The list of codes</p>"
         "<p>1. Introduction</p><p>Conformity assessment codes.</p>"
-        "<p>2. List of Codes</p>"
-        "<table><tbody><tr><td><p>AIP 0102</p><p>AI systems subject to Annex I</p></td></tr></tbody></table>’</div>")
+        "<p>2. List of Codes</p><p>a. AI systems subject to Annex I</p>"
+        "<table><tbody>"
+        "<tr><td><p>AIA Code</p></td><td><p>Type</p></td></tr>"
+        "<tr><td><p>AIP 0102</p></td><td><p>AI systems subject to Annex I</p></td></tr>"
+        "</tbody></table>’</div>")
     op = ops[0]
     assert op.op == "add" and op.item_kind == "annex"
     annex = op.content[0]
     assert annex.enumerator == "Annex XIV" and annex.text == "The list of codes"
     assert [s.enumerator for s in annex.children] == ["1", "2"]
     assert "Conformity assessment codes." in annex.children[0].text
-    assert "AIP 0102 — AI systems subject to Annex I" in annex.children[1].text   # table flattened
+    sub_a = annex.children[1].children[0]                 # section 2 → sub-part a
+    assert sub_a.enumerator == "a"
+    row = sub_a.children[0]                                # the code row (header skipped)
+    assert row.kind == "annex_row" and row.enumerator == "AIP 0102"
+    assert row.text == "AI systems subject to Annex I"
 
 
 def test_separator_semicolons_are_not_nodes():
