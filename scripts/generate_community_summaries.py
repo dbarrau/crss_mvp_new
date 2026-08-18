@@ -76,14 +76,22 @@ def _fetch_communities(session, *, rescan: bool, level: int | None = None) -> li
 
 
 def _fetch_member_texts(session, community_id: str, sample_size: int) -> list[str]:
+    # Sample any member that carries substantive text, EXCLUDING only the
+    # structural containers. This used to be a kind ALLOW-list, but that silently
+    # drifted: when the older-OJ annex parser introduced finer annex sub-kinds
+    # (annex_subsection/_subpoint/_bullet, plus roman_item/subparagraph/indent/
+    # annex_row), they were not on the list, so a community composed entirely of
+    # them drew zero text and was skipped despite holding real legal content
+    # (e.g. MDR Annex VII notified-body assessment, IVDR Annex I labelling). A
+    # deny-list of containers is stable against new leaf kinds; the shallow
+    # containers are excluded so their whole-subtree text_for_analysis blob does
+    # not crowd out the leaf provisions under the ORDER BY hierarchy_depth LIMIT.
     rows = session.run(
         """
         MATCH (p:Provision)-[:MEMBER_OF]->(c:Community {id: $community_id})
         WHERE p.text_for_analysis IS NOT NULL AND p.text_for_analysis <> ''
-          AND p.kind IN ['article', 'annex_section', 'annex_point',
-                         'annex_part', 'recital', 'section',
-                         'guidance_section', 'guidance_subsection',
-                         'paragraph', 'point']
+          AND NOT p.kind IN ['document', 'annexes', 'preamble', 'enacting_terms',
+                             'final_provisions', 'annex', 'chapter', 'annex_chapter']
         RETURN p.text_for_analysis AS text, p.kind AS kind,
                coalesce(p.display_ref, p.id) AS ref
         ORDER BY p.hierarchy_depth ASC
