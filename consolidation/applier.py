@@ -192,17 +192,23 @@ def _derive_id(celex: str, parent: dict, kind: str, number: str) -> str:
 def _node_text(cn: ContentNode) -> str:
     """Base convention: paragraphs/subparagraphs carry the enumerator in the body
     ("1a.   …"); points/romans/articles do not."""
-    if cn.kind in ("paragraph", "subparagraph") and cn.text:
+    if cn.kind in ("paragraph", "subparagraph") and cn.text and cn.enumerator:
         return f"{cn.enumerator}.{_ENUM_GAP}{cn.text}"
     return cn.text
 
 
 def _build_subtree(cn: ContentNode, parent: dict, celex: str,
-                   amending_celex: str) -> tuple[dict, List[dict]]:
-    """Build a base-format node (+ all descendants) from a ContentNode."""
+                   amending_celex: str, pos: int = 1) -> tuple[dict, List[dict]]:
+    """Build a base-format node (+ all descendants) from a ContentNode.
+
+    ``pos`` is the node's 1-based position among its siblings — used to make a
+    unique id for an UNNUMBERED block (e.g. Article 75b's paragraphs), which
+    would otherwise all collide on an empty-suffix id and MERGE-collapse on load.
+    """
     kind = _effective_kind(parent.get("kind", ""), cn.kind)
+    key = cn.enumerator or f"u{pos}"          # unique id component for unnumbered blocks
     node = {
-        "id": _derive_id(celex, parent, kind, cn.enumerator),
+        "id": _derive_id(celex, parent, kind, key),
         "kind": kind,
         "text": _node_text(cn),
         "hierarchy_depth": parent.get("hierarchy_depth", 0) + 1,
@@ -220,8 +226,8 @@ def _build_subtree(cn: ContentNode, parent: dict, celex: str,
     if kind == "article":
         node["title"] = cn.text
     all_nodes = [node]
-    for child in cn.children:
-        child_node, descendants = _build_subtree(child, node, celex, amending_celex)
+    for i, child in enumerate(cn.children, 1):
+        child_node, descendants = _build_subtree(child, node, celex, amending_celex, pos=i)
         node["children"].append(child_node["id"])
         all_nodes.extend(descendants)
     return node, all_nodes
@@ -232,8 +238,8 @@ def _build_forest(content: List[ContentNode], parent: dict, celex: str,
     """Build the top-level new nodes (to splice into ``parent``) and the full
     flat list of every node created (tops + descendants)."""
     tops, everything = [], []
-    for cn in content:
-        top, descendants = _build_subtree(cn, parent, celex, amending_celex)
+    for i, cn in enumerate(content, 1):
+        top, descendants = _build_subtree(cn, parent, celex, amending_celex, pos=i)
         tops.append(top)
         everything.extend(descendants)
     return tops, everything
@@ -305,8 +311,8 @@ def _apply_replace(provisions, byid, node, op, base_celex, amending_celex):
         node["text_for_analysis"] = unit.text
         if node.get("kind") == "article":
             node["title"] = unit.text            # an article stores its heading as text + title
-        for child in unit.children:
-            child_node, descendants = _build_subtree(child, node, base_celex, amending_celex)
+        for i, child in enumerate(unit.children, 1):
+            child_node, descendants = _build_subtree(child, node, base_celex, amending_celex, pos=i)
             node["children"].append(child_node["id"])
             provisions.extend(descendants)
             for n in descendants:
