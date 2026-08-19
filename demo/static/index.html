@@ -792,9 +792,19 @@ function normalizeLegalLists(md) {
   // Expand a line holding an INLINE run of legal enumerators into a nested list,
   // preserving any "> " blockquote prefix. Returns replacement lines, or null
   // when there is no run. Guarded so an isolated reference is never split: it
-  // needs >=2 markers AND at least one real (>40-char) item — "points (a) and
-  // (b)", "Directive (EU) 2019/790", "Article 4(3)", "(a legal person)" all
-  // stay untouched.
+  // needs >=2 markers, at least one real (>40-char) item, AND every item's
+  // captured text must itself be substantial — "points (a) and (b)",
+  // "Directive (EU) 2019/790", "Article 4(3)", "(a legal person)" all stay
+  // untouched. The per-item floor matters on its own: a REFERENCE to several
+  // points inline ("...points (a), (b) and (d) of the first subparagraph...")
+  // can satisfy ">=2 markers" + "one item >40 chars" too — e.g. MDR Art 14(2):
+  // "(a)," has no trailing space so it's not even captured as a marker, but
+  // "(b)" (before "and") and "(d)" (before "of the first subparagraph...")
+  // both are, giving items [{marker:"(b)", text:"and"}, {marker:"(d)",
+  // text:"of the first subparagraph…"}] — 2 items, one long — which used to
+  // pass and shredded one sentence into a fake nested list at "and"/"of". A
+  // genuine list's items are ALL real clauses; only a reference chain has an
+  // item whose text is a bare connector ("and"/"or") with nothing else.
   function expandInline(line) {
     const bq = line.match(/^(\s*>[>\s]*)([\s\S]*)$/);
     const prefix = bq ? bq[1] : '';
@@ -809,6 +819,7 @@ function normalizeLegalLists(md) {
       items.push({ marker: parts[i], text: (parts[i + 1] || '').trim() });
     }
     if (items.length < 2 || !items.some((it) => it.text.length > 40)) return null;
+    if (items.some((it) => it.text.replace(/[.,;:]+$/, '').trim().length < 8)) return null;
     const res = [];
     const lead = parts[0].trim();
     // lead paragraph, then a blank blockquote line so marked starts the list
