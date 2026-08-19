@@ -99,7 +99,8 @@ def test_render_shows_replaced_text_from_the_consolidated_node():
          "ref": "Article 43(3), subparagraph 1", "text": "3. New consolidated paragraph three text."},
     ]
     out = render_provision_display(_Retriever(subtree, "Article 43"), "Article 43", "32024R1689")
-    assert "New consolidated paragraph three text." in out             # verbatim, not fabricated
+    assert "**3.** New consolidated paragraph three text." in out       # verbatim, not fabricated
+    assert "**3.** 3." not in out                                       # not doubled with the deferred paragraph number
     assert "As amended" in out                                          # footer names the act
 
 
@@ -180,3 +181,46 @@ def test_render_returns_none_when_unresolved():
         def retrieve_by_refs(self, refs, celex_filter):
             return []
     assert render_provision_display(_Empty(), "Article 6", "32024R1689") is None
+
+
+# ── older-OJ paragraph numbering (MDR/IVDR/GDPR) ─────────────────────────────
+# In this EUR-Lex layout the paragraph number lives only in a sibling
+# <span class="no-parag">, which the normalizer drops — a paragraph's own
+# `text` never starts with "N." the way AI-Act-style paragraphs do. User-found
+# on MDR Article 15: every paragraph number (1-6) was silently absent from the
+# rendered answer. The render must fall back to the node's `number` field.
+
+def test_paragraph_number_falls_back_to_the_number_field_when_absent_from_text():
+    subtree = [
+        {"id": "art", "depth": 0, "kind": "article", "number": "15", "ref": "Article 15", "text": "Head"},
+        {"id": "p2", "depth": 1, "kind": "paragraph", "number": "2", "ref": "Article 15(2)",
+         "text": "Micro and small enterprises shall not be required to have such a person."},
+    ]
+    out = render_provision_display(_Retriever(subtree), "Article 15", "32024R1689")
+    assert "**2.** Micro and small enterprises" in out
+
+
+def test_orphaned_paragraph_number_lands_on_its_first_subparagraph_only():
+    # MDR Article 14(2): a point-list followed by two more subparagraphs. The
+    # paragraph's own node carries no text (see orphaned-trailing-subparagraphs
+    # fix in enacting_terms_parser.py) — its "2." must print exactly once, on
+    # subparagraph 1, never repeated on subparagraphs 2/3.
+    subtree = [
+        {"id": "art", "depth": 0, "kind": "article", "number": "14", "ref": "Article 14", "text": "Head"},
+        {"id": "p2", "depth": 1, "kind": "paragraph", "number": "2", "ref": "Article 14(2)", "text": ""},
+        {"id": "p2s1", "depth": 2, "kind": "subparagraph", "number": "1", "ref": "Article 14(2), subparagraph 1",
+         "text": "Before making a device available on the market, distributors shall verify:"},
+        {"id": "p2s1a", "depth": 3, "kind": "point", "number": "a", "ref": "Article 14(2), point (a)",
+         "text": "the device has been CE marked;"},
+        {"id": "p2s2", "depth": 2, "kind": "subparagraph", "number": "2", "ref": "Article 14(2), subparagraph 2",
+         "text": "The distributor may apply a representative sampling method."},
+        {"id": "p2s3", "depth": 2, "kind": "subparagraph", "number": "3", "ref": "Article 14(2), subparagraph 3",
+         "text": "Where a distributor has reason to believe a device is not in conformity, it shall inform the manufacturer."},
+    ]
+    out = render_provision_display(_Retriever(subtree), "Article 14", "32024R1689")
+    assert "**2.** Before making a device available" in out
+    assert "**2.** The distributor may apply" not in out       # not repeated on subparagraph 2
+    assert "The distributor may apply a representative sampling method." in out
+    assert "**2.** Where a distributor" not in out             # not repeated on subparagraph 3
+    assert "Where a distributor has reason to believe" in out
+    assert out.count("**2.**") == 1                            # printed exactly once for the whole paragraph

@@ -109,6 +109,14 @@ def _render_nodes(nodes: list[dict]) -> str:
     lines: list[str] = []
     first = True
     baseline = 0                                       # depth of the nearest paragraph-level ancestor
+    # A paragraph with 2+ subparagraphs (points followed by a postamble, e.g.)
+    # carries no text of its own — its number would otherwise be lost. EU
+    # legal text prints the paragraph number ONCE, on its first subparagraph
+    # ("2.   Before making ... (a) ... (b) ...  In order to meet ..." — the
+    # "In order to..." continuation carries none), so an empty paragraph's
+    # number is held here and applied to the immediately following
+    # subparagraph "1", never to later subparagraphs of the same paragraph.
+    pending_para_number: str | None = None
     i, n = 0, len(nodes)
     while i < n:
         nd = nodes[i]
@@ -155,11 +163,37 @@ def _render_nodes(nodes: list[dict]) -> str:
             continue
         text = re.sub(r"\s+", " ", (nd.get("text") or "").replace("\xa0", " ")).strip()
         if not text:
+            if kind == "paragraph":
+                pending_para_number = (nd.get("number") or "").strip() or None
             i += 1
             continue
         number = (nd.get("number") or "").strip()
-        if kind in _PARA_LEVEL:
+        if kind == "paragraph":
             body = re.sub(r"^(\d+[a-z]?\.)\s*", r"**\1** ", text)   # bold the leading N. / Na.
+            if body == text and number:
+                # Older-OJ markup (MDR/IVDR/GDPR): the paragraph number lives
+                # only in a sibling <span class="no-parag">, which the
+                # normalizer drops — it was never embedded in the paragraph's
+                # own text, so the regex above found nothing to bold. Fall
+                # back to the node's own `number` (always correct: derived
+                # from the id, "014.NNN", not parsed out of prose).
+                body = f"**{number}.** {text}"
+        elif kind == "subparagraph" and number == "1" and pending_para_number:
+            # This paragraph's own node had no text (2+ subparagraphs) — its
+            # number was deferred here, onto its first subparagraph. But some
+            # subparagraph text already embeds its own leading number (e.g. a
+            # consolidation replacement's text starts with "3. New …") — try
+            # that first, exactly like the paragraph branch above, so the
+            # fallback never DOUBLES the marker ("**3.** 3. New …").
+            body = re.sub(r"^(\d+[a-z]?\.)\s*", r"**\1** ", text)
+            if body == text:
+                body = f"**{pending_para_number}.** {text}"
+            pending_para_number = None
+        elif kind in _PARA_LEVEL:
+            # article / subparagraph: no printed numeral — an EU subparagraph
+            # is unnumbered in the source text (referenced in prose as "the
+            # first/second subparagraph", never a literal "2." marker).
+            body = text
         elif kind == "indent":
             body = f"— {text}"
         elif number:
