@@ -166,12 +166,14 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 			node = ctx.make_node(kind, html_id, content, parent_node, number=label)
 			parse_points_from_tables(node, _sub_item_tables(table))
 
-	def collect_subparagraph_blocks(para_div):
-		"""Group direct children into (p_element, [table_elements]) tuples."""
+	def group_blocks(elements) -> List:
+		"""Group a flat sequence of <p class=oj-normal>/<table> elements into
+		(p_element, [table_elements]) tuples — one entry per subparagraph, with
+		its own point-list tables attached."""
 		blocks = []
 		current_p = None
 		current_tables = []
-		for child in para_div.children:
+		for child in elements:
 			if not hasattr(child, 'name') or not child.name:
 				continue
 			if child.name == 'p' and CLASS_OJ_NORMAL in child.get('class', []):
@@ -185,18 +187,32 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 			blocks.append((current_p, current_tables))
 		return blocks
 
-	def parse_paragraph_div(para_div, parent_node: Dict) -> None:
+	def collect_subparagraph_blocks(para_div):
+		"""Group para_div's direct children into (p_element, [table_elements])."""
+		return group_blocks(para_div.children)
+
+	def parse_paragraph_div(para_div, parent_node: Dict, orphans: List = ()) -> Dict:
+		"""Build a paragraph node from para_div, plus any trailing *orphans* —
+		bare <p class="oj-normal"> siblings EUR-Lex emitted OUTSIDE para_div for
+		this paragraph's second-and-later subparagraphs (see parse_paragraphs).
+		"""
 		para_match = paragraph_pattern.match(para_div["id"])
 		if not para_match:
-			return
+			return None
 		_, para_num_raw = para_match.groups()
 		# para_num_raw may be "003" or "003a" — strip leading zeros, keep suffix
 		para_number = para_num_raw.lstrip("0") or "0"
 
-		blocks = collect_subparagraph_blocks(para_div)
+		own_blocks = collect_subparagraph_blocks(para_div)
+		orphan_blocks = group_blocks(orphans)
 
-		if len(blocks) <= 1:
-			# Single subparagraph — keep current behaviour
+		if len(own_blocks) <= 1 and not orphan_blocks:
+			# Single subparagraph, nothing trailing — keep current behaviour.
+			# Robust to however BeautifulSoup nests a malformed-but-common EUR-Lex
+			# markup (a point-list's <table>s ending up as descendants of a
+			# swallowed outer <p> rather than as para_div's direct children):
+			# paragraph_text_without_tables / find_all("table", ...) both search
+			# the WHOLE subtree, not just direct children.
 			paragraph = ctx.make_node(
 				"paragraph",
 				para_div["id"],
@@ -205,29 +221,77 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 				number=para_number,
 			)
 			parse_points_from_tables(paragraph, para_div.find_all("table", width=TABLE_POINTS_WIDTH))
-		else:
-			# Multiple subparagraphs
-			paragraph = ctx.make_node(
-				"paragraph",
-				para_div["id"],
-				"",
-				parent_node,
-				number=para_number,
+			return paragraph
+
+		# Multiple subparagraphs — either para_div's own markup already has
+		# them, or trailing orphans extend a single first subparagraph into a
+		# real subparagraph-1..N structure. "first subparagraph"/"second
+		# subparagraph" are themselves citable units in EU legislative
+		# drafting (e.g. MDR Art 14(2)'s dropped postamble literally reads
+		# "...referred to in the first subparagraph...").
+		paragraph = ctx.make_node("paragraph", para_div["id"], "", parent_node, number=para_number)
+		if len(own_blocks) <= 1:
+			# subparagraph 1 uses the same whole-subtree extraction as the fast
+			# path above, so a point-list nested under a swallowed outer <p>
+			# is still found even though own_blocks' table list would miss it.
+			sp_text = paragraph_text_without_tables(para_div)
+			sp_node = ctx.make_node(
+				"subparagraph", f"{para_div['id']}_sp_1", sp_text, paragraph, number="1"
 			)
-			for idx, (p_elem, tables) in enumerate(blocks, 1):
+			parse_points_from_tables(sp_node, para_div.find_all("table", width=TABLE_POINTS_WIDTH))
+			next_idx = 2
+		else:
+			for idx, (p_elem, tables) in enumerate(own_blocks, 1):
 				sp_text = p_elem.get_text(" ", strip=True)
 				sp_node = ctx.make_node(
-					"subparagraph",
-					f"{para_div['id']}_sp_{idx}",
-					sp_text,
-					paragraph,
-					number=str(idx),
+					"subparagraph", f"{para_div['id']}_sp_{idx}", sp_text, paragraph, number=str(idx)
 				)
 				parse_points_from_tables(sp_node, tables)
+			next_idx = len(own_blocks) + 1
+		for offset, (p_elem, tables) in enumerate(orphan_blocks):
+			idx = next_idx + offset
+			sp_text = p_elem.get_text(" ", strip=True)
+			sp_node = ctx.make_node(
+				"subparagraph", f"{para_div['id']}_sp_{idx}", sp_text, paragraph, number=str(idx)
+			)
+			parse_points_from_tables(sp_node, tables)
+		return paragraph
 
 	def parse_paragraphs(article_node: Dict, article_div) -> None:
-		for para_div in article_div.find_all("div", id=paragraph_pattern, recursive=False):
-			parse_paragraph_div(para_div, article_node)
+		"""Walk article_div's direct children in document order, attaching any
+		trailing orphan <p class="oj-normal"> to the numbered paragraph div it
+		follows.
+
+		A numbered paragraph's <div id="NNN.MMM"> wraps only its FIRST
+		subparagraph; EUR-Lex emits every subparagraph after the first as a bare
+		<p class="oj-normal"> SIBLING of that div (and of every other numbered
+		paragraph div in the same article) — untagged, with no id linking it
+		back. A find_all(..., recursive=False) scoped to <div id=...> tags can
+		never see a <p>, so that text was silently dropped (confirmed on MDR
+		Article 14 paragraphs 2 and 6: draft == final answer downstream, so the
+		text never entered the graph at all — not a generation or citation
+		defect). A run of trailing <p>/<table> after a numbered div, up to the
+		next numbered div, belongs to the paragraph it trails.
+		"""
+		pending_div = None
+		pending_orphans: List = []
+
+		def flush():
+			if pending_div is not None:
+				parse_paragraph_div(pending_div, article_node, pending_orphans)
+
+		for child in article_div.find_all(["div", "p", "table"], recursive=False):
+			cid = child.get("id") if child.name == "div" else None
+			if child.name == "div" and cid and paragraph_pattern.match(cid):
+				flush()
+				pending_div = child
+				pending_orphans = []
+			elif pending_div is not None and (
+				child.name == "table"
+				or (child.name == "p" and CLASS_OJ_NORMAL in child.get("class", []))
+			):
+				pending_orphans.append(child)
+		flush()
 
 	def parse_article_body_fallback(article_node: Dict, article_div) -> None:
 		"""Parse article content when no numbered paragraph wrapper divs exist.
