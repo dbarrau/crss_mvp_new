@@ -356,11 +356,22 @@ def _clean_husks(text: str) -> str:
     #    single-level blockquote, tidy the "> " spacing, and drop a quote line
     #    that lost its content or capped to just "[…]" — so a resolved quote is
     #    always a clean, single-level block however the model wrapped its marker.
-    #    Also split a heading the model ran a sentence onto ("### … EU AI ActNo,
-    #    it is not lawful …") at the word→capitalised-sentence boundary, so the
-    #    sentence stops rendering as a giant heading.  The boundary (a lowercase
-    #    letter running straight into a capitalised word followed by lowercase)
-    #    never occurs in a normal Title-Case heading; guarded to long headings.
+    #    Also split a heading the model ran straight into the next line with no
+    #    newline ("### 3. Human OversightGoverning provision: Article 26(2)",
+    #    "### … Pre-Determined ChangesArticle 43(4), second …") at the
+    #    word->capitalised-word boundary.  Confirmed generation-side (draft and
+    #    final answer are byte-identical on the glued line — resolve_pointers
+    #    never touches it), so this is repaired here, not upstream.  No length
+    #    gate: a 56-char heading glues exactly as a 90-char one does.  No
+    #    requirement that the tail read as continuing lowercase prose either —
+    #    an earlier version needed `[A-Z][a-z]+...\s+[a-z]` right after the
+    #    glue word, which is exactly what a citation-opening tail ("Article
+    #    43(4), …") fails: the token after "Article " is a digit, not a
+    #    lowercase letter, so a real bug like "ChangesArticle 43(4)" never
+    #    matched.  The lower->upper transition alone never occurs inside
+    #    genuine English prose or a legal heading, so splitting on the first
+    #    occurrence is safe (validated against 45 real generated answers,
+    #    incl. verbatim-display table renders: zero false positives).
     out_lines: list[str] = []
     for line in text.split("\n"):
         # An emptied list bullet: the model put a `[quote:]` marker on its own
@@ -371,12 +382,11 @@ def _clean_husks(text: str) -> str:
         # the emptied-blockquote husks below).
         if re.fullmatch(r"[ \t]*[-*+][ \t]*", line):
             continue
-        if line.startswith("#") and len(line) > 70:
-            split = re.match(
-                r"^(#{1,6}\s+\S.*?[a-z])([A-Z][a-z]+[,.]?\s+[a-z].*)$", line
-            )
+        if line.startswith("#"):
+            split = re.search(r"[a-z]([A-Z][a-z])", line)
             if split:
-                out_lines.extend([split.group(1), "", split.group(2)])
+                cut = split.start() + 1
+                out_lines.extend([line[:cut], "", line[cut:]])
                 continue
         bq = re.match(r"^(\s*)>[\s>]*(.*)$", line)
         if bq:

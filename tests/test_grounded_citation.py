@@ -5,6 +5,7 @@ Deterministic, no Neo4j / no LLM. Fixtures mirror the real retriever dict shape
 retrieval trace.
 """
 from application._grounded_citation import (
+    _clean_husks,
     build_pointer_index,
     resolve_pointers,
 )
@@ -157,3 +158,50 @@ def test_quote_marker_on_own_bullet_leaves_no_empty_list_item():
     assert "> Manufacturers shall keep the technical documentation up to date." in out
     # ... and no line is left as a content-less list bullet
     assert not any(re.fullmatch(r"[ \t]*[-*+][ \t]*", ln) for ln in out.split("\n")), out
+
+
+# --- Heading/next-line glue (generation-side, not a citation-resolution bug) --
+# Confirmed against real production output (eval/runs/artifact_v1.json, Aug
+# 2026): the model occasionally emits a heading with no newline before the
+# sentence that follows it. draft and final answer were byte-identical on the
+# glued line in every observed case, so resolve_pointers never touched it —
+# the repair belongs in _clean_husks, not upstream. Two real shapes: the tail
+# reads as ordinary prose, and the tail opens with a citation (digits right
+# after the glue word), which an earlier length-gated, prose-only pattern
+# missed entirely (see git history on this test's sibling in _grounded_citation).
+
+def test_clean_husks_splits_heading_glued_to_citation_opening_sentence():
+    # real case: "### 3. Treatment of Pre-Determined ChangesArticle 43(4), ..."
+    line = ("### 3. Treatment of Pre-Determined ChangesArticle 43(4), second "
+            "subparagraph addresses pre-determined changes:")
+    out = _clean_husks(line)
+    assert out == (
+        "### 3. Treatment of Pre-Determined Changes\n\n"
+        "Article 43(4), second subparagraph addresses pre-determined changes:"
+    )
+
+
+def test_clean_husks_splits_short_heading_glued_to_next_line():
+    # real case: "### 3. Human OversightGoverning provision: Article 26(2)"
+    # — only 56 chars; the old fix required len(line) > 70 and missed this.
+    line = "### 3. Human OversightGoverning provision: Article 26(2)"
+    out = _clean_husks(line)
+    assert out == "### 3. Human Oversight\n\nGoverning provision: Article 26(2)"
+
+
+def test_clean_husks_leaves_normal_headings_alone():
+    for line in [
+        "### Article 10 — Technical documentation",
+        "## Classification of In Vitro Diagnostic Devices (IVDs) as Class B vs. Class C under IVDR 2017/746",
+        "### eIDAS-Regulation cross-reference",   # no lower->upper->lower glue
+    ]:
+        assert _clean_husks(line) == line
+
+
+def test_resolve_pointers_repairs_glued_heading_end_to_end():
+    idx = build_pointer_index(_provisions())
+    answer = ("### 3. Treatment of Pre-Determined ChangesArticle 43(4) states: "
+               "[cite: 32017R0745_art_10]")
+    out = resolve_pointers(answer, idx).text
+    assert "### 3. Treatment of Pre-Determined Changes\n\n" in out
+    assert "Article 43(4) states:" in out
