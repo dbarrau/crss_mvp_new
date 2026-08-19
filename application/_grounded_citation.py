@@ -363,6 +363,14 @@ def _clean_husks(text: str) -> str:
     #    never occurs in a normal Title-Case heading; guarded to long headings.
     out_lines: list[str] = []
     for line in text.split("\n"):
+        # An emptied list bullet: the model put a `[quote:]` marker on its own
+        # "- " item, and `_render_quote` lifted the quote onto standalone lines,
+        # leaving the bullet with no content.  Drop it so it does not render as
+        # an empty <li> (marked.js shows a bare bullet; the quote-lift is by
+        # design placement-independent, so the orphan is cleaned here, alongside
+        # the emptied-blockquote husks below).
+        if re.fullmatch(r"[ \t]*[-*+][ \t]*", line):
+            continue
         if line.startswith("#") and len(line) > 70:
             split = re.match(
                 r"^(#{1,6}\s+\S.*?[a-z])([A-Z][a-z]+[,.]?\s+[a-z].*)$", line

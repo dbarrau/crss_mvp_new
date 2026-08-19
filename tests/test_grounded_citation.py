@@ -134,3 +134,26 @@ def test_shared_child_id_keeps_first_binding():
     ]
     idx = build_pointer_index(provs)
     assert idx["32017R0745_010.014"].ref == "Paragraph 14"  # first binding kept
+
+
+def test_quote_marker_on_own_bullet_leaves_no_empty_list_item():
+    """A `[quote:]` on its own "- " bullet must not orphan an empty list item.
+
+    `_render_quote` lifts the quote onto standalone lines (placement-independent
+    by design), which empties the bullet.  Left in, marked.js renders it as a
+    bare empty <li> (the "empty bullet points" seen in a numbered list where each
+    item carries a quote).  The husk cleaner must drop the emptied bullet.
+    """
+    import re
+
+    idx = build_pointer_index(_provisions())
+    answer = (
+        "The relevant articles:\n\n"
+        "1. **Article 10** – keeps documentation current.\n"
+        "   - [quote: 32017R0745_010.014]\n"
+    )
+    out = resolve_pointers(answer, idx).text
+    # the quote still renders as a blockquote ...
+    assert "> Manufacturers shall keep the technical documentation up to date." in out
+    # ... and no line is left as a content-less list bullet
+    assert not any(re.fullmatch(r"[ \t]*[-*+][ \t]*", ln) for ln in out.split("\n")), out
