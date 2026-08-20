@@ -21,6 +21,7 @@ from retrieval._cypher import (
     _CITED_CHILDREN_CYPHER,
     _DIRECT_REF_CYPHER,
     _EXPAND_CYPHER,
+    _REVERSE_REFERENCE_CYPHER,
     _ROLE_OBLIGATIONS_CYPHER,
     _SUBTREE_CYPHER,
     ref_norm_key,
@@ -215,6 +216,38 @@ def retrieve_by_ids(driver, db: str, ids: list[str]) -> list[dict[str, Any]]:
         r["score"] = 0.0
         r["matched_leaf_id"] = None
     return results
+
+
+def retrieve_citing_provisions(
+    driver,
+    db: str,
+    refs: list[str],
+    celex_filter: set[str] | None = None,
+    *,
+    limit: int = 25,
+) -> list[dict[str, Any]]:
+    """Provisions that REFERENCE the named target(s) — the reverse of a forward
+    lookup. Resolves *refs* by display_ref, finds their citers (rolled up to the
+    nearest article/annex/recital, ordered by citation frequency), then returns
+    them in that order shaped exactly like :func:`retrieve_by_ids` (expanded,
+    scored) so the context/answer stages treat them as ordinary provisions.
+    """
+    if not refs:
+        return []
+    celexes = sorted(celex_filter) if celex_filter else None
+    with driver.session(database=db) as s:
+        rows = s.run(
+            _REVERSE_REFERENCE_CYPHER, refs=refs, celexes=celexes, limit=limit
+        ).data()
+    citing_ids = [r["article_id"] for r in rows]  # already in citation-freq order
+    if not citing_ids:
+        return []
+    # expand() de-duplicates but does not guarantee input order; re-sort to the
+    # citation-frequency order the reverse query established.
+    rank = {cid: i for i, cid in enumerate(citing_ids)}
+    shaped = retrieve_by_ids(driver, db, citing_ids)
+    shaped.sort(key=lambda p: rank.get(p.get("article_id") or p.get("id"), len(rank)))
+    return shaped
 
 
 def retrieve_by_roles(

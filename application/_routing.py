@@ -72,6 +72,22 @@ _CROSS_REG_Q_RE = re.compile(
     re.I,
 )
 
+# Reverse-reference question: the asker wants the SET of provisions that point AT
+# a named target ("which articles reference Annex III?"), not the target itself.
+# Requires an interrogative/imperative + a plural provisions-class noun + a
+# referencing verb; the target ref is captured separately by _extract_provision_refs.
+# Deliberately narrow so a forward lookup ("what is referenced IN Article 6",
+# "what does Annex III contain") does not match — the verb must take the target as
+# its OBJECT, i.e. "<provisions> reference <target>", never "referenced in <x>".
+_REVERSE_REFERENCE_Q_RE = re.compile(
+    r"\b(?:which|what|list|find|show)\b[^?.]*?"
+    r"\b(?:articles?|provisions?|sections?|paragraphs?|points?|annexe?s?|recitals?|rules?)\b"
+    r"[^?.]*?"
+    r"\b(?:references?|referencing|cite[sd]?|citing|refer(?:s|ring)?\s+to|"
+    r"point(?:s|ing)?\s+to|mention(?:s|ed)?|cross-?reference[sd]?)\b",
+    re.I,
+)
+
 # "Personal-obligation" phrasing: the asker is asking about *their own* duties
 # for a specific but unstated actor role — the one case where naming the role
 # changes the answer they need. First/second-person pronouns, or an
@@ -130,7 +146,11 @@ _COMMUNITY_SUMMARY_Q_RE = re.compile(
     r"\b(all|every|comprehensive|complete|overview|survey|full\s+list|"
     r"across\s+(?:all|both|the)|summarise|summarize|enumerate|list\s+all|"
     r"what\s+are\s+all|which\s+are\s+all|"
-    r"main\s+categor(?:y|ies)|categor(?:y|ies)\s+of\s+obligations?)\b",
+    r"main\s+categor(?:y|ies)|categor(?:y|ies)\s+of\s+obligations?|"
+    # Broad "learn about X" overview phrasing: a corpus-level survey, not a
+    # single defined term. Without these, "what are the main aspects of the AI
+    # Act" is swallowed by the definition-question pattern (definition_lookup).
+    r"main\s+aspects?|key\s+aspects?|main\s+points?|key\s+points?|should\s+know)\b",
     re.I,
 )
 
@@ -209,6 +229,17 @@ def _has_obligation_focus(question: str) -> bool:
 def _has_cross_reg_focus(question: str) -> bool:
     """Return whether the question asks about interplay across frameworks."""
     return bool(_CROSS_REG_Q_RE.search(question))
+
+
+def _is_reverse_reference_question(question: str, *, explicit_refs: list[str]) -> bool:
+    """Return whether the question asks which provisions REFERENCE a named target.
+
+    Requires both the reverse-reference phrasing and at least one extracted target
+    ref (the thing being referenced) — without a concrete target there is nothing
+    to run the reverse-citation lookup against, so it falls through to the normal
+    routes.
+    """
+    return bool(explicit_refs) and bool(_REVERSE_REFERENCE_Q_RE.search(question))
 
 
 def _has_broad_survey_focus(question: str) -> bool:
@@ -572,6 +603,17 @@ def _select_question_route(
     # when the caller has not separated the two (e.g. in tests).
     _kw_regs = keyword_mentioned_regs if keyword_mentioned_regs is not None else mentioned_regs
     _cross_reg_count = len(_kw_regs)
+
+    # Reverse-reference is checked first: it names a target provision (so it would
+    # otherwise be captured by the explicit_refs → provision_lookup branch and
+    # merely display that target), but the intent is the inverse — the provisions
+    # that cite it. The tight phrasing guard keeps forward lookups out.
+    if _is_reverse_reference_question(question, explicit_refs=explicit_refs):
+        return _QuestionRoute(
+            id="reverse_reference",
+            label="Reverse reference lookup",
+            rationale="the question asks which provisions reference a named target",
+        )
 
     if _uses_legal_qualification_route(
         question,

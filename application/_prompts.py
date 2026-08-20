@@ -326,6 +326,19 @@ def _build_route_answer_guidance(
             )
         return "\n".join(lines)
 
+    if route.id == "reverse_reference":
+        return (
+            "ANSWER DISCIPLINE — REVERSE REFERENCE LOOKUP:\n"
+            "The user asked which provisions REFERENCE a named target (e.g. an "
+            "annex or article), NOT what that target contains. The retrieved "
+            "provisions ARE the referencing provisions, ordered by how often they "
+            "cite the target. Answer by LISTING them — cite each by its own "
+            "number (e.g. 'Article 6') and state in one clause how each uses the "
+            "target. Do NOT summarise or reproduce the target's own text as the "
+            "answer. If the retrieved set is empty, say no referencing provisions "
+            "were found rather than describing the target."
+        )
+
     if route.id == "cross_regulation":
         lines: list[str] = []
         lines.append("ANSWER DISCIPLINE — CROSS-REGULATORY ANALYSIS:")

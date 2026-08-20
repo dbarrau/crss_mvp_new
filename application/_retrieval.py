@@ -702,6 +702,21 @@ def _retrieve_route_provisions(
     hyde_text: str | None = None
     legal_qualification_targets: list[_ProvisionLookupTarget] = []
 
+    # ── Reverse-reference: return the provisions that CITE the named target ──
+    # The inverse of provision_lookup — the answer IS the set of citing
+    # provisions (graph-exact), so no vector/HyDE pass is needed or wanted.
+    if route.id == "reverse_reference":
+        provisions = retriever.retrieve_citing_provisions(
+            explicit_refs, celex_filter=target_celexes
+        )
+        return {
+            "provisions": provisions,
+            "direct_provisions": [],
+            "role_provisions": [],
+            "hyde_text": None,
+            "legal_qualification_targets": [],
+        }
+
     # ── Seed phase: direct refs + curated backbones into the direct channel ──
     if route.id in {"provision_lookup", "cross_regulation", "legal_qualification"}:
         direct_provisions = _retrieve_direct_provisions(

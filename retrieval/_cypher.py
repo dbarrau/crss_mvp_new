@@ -305,6 +305,36 @@ RETURN art.id AS article_id, art.celex AS celex, art.display_ref AS display_ref,
 ORDER BY art.hierarchy_depth ASC
 """
 
+# Reverse-REFERENCE route: answer "which provisions reference <ref>?" — the
+# inverse of a forward provision lookup. Resolves the named target(s) by
+# display_ref (celex-scoped), then finds every provision that CITES the target
+# OR any of its descendants (an article citing "Annex III, point 2" counts as
+# citing Annex III). Each citer is rolled up to its NEAREST citeable ancestor
+# (article / annex / recital) so the answer is the referencing ARTICLES, not
+# scattered sub-paragraph nodes or their redundant chapter-section containers.
+# Unlike _REVERSE_XREF_CYPHER this is NOT restricted to cross-celex citations —
+# most "which articles reference Annex X" questions are answered within the same
+# regulation.
+_REVERSE_REFERENCE_CYPHER = f"""\
+UNWIND $refs AS ref
+WITH {_REF_NORM.format(x='ref')} AS nref
+MATCH (tgt:Provision)
+WHERE {_REF_NORM.format(x='tgt.display_ref')} = nref
+  AND ($celexes IS NULL OR tgt.celex IN $celexes)
+MATCH (tgt)-[:HAS_PART*0..6]->(target)
+MATCH (src)-[:CITES]->(target)
+MATCH path=(srcArt:Provision)-[:HAS_PART*0..6]->(src)
+WHERE srcArt.kind IN ['article', 'annex', 'recital']
+WITH tgt, src, srcArt, length(path) AS d
+ORDER BY d ASC
+WITH tgt, src, head(collect(srcArt)) AS srcArt
+WHERE NOT srcArt.id = tgt.id
+WITH srcArt, COUNT(DISTINCT src) AS citation_freq
+RETURN srcArt.id AS article_id, citation_freq
+ORDER BY citation_freq DESC, article_id
+LIMIT $limit
+"""
+
 # Ordered subtree of a directly-looked-up provision, for faithful structural
 # rendering.  Returns the root plus every HAS_PART descendant with its OWN text
 # (node.text, never the flattened text_for_analysis), its exact display_ref, and
