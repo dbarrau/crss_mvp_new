@@ -90,20 +90,29 @@ def _retrieval_coverage_score(sufficiency: dict) -> float:
 
 
 def _retrieval_relevance_score(provisions: list[dict]) -> float:
-    """Mean cosine similarity of the top-3 retrieved provisions.
+    """Mean retrieval score of the top-3 similarity-ranked provisions.
 
-    Provisions with score == 1.0 (direct-ref matches) are excluded from the
-    mean because they are deterministic lookups, not similarity-ranked results.
-    An empty list or all-1.0 list returns 0.75 (assumed adequate relevance for
-    direct lookups).
+    The ``score`` field carries a similarity-ranked value for dense/hybrid hits
+    but TWO sentinels that are not similarities and must be excluded:
+      * ``1.0`` — a direct-ref / structural match (deterministic lookup);
+      * ``0.0`` — a graph-expansion provision for which no similarity was
+        computed (set by ``retrieve_by_ids`` / ``expand``).
+
+    Excluding only ``1.0`` (the original behaviour) let the ``0.0`` sentinels of
+    graph-expanded provisions be averaged as if they were genuine near-zero
+    cosines, collapsing the score to ~0 on any structurally-answered route
+    (``provision_lookup``, ``reverse_reference``, ``role_obligations``) — a fully
+    grounded, audit-passed answer was dragged to MEDIUM purely by this artifact.
+    When no similarity-ranked provisions remain, the route answered structurally,
+    so relevance is neutral (0.75) rather than 0.
     """
     sim_scores = [
         p["score"]
         for p in provisions
-        if p.get("score") is not None and p["score"] < 1.0
+        if p.get("score") is not None and 0.0 < p["score"] < 1.0
     ]
     if not sim_scores:
-        return 0.75  # direct-ref or role-retrieval — assume adequate relevance
+        return 0.75  # direct-ref / role / graph-only — assume adequate relevance
     top = sorted(sim_scores, reverse=True)[:3]
     return sum(top) / len(top)
 
