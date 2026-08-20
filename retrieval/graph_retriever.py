@@ -204,6 +204,11 @@ class GraphRetriever:
         # surface their parent article/section with the most specific match.
         score_map: dict[str, float] = {}
         leaf_map: dict[str, str] = {}
+        # True query→provision cosine of each anchor's best-matching leaf, kept
+        # separate from `score` (which is the RRF-fused rank, ~1/RRF_K, not a
+        # similarity). The confidence relevance component reads this so it
+        # measures actual semantic similarity rather than the rank artifact.
+        cosine_map: dict[str, float] = {}
 
         if target_celexes and len(target_celexes) > 1:
             # Multi-regulation mode: allocate slots per regulation to
@@ -234,6 +239,7 @@ class GraphRetriever:
 
                 score_map[anchor_id] = _fused_score(idx)
                 leaf_map[anchor_id] = dense.ids[idx]
+                cosine_map[anchor_id] = float(scores[idx])
 
                 if sum(per_reg_count.values()) >= candidate_k:
                     break
@@ -251,6 +257,7 @@ class GraphRetriever:
                 if anchor_id not in score_map:
                     score_map[anchor_id] = _fused_score(idx)
                     leaf_map[anchor_id] = dense.ids[idx]
+                    cosine_map[anchor_id] = float(scores[idx])
                 if len(score_map) >= candidate_k:
                     break
 
@@ -268,9 +275,10 @@ class GraphRetriever:
         # Graph expansion via Cypher
         results = _traversal.expand(self._driver, self._db, top_ids)
 
-        # Attach cosine scores and matched leaf IDs
+        # Attach fused scores, true cosine, and matched leaf IDs
         for r in results:
             r["score"] = score_map.get(r["article_id"], 0.0)
+            r["cosine"] = cosine_map.get(r["article_id"])
             r["matched_leaf_id"] = leaf_map.get(r["article_id"])
 
         # Flat baseline: strip the CITES/INTERPRETS-derived neighbours so no
@@ -658,6 +666,7 @@ class GraphRetriever:
         results = _traversal.expand(self._driver, self._db, [dense.ids[i] for i in picked])
         for r in results:
             r["score"] = score_by_id.get(r["article_id"], 0.0)
+            r["cosine"] = score_by_id.get(r["article_id"])
             r["matched_leaf_id"] = None
             r["_recital_supplement"] = True
         return results

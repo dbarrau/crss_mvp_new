@@ -90,30 +90,30 @@ def _retrieval_coverage_score(sufficiency: dict) -> float:
 
 
 def _retrieval_relevance_score(provisions: list[dict]) -> float:
-    """Mean retrieval score of the top-3 similarity-ranked provisions.
+    """Mean true query→provision cosine of the top-3 similarity-ranked provisions.
 
-    The ``score`` field carries a similarity-ranked value for dense/hybrid hits
-    but TWO sentinels that are not similarities and must be excluded:
-      * ``1.0`` — a direct-ref / structural match (deterministic lookup);
-      * ``0.0`` — a graph-expansion provision for which no similarity was
-        computed (set by ``retrieve_by_ids`` / ``expand``).
+    Reads the ``cosine`` field — the actual embedding similarity of each anchor's
+    best-matching leaf, attached by the dense/hybrid and recital retrieval paths.
+    This is a genuine 0–1 similarity, unlike ``score``, which is overloaded: an
+    RRF-fused *rank* (~1/RRF_K, not a similarity) for hybrid hits, and the
+    sentinels ``1.0`` (direct-ref / structural) and ``0.0`` (graph-expansion, no
+    similarity computed). Scoring off ``score`` therefore mis-measured relevance
+    twice over — the ``0.0`` sentinels of graph-expanded provisions were averaged
+    as real near-zero cosines (collapsing a grounded answer to MEDIUM), and even
+    genuine hits contributed their rank artifact, not their similarity.
 
-    Excluding only ``1.0`` (the original behaviour) let the ``0.0`` sentinels of
-    graph-expanded provisions be averaged as if they were genuine near-zero
-    cosines, collapsing the score to ~0 on any structurally-answered route
-    (``provision_lookup``, ``reverse_reference``, ``role_obligations``) — a fully
-    grounded, audit-passed answer was dragged to MEDIUM purely by this artifact.
-    When no similarity-ranked provisions remain, the route answered structurally,
-    so relevance is neutral (0.75) rather than 0.
+    Provisions retrieved structurally (direct-ref, role, chain) carry no
+    ``cosine`` — they were not similarity-ranked — so they are excluded. When none
+    remain, the route answered structurally and relevance is neutral (0.75).
     """
-    sim_scores = [
-        p["score"]
+    cosines = [
+        p["cosine"]
         for p in provisions
-        if p.get("score") is not None and 0.0 < p["score"] < 1.0
+        if isinstance(p.get("cosine"), (int, float))
     ]
-    if not sim_scores:
+    if not cosines:
         return 0.75  # direct-ref / role / graph-only — assume adequate relevance
-    top = sorted(sim_scores, reverse=True)[:3]
+    top = sorted(cosines, reverse=True)[:3]
     return sum(top) / len(top)
 
 
