@@ -52,6 +52,19 @@ CLASS_OJ_TI_GRSEQ_1 = "oj-ti-grseq-1"   # Group/section heading
 CLASS_OJ_NORMAL = "oj-normal"             # Normal body paragraph
 CLASS_OJ_ENUMERATION_SPACING = "oj-enumeration-spacing"  # Enumeration block
 
+# Two body-prose classes some consolidated OJ layouts use instead of "oj-normal":
+CLASS_NORMAL = "normal"                   # body paragraph without the oj- prefix
+CLASS_LIST = "list"                       # continuation subparagraph after a point-list
+
+# Classes EUR-Lex uses to carry article/paragraph body prose. Treating only
+# "oj-normal" as body silently dropped real obligations where a consolidated
+# layout dropped the prefix ("normal", IVDR Art 112 intro / Art 110 orphan) or
+# tagged a post-point-list continuation subparagraph "list" (MDR Art 117). A
+# "normal"/"oj-normal" element opens a subparagraph; a "list" element continues
+# the current one (see BODY_SUBPARA_CLASSES).
+BODY_SUBPARA_CLASSES = frozenset({CLASS_OJ_NORMAL, CLASS_NORMAL})   # open a subparagraph
+BODY_TEXT_CLASSES = frozenset({CLASS_OJ_NORMAL, CLASS_NORMAL, CLASS_LIST})  # any body prose
+
 
 # ── HTML attribute values ─────────────────────────────────────────────────────
 

@@ -13,9 +13,33 @@ from domain.ontology.eurlex_html import (
 	ARTICLE_ID_RE,
 	PARAGRAPH_ID_RE,
 	ARTICLE_TITLE_ID_TEMPLATE,
-	CLASS_OJ_NORMAL,
+	CLASS_LIST,
+	BODY_SUBPARA_CLASSES,
+	BODY_TEXT_CLASSES,
 	TABLE_POINTS_WIDTH,
 )
+
+
+def _classes(el) -> set:
+	return set(el.get("class") or [])
+
+
+def _opens_subparagraph(el) -> bool:
+	"""A <p>/<div> that starts a new body subparagraph (oj-normal / normal)."""
+	return getattr(el, "name", None) in ("p", "div") and bool(_classes(el) & BODY_SUBPARA_CLASSES)
+
+
+def _is_continuation(el) -> bool:
+	"""Body prose that continues the current subparagraph rather than opening a
+	new one: a "list" element (a subparagraph following a point-list), or a bare
+	unlabelled <div> (an amendment's quoted replacement block emitted between
+	body paragraphs, e.g. MDR Art 117's ``'(12) …'``)."""
+	if getattr(el, "name", None) not in ("p", "div"):
+		return False
+	classes = _classes(el)
+	if CLASS_LIST in classes:
+		return True
+	return el.name == "div" and not el.get("id") and not classes
 
 
 # Opening quotation marks EUR-Lex uses to delimit an amendment's quoted
@@ -167,28 +191,47 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 			parse_points_from_tables(node, _sub_item_tables(table))
 
 	def group_blocks(elements) -> List:
-		"""Group a flat sequence of <p class=oj-normal>/<table> elements into
-		(p_element, [table_elements]) tuples — one entry per subparagraph, with
-		its own point-list tables attached."""
+		"""Group a flat sequence of body elements into ``(text, [table_elements])``
+		tuples — one entry per subparagraph, with its own point-list tables
+		attached.
+
+		A body element that opens a subparagraph (``oj-normal``/``normal``) starts
+		a new block; a ``<table>`` attaches its point-list to the open block; a
+		continuation element (a ``list`` subparagraph, or a bare unlabelled
+		amendment ``<div>``) appends its prose to the open block instead of being
+		dropped. A point-list arriving before any prose opens an empty-text block
+		so it still becomes referenceable points.
+		"""
 		blocks = []
-		current_p = None
+		current_text = None
 		current_tables = []
+
+		def flush():
+			nonlocal current_text, current_tables
+			if current_text is not None:
+				blocks.append((current_text.strip(), current_tables))
+			current_text, current_tables = None, []
+
 		for child in elements:
-			if not hasattr(child, 'name') or not child.name:
+			if not getattr(child, "name", None):
 				continue
-			if child.name == 'p' and CLASS_OJ_NORMAL in child.get('class', []):
-				if current_p is not None:
-					blocks.append((current_p, current_tables))
-				current_p = child
-				current_tables = []
-			elif child.name == 'table':
+			if _opens_subparagraph(child):
+				flush()
+				current_text = child.get_text(" ", strip=True)
+			elif child.name == "table":
+				if current_text is None:
+					current_text = ""
 				current_tables.append(child)
-		if current_p is not None:
-			blocks.append((current_p, current_tables))
+			elif _is_continuation(child):
+				text = child.get_text(" ", strip=True)
+				if not text:
+					continue
+				current_text = f"{current_text} {text}".strip() if current_text else text
+		flush()
 		return blocks
 
 	def collect_subparagraph_blocks(para_div):
-		"""Group para_div's direct children into (p_element, [table_elements])."""
+		"""Group para_div's direct children into (text, [table_elements]) blocks."""
 		return group_blocks(para_div.children)
 
 	def parse_paragraph_div(para_div, parent_node: Dict, orphans: List = ()) -> Dict:
@@ -241,44 +284,62 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 			parse_points_from_tables(sp_node, para_div.find_all("table", width=TABLE_POINTS_WIDTH))
 			next_idx = 2
 		else:
-			for idx, (p_elem, tables) in enumerate(own_blocks, 1):
-				sp_text = p_elem.get_text(" ", strip=True)
+			for idx, (sp_text, tables) in enumerate(own_blocks, 1):
 				sp_node = ctx.make_node(
 					"subparagraph", f"{para_div['id']}_sp_{idx}", sp_text, paragraph, number=str(idx)
 				)
 				parse_points_from_tables(sp_node, tables)
 			next_idx = len(own_blocks) + 1
-		for offset, (p_elem, tables) in enumerate(orphan_blocks):
+		for offset, (sp_text, tables) in enumerate(orphan_blocks):
 			idx = next_idx + offset
-			sp_text = p_elem.get_text(" ", strip=True)
 			sp_node = ctx.make_node(
 				"subparagraph", f"{para_div['id']}_sp_{idx}", sp_text, paragraph, number=str(idx)
 			)
 			parse_points_from_tables(sp_node, tables)
 		return paragraph
 
+	def _detached_paragraph_number(child) -> str:
+		"""If ``child`` is a bare body <div> standing in for a numbered paragraph
+		whose <div id="NNN.MMM"> wrapper EUR-Lex omitted, return that paragraph
+		number, else "". Such a paragraph is a body <div> with no wrapper id whose
+		text opens with its own number (IVDR Art 42 para 7, Art 38 para 13); left
+		unhandled it matches neither the paragraph-div test nor the orphan test
+		below and is dropped whole."""
+		if child.name != "div" or (child.get("id") or "") or not (_classes(child) & BODY_SUBPARA_CLASSES):
+			return ""
+		m = re.match(r"^(\d+)\s+(?=\S)", child.get_text(" ", strip=True))
+		return m.group(1) if m else ""
+
 	def parse_paragraphs(article_node: Dict, article_div) -> None:
-		"""Walk article_div's direct children in document order, attaching any
-		trailing orphan <p class="oj-normal"> to the numbered paragraph div it
-		follows.
+		"""Walk article_div's direct children in document order, materialising
+		numbered paragraphs and attaching trailing body content to the paragraph
+		it follows.
 
 		A numbered paragraph's <div id="NNN.MMM"> wraps only its FIRST
 		subparagraph; EUR-Lex emits every subparagraph after the first as a bare
-		<p class="oj-normal"> SIBLING of that div (and of every other numbered
-		paragraph div in the same article) — untagged, with no id linking it
-		back. A find_all(..., recursive=False) scoped to <div id=...> tags can
+		body element (usually <p class="oj-normal">, but also class="normal"/"list"
+		or a point-list <table>) SIBLING of that div, untagged, with no id linking
+		it back. A find_all(..., recursive=False) scoped to <div id=...> tags can
 		never see a <p>, so that text was silently dropped (confirmed on MDR
-		Article 14 paragraphs 2 and 6: draft == final answer downstream, so the
-		text never entered the graph at all — not a generation or citation
-		defect). A run of trailing <p>/<table> after a numbered div, up to the
-		next numbered div, belongs to the paragraph it trails.
+		Article 14 paragraphs 2 and 6, and IVDR Art 110's class="normal" orphan).
+		A run of trailing body elements after a numbered div, up to the next
+		numbered div, belongs to the paragraph it trails.
+
+		Some consolidated layouts also emit a whole numbered paragraph as a bare
+		body <div> with no wrapper id (see _detached_paragraph_number); such a div
+		becomes its own paragraph node rather than being folded into its
+		predecessor.
 		"""
+		art_num = article_node.get("number", "")
+
 		pending_div = None
 		pending_orphans: List = []
 
 		def flush():
+			nonlocal pending_div, pending_orphans
 			if pending_div is not None:
 				parse_paragraph_div(pending_div, article_node, pending_orphans)
+			pending_div, pending_orphans = None, []
 
 		for child in article_div.find_all(["div", "p", "table"], recursive=False):
 			cid = child.get("id") if child.name == "div" else None
@@ -286,9 +347,15 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 				flush()
 				pending_div = child
 				pending_orphans = []
+			elif (detached := _detached_paragraph_number(child)) and art_num.isdigit():
+				# A numbered paragraph EUR-Lex emitted without its wrapper div.
+				flush()
+				local_id = f"{int(art_num):03d}.{int(detached):03d}"
+				body = re.sub(r"^\d+\s+", "", child.get_text(" ", strip=True))
+				para = ctx.make_node("paragraph", local_id, body, article_node, number=detached)
+				parse_points_from_tables(para, child.find_all("table", width=TABLE_POINTS_WIDTH))
 			elif pending_div is not None and (
-				child.name == "table"
-				or (child.name == "p" and CLASS_OJ_NORMAL in child.get("class", []))
+				child.name == "table" or _opens_subparagraph(child) or _is_continuation(child)
 			):
 				pending_orphans.append(child)
 		flush()
@@ -300,39 +367,28 @@ def parse_enacting_terms(soup, ctx: ParserContext, root: Dict) -> Dict:
 		  1. Intro <p> + definition/point <table> elements  (art 3, 16, 108)
 		  2. Single-body <p>                                (art 4, 32, 39)
 		  3. Multi-paragraph <p> blocks                     (art 85)
-		  4. Intro <p> + amendment <div> containers          (art 102-110)
+		  4. Intro <p> + amendment <div>/quoted-block text   (art 102-110, 117)
+
+		group_blocks handles the block-vs-continuation split — a bare amendment
+		<div> or a "list" subparagraph is folded into the block it trails, so the
+		single-block path no longer needs to rescue trailing <div> text by hand.
 		"""
 		blocks = collect_subparagraph_blocks(article_div)
 
 		if not blocks:
-			# No <p class="oj-normal"> at all — extract all readable body text
+			# No body prose at all — extract all readable body text
 			body = paragraph_text_without_tables(article_div)
 			if body and body != article_node.get("text", ""):
 				article_node["text"] = body
 			return
 
 		if len(blocks) == 1:
-			p_elem, tables = blocks[0]
-			body_text = p_elem.get_text(" ", strip=True)
-			# For amendment articles, also grab text from child <div> siblings
-			extra_parts = []
-			capture = False
-			for child in article_div.children:
-				if child is p_elem:
-					capture = True
-					continue
-				if not capture:
-					continue
-				if hasattr(child, "name") and child.name == "div" and not child.get("id"):
-					extra_parts.append(child.get_text(" ", strip=True))
-			if extra_parts:
-				body_text = body_text + " " + " ".join(extra_parts)
+			body_text, tables = blocks[0]
 			article_node["text"] = body_text
 			parse_points_from_tables(article_node, tables)
 		else:
 			# Multiple subparagraph blocks
-			for idx, (p_elem, tables) in enumerate(blocks, 1):
-				sp_text = p_elem.get_text(" ", strip=True)
+			for idx, (sp_text, tables) in enumerate(blocks, 1):
 				sp_node = ctx.make_node(
 					"subparagraph",
 					f"{article_div['id']}_sp_{idx}",
