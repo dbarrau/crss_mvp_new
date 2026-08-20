@@ -833,15 +833,26 @@ def _retrieve_route_provisions(
     #    CONTROLLING by the context renderer.
     amendments_surfaced = _surface_amendments(retriever, provisions)
 
-    # ── Preamble supplement ──────────────────────────────────────────────────
-    # A question that explicitly invokes the preamble ("what does the GDPR's
-    # preamble say…", "which recital covers…") needs the reciting text itself,
-    # but recitals are excluded from BM25 and rank below operative articles in
-    # fused retrieval, so no standard channel delivers them (v6 eval: HQ_041's
-    # answer quoted Recital 43 verbatim from memory because retrieval never
-    # surfaced it — correctly flagged, wrongly starved). A kind-scoped dense
-    # pass appends the top recitals; getattr keeps retriever doubles working.
-    if _PREAMBLE_CUE_RE.search(question):
+    # ── Preamble / interpretive-recital supplement ───────────────────────────
+    # Recitals carry the legislature's interpretive intent for the operative
+    # articles, but they have no CITES/INTERPRETS edge to the article they
+    # explain, are excluded from BM25, and rank below operative articles in
+    # fused retrieval — so ref lookup and graph expansion never reach them. Two
+    # cases need them and neither was served: a question that explicitly invokes
+    # the preamble ("which recital covers…"; v6 eval HQ_041 quoted Recital 43
+    # from memory because retrieval starved it), AND any substantive
+    # interpretation/qualification answer, where the governing recital is the
+    # anchor the reading turns on (e.g. Recital 25 for the Article 2(6) R&D
+    # exemption — the AI Office's own reasoning cited it, CRSS could not because
+    # it was never in context). A kind-scoped dense pass appends the top recitals
+    # at the budget tail (interpretive binding force, trimmed before any
+    # operative provision). Skipped for the pure citation-list and corpus-summary
+    # routes, which do not want them. getattr keeps retriever doubles working.
+    _wants_recitals = bool(target_celexes) and (
+        bool(_PREAMBLE_CUE_RE.search(question))
+        or route.id not in {"reverse_reference", "community_summary_search"}
+    )
+    if _wants_recitals:
         _recital_fn = getattr(retriever, "retrieve_recitals", None)
         if callable(_recital_fn):
             recital_hits = _recital_fn(
@@ -850,7 +861,7 @@ def _retrieve_route_provisions(
             if recital_hits:
                 _merge_unique_provisions(provisions, recital_hits)
                 logger.info(
-                    "Preamble supplement: appended %d recital(s): %s",
+                    "Interpretive recitals: appended %d recital(s): %s",
                     len(recital_hits),
                     [p.get("article_ref") for p in recital_hits],
                 )
