@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from md_normalize import normalize_legal_markdown
+
 # ---------------------------------------------------------------------------
 # Shared content
 # ---------------------------------------------------------------------------
@@ -68,7 +70,10 @@ def generate_markdown(conversation: list[dict[str, str]]) -> str:
         elif role == "agent":
             lines.append(f"### Answer")
             lines.append("")
-            lines.append(content)
+            # Normalize the model's Markdown to strict CommonMark (same transforms
+            # the live view applies) so the exported .md renders with real nested
+            # lists and consistent citation bolding, not flattened running text.
+            lines.append(normalize_legal_markdown(content))
             lines.append("")
             lines.append("---")
             lines.append("")
