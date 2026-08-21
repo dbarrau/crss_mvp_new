@@ -772,7 +772,25 @@ function escapeHtml(s) {
 // (i)/(v)/(x) roman-vs-letter ambiguity is resolved by letter continuity (a
 // single roman glyph that continues its predecessor letter, e.g. (i) after (h),
 // is a letter; otherwise it opens a roman sub-list).
+// "**Articles 26**, 27, and 49(3)" → "**Articles 26, 27, and 49(3)**": extend a
+// bolded Article/Annex/Recital lead over the comma/"and"-separated reference run
+// that follows, so the whole citation is bold — not just the first item. A ref
+// number is a digit run OR an UPPERCASE roman (annex); roman is uppercase-only
+// and only the keyword is case-insensitive, so a lowercase word whose letters are
+// all roman ("did") can never match. Stops at the first non-reference token.
+const _REFNUM = '(?:\\d+[a-z]?|[IVXLCDM]+)(?:\\((?:\\d+[a-z]?|[ivxlcdm]+|[a-z])\\))*';
+const _BOLD_REF_RUN = new RegExp(
+  '\\*\\*((?:[Aa]rticles?|[Aa]nnexe?s?|[Rr]ecitals?|[Pp]aragraphs?|[Pp]oints?))\\s+' +
+  '(' + _REFNUM + ')\\*\\*' +
+  '((?:\\s*(?:,\\s*and|,|and|or)\\s*' + _REFNUM + ')+)',
+  'g'
+);
+function boldReferenceRuns(md) {
+  return md.replace(_BOLD_REF_RUN, (m, kw, first, rest) => '**' + kw + ' ' + first + rest + '**');
+}
+
 function normalizeLegalLists(md) {
+  md = boldReferenceRuns(md || '');
   const ROMAN = 'ivxlcdm';
   const isListLine = (s) => /^\s*(?:[-*+]\s|\d+\.\s)/.test(s);
 
