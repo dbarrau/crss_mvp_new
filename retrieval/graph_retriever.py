@@ -499,6 +499,23 @@ class GraphRetriever:
         """
         return _traversal.retrieve_by_ids(self._driver, self._db, ids)
 
+    def retrieve_citing_provisions(
+        self,
+        refs: list[str],
+        celex_filter: set[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Provisions that REFERENCE the named target(s) (reverse of a lookup).
+
+        Answers "which articles reference Annex X / Article Y?" by resolving the
+        target by ``display_ref`` and returning the provisions whose ``CITES``
+        edges point at it (or any of its descendants), rolled up to the nearest
+        article/annex/recital and ordered by citation frequency. Results are
+        shaped like :meth:`retrieve_by_refs` so downstream stages are unchanged.
+        """
+        return _traversal.retrieve_citing_provisions(
+            self._driver, self._db, refs, celex_filter
+        )
+
     def retrieve_by_roles(
         self,
         role_specs: list[tuple[str, str]],

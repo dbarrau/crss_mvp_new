@@ -466,14 +466,13 @@ python -m ingestion.run_pipeline --doc 32024R1689
 
 ### Validate parsed output
 
-```bash
-python scripts/analyze_graphrag.py data/legislation/32024R1689/EN/parsed.json
-```
-
-### Verify Neo4j graph integrity
+Confirm no provision text was lost or truncated at parse time (both sweeps exit
+non-zero on a problem):
 
 ```bash
-python scripts/_verify_neo4j.py
+python scripts/audit_render_coverage.py        # provisions that would render empty
+python scripts/audit_text_conservation.py      # partial mid-body text loss vs raw HTML
+python scripts/audit_orphan_subparagraphs.py   # trailing subparagraphs dropped by EUR-Lex markup
 ```
 
 ---

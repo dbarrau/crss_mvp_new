@@ -85,6 +85,87 @@ def test_paragraph_without_orphans_is_unchanged():
     assert para1["text"] == "First paragraph, no orphans."
 
 
+# ── narrow body-class / detached-paragraph shapes ────────────────────────────
+# Consolidated OJ layouts carry body prose in three ways the parser once ignored,
+# silently dropping whole obligations (IVDR Art 112/110/42, MDR Art 117). Each
+# fixture is the minimal shape of one real loss.
+
+
+def test_detached_numbered_paragraph_div_becomes_its_own_paragraph():
+    # A numbered paragraph EUR-Lex emitted as a bare <div class="oj-normal">
+    # with no wrapper id, its number inline (IVDR Art 42 para 7, Art 38 para 13).
+    nodes = _parse("""
+    <div id="art_5">
+      <p class="oj-ti-art">Article 5</p>
+      <div id="art_5.tit_1"><p class="oj-sti-art">Title</p></div>
+      <div id="005.006"><p class="oj-normal">Paragraph six body.</p></div>
+      <div class="oj-normal">7 Detached paragraph seven body.</div>
+      <div id="005.008"><p class="oj-normal">Paragraph eight body.</p></div>
+    </div>
+    """)
+    art = nodes[f"{_CELEX}_art_5"]
+    assert [nodes[c]["number"] for c in art["children"]] == ["6", "7", "8"]
+    para7 = nodes[f"{_CELEX}_005.007"]
+    assert para7["kind"] == "paragraph"
+    assert para7["text"] == "Detached paragraph seven body."
+
+
+def test_class_normal_orphan_after_paragraph_div_is_recovered():
+    # A second subparagraph EUR-Lex tags class="normal" (no oj- prefix), emitted
+    # as a sibling of its paragraph div (IVDR Art 110 para 2).
+    nodes = _parse("""
+    <div id="art_13">
+      <p class="oj-ti-art">Article 13</p>
+      <div id="art_13.tit_1"><p class="oj-sti-art">Title</p></div>
+      <div id="013.002"><p class="oj-normal">Paragraph two first subparagraph.</p></div>
+      <p class="normal">Paragraph two second subparagraph, no oj prefix.</p>
+      <div id="013.003"><p class="oj-normal">Paragraph three body.</p></div>
+    </div>
+    """)
+    para2 = nodes[f"{_CELEX}_013.002"]
+    assert [nodes[c]["text"] for c in para2["children"]] == [
+        "Paragraph two first subparagraph.",
+        "Paragraph two second subparagraph, no oj prefix.",
+    ]
+
+
+def test_class_normal_intro_with_exception_tables_no_paragraph_divs():
+    # A "Repeal"-style article with no paragraph divs whose intro is class="normal"
+    # and whose (a)/(b) exceptions precede the first oj-normal block (IVDR Art 112).
+    nodes = _parse("""
+    <div id="art_9">
+      <p class="oj-ti-art">Article 9</p>
+      <div id="art_9.tit_1"><p class="oj-sti-art">Repeal</p></div>
+      <p class="normal">The Directive is repealed, with the exception of:</p>
+      <table width="100%"><tr><td><p class="oj-normal">(a)</p></td><td><p class="oj-normal">first exception;</p></td></tr></table>
+      <table width="100%"><tr><td><p class="oj-normal">(b)</p></td><td><p class="oj-normal">second exception.</p></td></tr></table>
+      <p class="oj-normal">References shall be construed accordingly.</p>
+    </div>
+    """)
+    art = nodes[f"{_CELEX}_art_9"]
+    sub1 = nodes[art["children"][0]]
+    assert sub1["text"] == "The Directive is repealed, with the exception of:"
+    assert [nodes[c]["number"] for c in sub1["children"]] == ["a", "b"]
+    assert nodes[art["children"][1]]["text"] == "References shall be construed accordingly."
+
+
+def test_class_list_continuation_subparagraph_is_folded_in():
+    # An amendment article: an intro <p>, a quoted replacement <div> (unlabelled),
+    # and a class="list" continuation subparagraph (MDR Art 117's dropped duty).
+    nodes = _parse("""
+    <div id="art_11">
+      <p class="oj-ti-art">Article 11</p>
+      <div id="art_11.tit_1"><p class="oj-sti-art">Amendment</p></div>
+      <p class="oj-normal">Point 12 is replaced by the following:</p>
+      <div>‘(12) The quoted replacement first subparagraph.</div>
+      <p class="list">If the dossier does not include the results, the authority shall require an opinion.</p>
+    </div>
+    """)
+    body = nodes[f"{_CELEX}_art_11"]["text"]
+    assert "quoted replacement first subparagraph" in body
+    assert "the authority shall require an opinion" in body
+
+
 # ── real-data integration ────────────────────────────────────────────────────
 
 _have = os.path.isfile("data/legislation/32017R0745/EN/raw/raw.html")
