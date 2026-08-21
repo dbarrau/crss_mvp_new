@@ -90,21 +90,30 @@ def _retrieval_coverage_score(sufficiency: dict) -> float:
 
 
 def _retrieval_relevance_score(provisions: list[dict]) -> float:
-    """Mean cosine similarity of the top-3 retrieved provisions.
+    """Mean true query→provision cosine of the top-3 similarity-ranked provisions.
 
-    Provisions with score == 1.0 (direct-ref matches) are excluded from the
-    mean because they are deterministic lookups, not similarity-ranked results.
-    An empty list or all-1.0 list returns 0.75 (assumed adequate relevance for
-    direct lookups).
+    Reads the ``cosine`` field — the actual embedding similarity of each anchor's
+    best-matching leaf, attached by the dense/hybrid and recital retrieval paths.
+    This is a genuine 0–1 similarity, unlike ``score``, which is overloaded: an
+    RRF-fused *rank* (~1/RRF_K, not a similarity) for hybrid hits, and the
+    sentinels ``1.0`` (direct-ref / structural) and ``0.0`` (graph-expansion, no
+    similarity computed). Scoring off ``score`` therefore mis-measured relevance
+    twice over — the ``0.0`` sentinels of graph-expanded provisions were averaged
+    as real near-zero cosines (collapsing a grounded answer to MEDIUM), and even
+    genuine hits contributed their rank artifact, not their similarity.
+
+    Provisions retrieved structurally (direct-ref, role, chain) carry no
+    ``cosine`` — they were not similarity-ranked — so they are excluded. When none
+    remain, the route answered structurally and relevance is neutral (0.75).
     """
-    sim_scores = [
-        p["score"]
+    cosines = [
+        p["cosine"]
         for p in provisions
-        if p.get("score") is not None and p["score"] < 1.0
+        if isinstance(p.get("cosine"), (int, float))
     ]
-    if not sim_scores:
-        return 0.75  # direct-ref or role-retrieval — assume adequate relevance
-    top = sorted(sim_scores, reverse=True)[:3]
+    if not cosines:
+        return 0.75  # direct-ref / role / graph-only — assume adequate relevance
+    top = sorted(cosines, reverse=True)[:3]
     return sum(top) / len(top)
 
 
