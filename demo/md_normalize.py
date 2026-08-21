@@ -47,6 +47,23 @@ def _bold_reference_runs(md: str) -> str:
     )
 
 
+# ── Heading glued to a run-in answer part ────────────────────────────────────
+# The model occasionally omits the newline after a heading, running the next
+# enumerated part straight into it ("### Final AnswerA. The R&D exemption …").
+# The renderer then swallows the whole sentence into the <h3>. Split the heading
+# onto its own line. Guarded to a NO-SPACE run-in — a lowercase letter
+# immediately followed by a single-capital/number enumerator + ". " — so the glue
+# ("AnswerA.") is caught but a legitimate title where the letter is its own token
+# ("### Section A. Overview", "### A. Scope", space before "A.") is never split.
+_HEADING_GLUE = re.compile(
+    r"^(#{1,6}[ \t]+.*[a-z])((?:[A-Z]|\d{1,3})\.\s.+)$", re.MULTILINE
+)
+
+
+def _split_glued_headings(md: str) -> str:
+    return _HEADING_GLUE.sub(r"\1\n\n\2", md)
+
+
 # ── Marker depth (roman-vs-letter continuity) ────────────────────────────────
 
 
@@ -147,6 +164,7 @@ def normalize_legal_markdown(md: str) -> str:
     if not md:
         return md
     md = _bold_reference_runs(md)
+    md = _split_glued_headings(md)
 
     out: list[str] = []
     in_code = False

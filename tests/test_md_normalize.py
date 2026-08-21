@@ -9,7 +9,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "demo"))
 
-from md_normalize import normalize_legal_markdown as N, _bold_reference_runs as B
+from md_normalize import (
+    normalize_legal_markdown as N,
+    _bold_reference_runs as B,
+    _split_glued_headings as SPLIT,
+)
 
 
 # ── bold-reference runs ──────────────────────────────────────────────────────
@@ -68,3 +72,21 @@ def test_one_space_bullets_are_reindented_to_valid_nesting():
 def test_code_fences_are_left_untouched():
     src = "```\n - not a list, code\n(a) not an enum\n```"
     assert N(src) == src
+
+
+# ── heading glued to a run-in answer part ────────────────────────────────────
+
+def test_heading_glued_to_answer_part_is_split():
+    # "### Final AnswerA. …" would otherwise swallow the whole sentence into <h3>.
+    out = SPLIT("### Final AnswerA. The R&D exemption applies only if X.")
+    assert out == "### Final Answer\n\nA. The R&D exemption applies only if X."
+
+
+def test_legit_letter_headings_are_not_split():
+    # The model's own section headings ("### A. Scope", "#### B. Deployer") and a
+    # "Section A." title (space before the letter) must be left intact.
+    for h in ["### A. Scope of the R&D Exemption",
+              "#### B. Deployer status of the university department",
+              "### Section A. Overview",
+              "### Summary of Obligations"]:
+        assert SPLIT(h) == h
