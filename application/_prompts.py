@@ -222,6 +222,65 @@ def structured_system_prompt() -> str:
 # ---------------------------------------------------------------------------
 
 
+# AI Act actor roles whose obligations are CONDITIONAL on system classification.
+# (Provider is included: its heavy obligations also flow from high-risk status.)
+_AI_ACT_ACTOR_RE = re.compile(
+    r"\b(deployer|provider|operator|importer|distributor|"
+    r"authoris?ed\s+representative)s?\b",
+    re.I,
+)
+
+
+def _build_obligation_scope_guidance(
+    question: str,
+    mentioned_regs: set[str] | None,
+) -> str | None:
+    """Answer discipline for AI Act actor-obligation questions.
+
+    Actor status under the AI Act (deployer/provider/…) does NOT by itself create
+    a substantive obligation set — almost every deployer obligation is triggered
+    by the *system's* classification, not by who is using it. Without this, the
+    model states "X is a deployer, therefore all obligations apply" and lists
+    Article 26/27 duties unconditionally, when those apply only to deployers of
+    HIGH-RISK systems (and Article 50 only to specific system types) — the
+    over-warning the AI Office's own reading explicitly guards against. Content-
+    triggered (not route-scoped): the confusion arises on provision_lookup,
+    legal_qualification, role_obligations and general_compliance alike.
+    """
+    if not mentioned_regs or "EU AI Act" not in mentioned_regs:
+        return None
+    if not _AI_ACT_ACTOR_RE.search(question):
+        return None
+    return (
+        "ANSWER DISCIPLINE — OBLIGATION SCOPE (AI ACT ACTOR ROLES):\n"
+        "Being a 'deployer', 'provider' or 'operator' under the AI Act does NOT by "
+        "itself create a substantive obligation set. Almost every deployer "
+        "obligation is CONDITIONAL — it is triggered by the AI system's "
+        "classification, not by actor status alone:\n"
+        "- Article 26 and Article 27 deployer obligations (human oversight, "
+        "monitoring, log-keeping, fundamental-rights impact assessment) apply ONLY "
+        "to deployers of HIGH-RISK AI systems (Article 6 / Annex III).\n"
+        "- Article 50 transparency obligations apply ONLY to the specific system "
+        "types it lists (systems interacting with people, emotion recognition, "
+        "biometric categorisation, generated/manipulated content) — not to every "
+        "AI system.\n"
+        "Therefore:\n"
+        "1. First establish the system's classification: is it prohibited "
+        "(Article 5)? high-risk (Article 6 / Annex III)? within Article 50? If the "
+        "context does not settle this, say so and treat it as the pivotal open "
+        "question.\n"
+        "2. State obligations CONDITIONALLY on that classification — write \"if the "
+        "system is high-risk, the deployer must …\", never a flat \"the deployer "
+        "must …\" list.\n"
+        "3. If the system is neither high-risk nor within Article 50 (nor "
+        "prohibited), say so plainly: the actor is a deployer in name, but the AI "
+        "Act imposes few or no substantive obligations on that use. Do NOT imply a "
+        "broad compliance burden.\n"
+        "4. Never present Article 26/27 duties as automatic consequences of "
+        "deployer status."
+    )
+
+
 def _build_route_answer_guidance(
     route: _QuestionRoute,
     *,
@@ -727,6 +786,13 @@ def _build_user_message(
         parts.append(_AMENDED_PROVISION_DIRECTIVE)
     if route_guidance:
         parts.append(route_guidance)
+    # Obligation-scope discipline: content-triggered (any route) for AI Act
+    # actor-obligation questions, so "X is a deployer ⇒ all obligations apply" is
+    # replaced by the correct conditional (obligations flow from high-risk /
+    # Article 50 classification, not from actor status).
+    obligation_scope_guidance = _build_obligation_scope_guidance(question, mentioned_regs)
+    if obligation_scope_guidance:
+        parts.append(obligation_scope_guidance)
     # Single-regulation scope constraint — prevents cross-regulation citation contamination.
     # When exactly one regulation is in scope, the LLM receives an explicit prohibition
     # on importing citations from other regulations.  For multi-regulation questions the
