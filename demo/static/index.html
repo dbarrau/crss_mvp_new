@@ -790,14 +790,17 @@ function boldReferenceRuns(md) {
 }
 
 // The model occasionally omits the newline after a heading, running the next
-// enumerated part straight into it ("### Final AnswerA. The R&D exemption …") so
-// marked swallows the whole sentence into the <h3>. Split the heading onto its
-// own line. Guarded to a NO-SPACE run-in (lowercase letter immediately followed
-// by a single-capital/number enumerator + ". "), so a legit "### Section A.
-// Overview" / "### A. Scope" (space before, or letter is its own token) is safe.
-const _HEADING_GLUE = /^(#{1,6}[ \t]+.*[a-z])((?:[A-Z]|\d{1,3})\.\s.+)$/gm;
+// part straight into it, so marked swallows a whole sentence into the <h3>. Two
+// NO-SPACE glue shapes are split apart: (1) an enumerator run-in (lowercase +
+// single-capital/number + ". ", "### Final AnswerA. The R&D exemption …"); and
+// (2) a punctuation run-in ("?" or ")" immediately followed by a capitalised
+// word, "… the AI Act?Key provision:", "(Article 5)Banned outright …"). Both are
+// guarded to the NO-SPACE boundary so legit titles ("### A. Scope", "### Section
+// A. Overview", a heading ending in ")"/"?" + space/EOL) are never split.
+const _HEADING_GLUE_ENUM = /^(#{1,6}[ \t]+.*[a-z])((?:[A-Z]|\d{1,3})\.\s.+)$/gm;
+const _HEADING_GLUE_PUNCT = /^(#{1,6}[ \t]+.*?[?)])([A-Z][a-z].+)$/gm;
 function splitGluedHeadings(md) {
-  return md.replace(_HEADING_GLUE, '$1\n\n$2');
+  return md.replace(_HEADING_GLUE_ENUM, '$1\n\n$2').replace(_HEADING_GLUE_PUNCT, '$1\n\n$2');
 }
 
 function normalizeLegalLists(md) {

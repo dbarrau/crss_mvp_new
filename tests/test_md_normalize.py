@@ -82,11 +82,23 @@ def test_heading_glued_to_answer_part_is_split():
     assert out == "### Final Answer\n\nA. The R&D exemption applies only if X."
 
 
+def test_heading_glued_via_punctuation_is_split():
+    # "?" or ")" immediately followed by a capitalised word is a run-in glue.
+    assert SPLIT("### 1. Is my system high-risk?Key provision: Article 6 applies.") == \
+        "### 1. Is my system high-risk?\n\nKey provision: Article 6 applies."
+    assert SPLIT("### A. Prohibited Practices (Article 5)Banned outright from 2025.") == \
+        "### A. Prohibited Practices (Article 5)\n\nBanned outright from 2025."
+
+
 def test_legit_letter_headings_are_not_split():
-    # The model's own section headings ("### A. Scope", "#### B. Deployer") and a
-    # "Section A." title (space before the letter) must be left intact.
+    # The model's own section headings ("### A. Scope", "#### B. Deployer"), a
+    # "Section A." title (space before the letter), and a heading that merely
+    # ends in ")" or "?" must all be left intact.
     for h in ["### A. Scope of the R&D Exemption",
               "#### B. Deployer status of the university department",
               "### Section A. Overview",
+              "### Scope (Article 2)",
+              "### Is my system high-risk?",
+              "### Requirements (Chapter III) and obligations",
               "### Summary of Obligations"]:
         assert SPLIT(h) == h

@@ -47,21 +47,29 @@ def _bold_reference_runs(md: str) -> str:
     )
 
 
-# ── Heading glued to a run-in answer part ────────────────────────────────────
-# The model occasionally omits the newline after a heading, running the next
-# enumerated part straight into it ("### Final AnswerA. The R&D exemption …").
-# The renderer then swallows the whole sentence into the <h3>. Split the heading
-# onto its own line. Guarded to a NO-SPACE run-in — a lowercase letter
-# immediately followed by a single-capital/number enumerator + ". " — so the glue
-# ("AnswerA.") is caught but a legitimate title where the letter is its own token
-# ("### Section A. Overview", "### A. Scope", space before "A.") is never split.
-_HEADING_GLUE = re.compile(
+# ── Heading glued to a run-in body part ──────────────────────────────────────
+# The model occasionally omits the newline after a heading, running the next part
+# straight into it, so the renderer swallows a whole sentence into the <h3>. Two
+# NO-SPACE glue shapes are split back apart:
+#   (1) enumerator run-in: a lowercase letter + single-capital/number + ". "
+#       ("### Final AnswerA. The R&D exemption …");
+#   (2) punctuation run-in: a "?" or ")" immediately followed by a capitalised
+#       word ("… the AI Act?Key provision: …", "(Article 5)Banned outright …").
+# Both are guarded to the NO-SPACE boundary so legitimate titles are never split:
+# "### A. Scope" / "### Section A. Overview" (space before the letter), or a
+# heading ending in ")" or "?" followed by a space or end-of-line.
+_HEADING_GLUE_ENUM = re.compile(
     r"^(#{1,6}[ \t]+.*[a-z])((?:[A-Z]|\d{1,3})\.\s.+)$", re.MULTILINE
+)
+_HEADING_GLUE_PUNCT = re.compile(
+    r"^(#{1,6}[ \t]+.*?[?)])([A-Z][a-z].+)$", re.MULTILINE
 )
 
 
 def _split_glued_headings(md: str) -> str:
-    return _HEADING_GLUE.sub(r"\1\n\n\2", md)
+    md = _HEADING_GLUE_ENUM.sub(r"\1\n\n\2", md)
+    md = _HEADING_GLUE_PUNCT.sub(r"\1\n\n\2", md)
+    return md
 
 
 # ── Marker depth (roman-vs-letter continuity) ────────────────────────────────
