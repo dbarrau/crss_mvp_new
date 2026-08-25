@@ -18,8 +18,9 @@ Supports two document families:
 
 - **EUR-Lex regulations** (CELEX IDs like ``32017R0745``): scraped from
   EUR-Lex as HTML and parsed into ``parsed.json``.
-- **MDCG guidance documents** (IDs like ``MDCG_2020_3``): parsed from
-  local PDFs via LlamaParse v2 into clean markdown + flowcharts.
+- **Guidance documents** (MDCG IDs like ``MDCG_2020_3`` and AI Office IDs
+  like ``AI_OFFICE_2025_TRANSPARENCY_ART50``): parsed from PDFs via
+  LlamaParse v2 into clean markdown, using a per-doc parse profile.
 
 Attributes:
     DEFAULT_DOC (str): The fallback document identifier (MDR 2017/745) used
@@ -38,7 +39,7 @@ from dotenv import load_dotenv
 from .scrape.scrape import scrape_document
 from .parse.dispatcher import parse_document
 from domain.legislation_catalog import LEGISLATION
-from domain.mdcg_catalog import MDCG_DOCUMENTS
+from domain.guidance_catalog import GUIDANCE_DOCUMENTS, get_parse_profile
 
 # Load .env from project root (needed for LLAMA_CLOUD_API_KEY, etc.)
 _env_path = Path(__file__).resolve().parents[1] / ".env"
@@ -111,14 +112,21 @@ def _run_legislation(celex: str, lang: str) -> Optional[Path]:
     return json_file
 
 
-# ── MDCG guidance pipeline ────────────────────────────────────────────────
+# ── Guidance pipeline (MDCG, AI Office, …) ────────────────────────────────
 
-def _run_mdcg(doc_id: str, lang: str) -> Optional[Path]:
-    """Parse an MDCG guidance PDF via LlamaParse v2, then structure into parsed.json."""
-    from .parse.guidance.mdcg_parser import parse_mdcg_pdf
+def _run_guidance(doc_id: str, lang: str) -> Optional[Path]:
+    """Parse a guidance PDF via LlamaParse v2, then structure into parsed.json.
+
+    Family-agnostic: the LlamaParse prompt + post-processing come from the
+    per-doc parse profile (``mdcg``, ``ai_office``, …), so a new guidance
+    publisher needs only a catalog entry, not a new pipeline.
+    """
+    from .parse.guidance.mdcg_parser import parse_guidance_pdf
     from .parse.guidance.mdcg_structurer import write_parsed_json
+    from .parse.guidance.profiles import get_profile
 
-    meta = MDCG_DOCUMENTS[doc_id]
+    meta = GUIDANCE_DOCUMENTS[doc_id]
+    profile = get_profile(get_parse_profile(doc_id))
     base_dir = Path(__file__).resolve().parents[1]
 
     doc_dir = base_dir / "data" / "guidance" / doc_id / lang
@@ -141,8 +149,10 @@ def _run_mdcg(doc_id: str, lang: str) -> Optional[Path]:
         else:
             logger.error(
                 "PDF not found at %s and no download_url in catalog. "
-                "Either place the PDF there manually or add download_url to mdcg_catalog.py",
+                "Either place the PDF there manually or add a download_url to "
+                "the guidance catalog entry for %s.",
                 pdf_path,
+                doc_id,
             )
             return None
 
@@ -152,9 +162,11 @@ def _run_mdcg(doc_id: str, lang: str) -> Optional[Path]:
         logger.info("Clean markdown already exists: %s (delete to re-parse)", clean_md)
     else:
         try:
-            result = parse_mdcg_pdf(pdf_path=pdf_path, output_dir=doc_dir)
+            result = parse_guidance_pdf(
+                pdf_path=pdf_path, output_dir=doc_dir, profile=profile
+            )
         except Exception as e:
-            logger.exception("MDCG parsing failed for %s: %s", doc_id, e)
+            logger.exception("Guidance parsing failed for %s: %s", doc_id, e)
             return None
 
         output_files = result.get("output_files", {})
@@ -169,6 +181,7 @@ def _run_mdcg(doc_id: str, lang: str) -> Optional[Path]:
             doc_name=meta["name"],
             lang=lang,
             output_path=parsed_json,
+            scheme=profile.section_scheme,
         )
         logger.info("Structured %s → %s", clean_md.name, parsed_json)
     except Exception as e:
@@ -176,7 +189,8 @@ def _run_mdcg(doc_id: str, lang: str) -> Optional[Path]:
         return None
 
     logger.info(
-        "MDCG pipeline completed for %s. Outputs in %s", doc_id, doc_dir
+        "Guidance pipeline completed for %s (profile=%s). Outputs in %s",
+        doc_id, profile.name, doc_dir,
     )
     return parsed_json
 
@@ -188,21 +202,23 @@ def run(doc_id: str, lang: str) -> Optional[Path]:
     Execute the full data pipeline for a regulation or MDCG guidance document.
 
     Accepts both EUR-Lex CELEX identifiers (e.g. ``32017R0745``) and
-    MDCG document IDs (e.g. ``MDCG_2020_3``), routing to the appropriate
+    guidance document IDs (MDCG or AI Office, e.g. ``MDCG_2020_3`` /
+    ``AI_OFFICE_2025_TRANSPARENCY_ART50``), routing to the appropriate
     pipeline automatically.
 
-    :param doc_id: Document identifier (CELEX ID or MDCG doc ID).
+    :param doc_id: Document identifier (CELEX ID or guidance doc ID).
     :param lang: ISO language code (e.g. ``EN``).
     """
-    if doc_id in MDCG_DOCUMENTS:
-        return _run_mdcg(doc_id, lang)
+    if doc_id in GUIDANCE_DOCUMENTS:
+        return _run_guidance(doc_id, lang)
 
     if doc_id in LEGISLATION:
         return _run_legislation(doc_id, lang)
 
     logger.error(
         "Unknown document identifier: %s. "
-        "Must be a CELEX ID from legislation_catalog or an MDCG ID from mdcg_catalog.",
+        "Must be a CELEX ID from legislation_catalog or a guidance ID from "
+        "the guidance catalog (MDCG / AI Office).",
         doc_id,
     )
     return None
@@ -210,12 +226,13 @@ def run(doc_id: str, lang: str) -> Optional[Path]:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="CRSS ingestion pipeline — regulations and MDCG guidance",
+        description="CRSS ingestion pipeline — regulations and guidance (MDCG / AI Office)",
     )
     parser.add_argument(
         "--doc",
         default=DEFAULT_DOC,
-        help="Document identifier — CELEX ID (e.g. 32017R0745) or MDCG doc ID (e.g. MDCG_2020_3)",
+        help="Document identifier — CELEX ID (e.g. 32017R0745) or guidance doc ID "
+             "(e.g. MDCG_2020_3, AI_OFFICE_2025_TRANSPARENCY_ART50)",
     )
     # Deprecated alias kept for backward compatibility
     parser.add_argument("--celex", dest="doc", help=argparse.SUPPRESS)

@@ -40,7 +40,7 @@ logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
 from application.agent import ask_stream, ask_with_trace
 from domain.legislation_catalog import LEGISLATION
-from domain.mdcg_catalog import MDCG_DOCUMENTS
+from domain.guidance_catalog import GUIDANCE_DOCUMENTS
 from export import generate_markdown
 from logging_store import log_feedback, log_interaction, new_interaction_id
 from retrieval.graph_retriever import GraphRetriever
@@ -210,8 +210,8 @@ def api_legislation():
     The demo's "covered corpus" used to be a hardcoded pill list in the frontend,
     which silently drifted from what is actually ingested (it was missing GDPR and
     the implementing regulation). Serving the catalog directly keeps the demo in
-    sync with ``domain/legislation_catalog.py`` + ``domain/mdcg_catalog.py`` — add
-    a document there and it appears here automatically.
+    sync with ``domain/legislation_catalog.py`` + ``domain/guidance_catalog.py``
+    (MDCG + AI Office) — add a document there and it appears here automatically.
     """
     legislation = [
         {
@@ -229,7 +229,7 @@ def api_legislation():
             "title": meta.get("title", ""),
             "tier": meta.get("tier"),
         }
-        for gid, meta in MDCG_DOCUMENTS.items()
+        for gid, meta in GUIDANCE_DOCUMENTS.items()
     ]
     return jsonify({"legislation": legislation, "guidance": guidance})
 

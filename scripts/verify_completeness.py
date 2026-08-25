@@ -49,7 +49,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 from domain.legislation_catalog import LEGISLATION
-from domain.mdcg_catalog import MDCG_DOCUMENTS
+from domain.guidance_catalog import GUIDANCE_DOCUMENTS
 
 logger = logging.getLogger(__name__)
 
@@ -1073,7 +1073,7 @@ def _discover_documents(filter_doc: str | None = None) -> list[tuple[str, str]]:
             docs.append((celex, "legislation"))
 
     # Guidance
-    for doc_id in MDCG_DOCUMENTS:
+    for doc_id in GUIDANCE_DOCUMENTS:
         if filter_doc and filter_doc != doc_id:
             continue
         parsed = GUIDANCE_DIR / doc_id / "EN" / "parsed.json"

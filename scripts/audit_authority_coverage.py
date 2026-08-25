@@ -27,7 +27,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from domain.legislation_catalog import LEGISLATION
-from domain.mdcg_catalog import MDCG_DOCUMENTS
+from domain.guidance_catalog import GUIDANCE_DOCUMENTS
 from infrastructure.graphdb.neo4j.loader import RegulationGraphLoader
 
 DATA_DIR = PROJECT_ROOT / "data"
@@ -128,7 +128,7 @@ def _graph_status() -> dict[str, dict[str, Any]]:
 def _catalog_doc_ids() -> dict[str, set[str]]:
     return {
         "legislation": set(LEGISLATION),
-        "guidance": set(MDCG_DOCUMENTS),
+        "guidance": set(GUIDANCE_DOCUMENTS),
     }
 
 
