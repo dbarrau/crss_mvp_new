@@ -77,8 +77,28 @@ LEGISLATION = {
         "type": "ai_amending_regulation",   # descriptive only; nothing keys on it
         "jurisdiction": "EU",
         # no source_celex: 32026R1744 is a first-time amending act, not yet consolidated
+        # ``amends`` declares the base act this regulation consolidates into. It is
+        # the single source of truth for the build's consolidation stage (see
+        # ``consolidation_plan``): the amending act's instructions are applied onto
+        # the base to produce ``parsed.consolidated.json`` (the current-law graph).
+        "amends": AI_ACT_CELEX,
     },
 }
 
 # Backward-compatible alias
 REGULATIONS = LEGISLATION
+
+
+def consolidation_plan() -> list[tuple[str, str]]:
+    """``(base_celex, amender_celex)`` pairs derived from ``amends`` fields.
+
+    Each amending act declares, via ``amends``, the base regulation it
+    consolidates into. The build's consolidation stage iterates this so the
+    relationship lives in exactly one place (the catalog) and new amenders need
+    no code change — only a catalog entry.
+    """
+    return [
+        (meta["amends"], celex)
+        for celex, meta in LEGISLATION.items()
+        if meta.get("amends")
+    ]

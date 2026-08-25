@@ -7,12 +7,18 @@ One-command orchestrator for the full CRSS build DAG.
 Runs every stage in the only correct order, so the pipeline cannot be run
 out of sequence or with a step forgotten:
 
-    preflight → scrape+parse (per doc) → load Neo4j → embed → canonicalize
-    → community summaries
+    preflight → scrape+parse (per doc) → consolidate amendments → load Neo4j
+    → embed → canonicalize → community summaries
+
+The consolidate stage applies each amending act (e.g. the Digital Omnibus on AI)
+onto its base regulation, writing ``parsed.consolidated.json``; the load stage
+then *prefers* that consolidated file. This keeps a full rebuild on current law
+instead of silently regressing the AI Act to its pre-amendment base text.
 
 The document set is derived from the catalogs
-(``domain/legislation_catalog.py`` + ``domain/mdcg_catalog.py``) so it can
-never drift from a hand-maintained list.
+(``domain/legislation_catalog.py`` + ``domain/guidance_catalog.py``, which
+merges MDCG and AI Office guidance) so it can never drift from a
+hand-maintained list.
 
 A **preflight** check runs first and fails fast with an actionable report if a
 dependency or environment variable is missing, or Neo4j is unreachable — this
@@ -46,8 +52,8 @@ from dotenv import load_dotenv
 
 load_dotenv(REPO / ".env", override=False)
 
-from domain.legislation_catalog import LEGISLATION
-from domain.mdcg_catalog import MDCG_DOCUMENTS, DEFAULT_INGEST_TIER, default_doc_ids
+from domain.legislation_catalog import LEGISLATION, consolidation_plan
+from domain.guidance_catalog import GUIDANCE_DOCUMENTS, DEFAULT_INGEST_TIER, default_doc_ids
 
 logging.basicConfig(
     level=logging.INFO,
@@ -94,24 +100,25 @@ def _neo4j_params() -> tuple[str, str, str, str]:
 def _select_docs(args: argparse.Namespace) -> list[str]:
     """Resolve the ordered document set to build.
 
-    MDCG selection follows the catalog's ``tier`` upload-priority: by default
-    only tier <= ``--mdcg-tier`` (1 = curated core, matching the README) is
-    ingested; ``--mdcg-all`` pulls in every tier.
+    Guidance selection (MDCG + AI Office) follows the catalog's ``tier``
+    upload-priority: by default only tier <= ``--mdcg-tier`` (1 = curated core,
+    matching the README) is ingested; ``--mdcg-all`` pulls in every tier. The
+    ``--mdcg-*`` flags apply to *all* guidance families, not MDCG alone.
     """
     if args.docs:
         return list(args.docs)
     docs = list(LEGISLATION.keys())
     if not args.no_mdcg:
         if args.mdcg_all:
-            docs += list(MDCG_DOCUMENTS.keys())
+            docs += list(GUIDANCE_DOCUMENTS.keys())
         else:
             docs += default_doc_ids(max_tier=args.mdcg_tier)
     return docs
 
 
-def _mdcg_needs_parse(doc_id: str, lang: str) -> bool:
-    """True if this MDCG doc has no cached clean markdown (so LlamaParse runs)."""
-    meta = MDCG_DOCUMENTS.get(doc_id)
+def _guidance_needs_parse(doc_id: str, lang: str) -> bool:
+    """True if this guidance doc has no cached clean markdown (so LlamaParse runs)."""
+    meta = GUIDANCE_DOCUMENTS.get(doc_id)
     if not meta:
         return False
     stem = Path(meta["pdf_filename"]).stem
@@ -139,9 +146,9 @@ def preflight(docs: list[str], lang: str, *, want_summaries: bool, strict: bool)
     else:
         print("  [OK]   build dependencies importable")
 
-    # 2. MDCG / LlamaParse: only required if an in-scope MDCG doc must be parsed.
-    mdcg_in_scope = [d for d in docs if d in MDCG_DOCUMENTS]
-    to_parse = [d for d in mdcg_in_scope if _mdcg_needs_parse(d, lang)]
+    # 2. Guidance / LlamaParse: only required if an in-scope guidance doc must be parsed.
+    guidance_in_scope = [d for d in docs if d in GUIDANCE_DOCUMENTS]
+    to_parse = [d for d in guidance_in_scope if _guidance_needs_parse(d, lang)]
     if to_parse:
         llama_missing = importlib.util.find_spec("llama_cloud") is None
         key_missing = not os.environ.get("LLAMA_CLOUD_API_KEY")
@@ -154,19 +161,19 @@ def preflight(docs: list[str], lang: str, *, want_summaries: bool, strict: bool)
             reason = " and ".join(need)
             if strict:
                 failures.append(
-                    f"{len(to_parse)} MDCG doc(s) need parsing but {reason} is unavailable: "
+                    f"{len(to_parse)} guidance doc(s) need parsing but {reason} is unavailable: "
                     f"{', '.join(to_parse)}"
                 )
             else:
                 print(
-                    f"  [WARN] {len(to_parse)} MDCG doc(s) need {reason}; "
+                    f"  [WARN] {len(to_parse)} guidance doc(s) need {reason}; "
                     f"skipping them: {', '.join(to_parse)}"
                 )
                 docs = [d for d in docs if d not in to_parse]
         else:
-            print(f"  [OK]   LlamaParse ready for {len(to_parse)} MDCG doc(s) needing parse")
-    elif mdcg_in_scope:
-        print(f"  [OK]   {len(mdcg_in_scope)} MDCG doc(s) already parsed (clean markdown cached)")
+            print(f"  [OK]   LlamaParse ready for {len(to_parse)} guidance doc(s) needing parse")
+    elif guidance_in_scope:
+        print(f"  [OK]   {len(guidance_in_scope)} guidance doc(s) already parsed (clean markdown cached)")
 
     # 3. MISTRAL_API_KEY — needed for the community-summary stage.
     if want_summaries and not os.environ.get("MISTRAL_API_KEY"):
@@ -223,25 +230,73 @@ def stage_ingest(docs: list[str], lang: str, *, strict: bool) -> dict[str, bool]
     return results
 
 
+def stage_consolidate(docs: list[str], lang: str, *, strict: bool) -> list[tuple[str, str]]:
+    """Apply amending acts onto their base regulations → ``parsed.consolidated.json``.
+
+    Runs only for ``(base, amender)`` pairs (from
+    :func:`domain.legislation_catalog.consolidation_plan`) where BOTH are in scope
+    this build — the amender's raw HTML and the base ``parsed.json`` must exist,
+    which they do after :func:`stage_ingest`. The base ``parsed.json`` is never
+    mutated; the consolidated file is written beside it and preferred by
+    :func:`stage_load`.
+    """
+    from consolidation.build import write_consolidated, _summarise
+
+    in_scope = set(docs)
+    plan = [(b, a) for (b, a) in consolidation_plan() if b in in_scope and a in in_scope]
+    print(f"=== [2/6] Consolidate amendments ({len(plan)} pair(s)) ===")
+    done: list[tuple[str, str]] = []
+    for base, amender in plan:
+        try:
+            path, report = write_consolidated(base, amender, lang, data_root=DATA_DIR)
+            print(f"  {base} ← {amender}: {_summarise(report)}  → {path.name}")
+            done.append((base, amender))
+        except Exception as exc:  # noqa: BLE001 — one bad pair shouldn't kill the build
+            logger.exception("  consolidation failed for %s ← %s: %s", base, amender, exc)
+            if strict:
+                raise SystemExit(f"--strict: consolidation failed for {base} ← {amender}")
+
+    # A base loaded without its amender in scope gets the existing consolidated
+    # file as-is (not regenerated) — warn so it is never a silent surprise.
+    for base, amender in consolidation_plan():
+        if base in in_scope and amender not in in_scope:
+            logger.warning(
+                "Base %s is in scope but its amender %s is not — the existing "
+                "parsed.consolidated.json (if any) is loaded as-is, not regenerated.",
+                base, amender,
+            )
+    print()
+    return done
+
+
+def _prefer_consolidated(path: Path) -> Path:
+    """Load ``parsed.consolidated.json`` in place of ``parsed.json`` when present,
+    so a rebuild reflects current (amended) law. Mirrors ``load_neo4j``."""
+    alt = path.with_name("parsed.consolidated.json")
+    return alt if alt.exists() else path
+
+
 def stage_load(lang: str, *, wipe: bool) -> int:
     from infrastructure.graphdb.neo4j.loader import RegulationGraphLoader
 
     files = sorted(DATA_DIR.glob(f"*/{lang}/parsed.json"))
     if GUIDANCE_DIR.is_dir():
         files += sorted(GUIDANCE_DIR.glob(f"*/{lang}/parsed.json"))
+    files = [_prefer_consolidated(f) for f in files]
     if not files:
         raise SystemExit(f"No parsed.json found under data/*/<{lang}>/ — nothing to load.")
 
-    print(f"=== [2/5] Load into Neo4j ({len(files)} files, wipe={wipe}) ===")
+    print(f"=== [3/6] Load into Neo4j ({len(files)} files, wipe={wipe}) ===")
     uri, user, password, database = _neo4j_params()
     total_nodes = 0
     with RegulationGraphLoader(uri=uri, user=user, password=password, database=database) as loader:
         loader.setup_schema()
         for path in files:
             doc = path.parts[-3]
+            marker = "  [consolidated]" if path.name == "parsed.consolidated.json" else ""
             stats = loader.load_file(path, wipe=wipe)
             total_nodes += stats["nodes"]
-            print(f"  {doc:<18} nodes={stats['nodes']:>6}  rels={stats['relationships']:>6}")
+            print(f"  {doc:<18} nodes={stats['nodes']:>6}  rels={stats['relationships']:>6}{marker}")
     print(f"  Loaded {total_nodes} nodes.\n")
     return total_nodes
 
@@ -249,7 +304,7 @@ def stage_load(lang: str, *, wipe: bool) -> int:
 def stage_embed() -> int:
     from infrastructure.embeddings.batch_embedder import run as embed_run
 
-    print("=== [3/5] Embed provisions ===")
+    print("=== [4/6] Embed provisions ===")
     n = embed_run(celex_filter=None)
     print(f"  Embedded {n} nodes.\n")
     return n
@@ -258,8 +313,12 @@ def stage_embed() -> int:
 def stage_canonicalize(*, no_communities: bool) -> dict:
     from canonicalization.__main__ import run_pipeline as canon_run
 
-    print("=== [4/5] Canonicalize (cleanup) ===")
-    summary = canon_run(cleanup=True, skip_communities=no_communities)
+    print("=== [5/6] Canonicalize (cleanup) ===")
+    # The load stage prefers the CONSOLIDATED base acts (amendments already
+    # applied to the base nodes), so the amendment_linker must NOT re-surface
+    # AMENDS edges — that overlay is retired. Mirrors the documented
+    # `load_neo4j --consolidated` + `canonicalization --no-amendments` path.
+    summary = canon_run(cleanup=True, skip_communities=no_communities, skip_amendments=True)
     print("  Canonicalization done.\n")
     return summary
 
@@ -323,7 +382,7 @@ def stage_verify_role_coverage() -> list[str]:
 def stage_summaries() -> dict:
     from scripts.generate_community_summaries import generate_summaries
 
-    print("=== [5/5] Community summaries ===")
+    print("=== [6/6] Community summaries ===")
     stats = generate_summaries(rescan=False, batch_size=12, dry_run=False)
     print(f"  Community summaries done: {stats}\n")
     return stats
@@ -354,12 +413,15 @@ def build_parser() -> argparse.ArgumentParser:
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--lang", default="EN", help="Language sub-directory (default: EN).")
     p.add_argument("--docs", nargs="+", metavar="ID",
-                   help="Explicit doc subset (CELEX or MDCG ids). Default: full catalog.")
-    p.add_argument("--no-mdcg", action="store_true", help="Skip MDCG guidance documents.")
+                   help="Explicit doc subset (CELEX or guidance ids). Default: full catalog.")
+    p.add_argument("--no-mdcg", action="store_true",
+                   help="Skip all guidance documents (MDCG + AI Office).")
     p.add_argument("--mdcg-all", action="store_true",
-                   help="Ingest every MDCG doc (all tiers), not just the default upload-priority set.")
+                   help="Ingest every guidance doc (all tiers, all families), "
+                        "not just the default upload-priority set.")
     p.add_argument("--mdcg-tier", type=int, default=DEFAULT_INGEST_TIER, metavar="N",
-                   help=f"Ingest MDCG docs with tier <= N (default: {DEFAULT_INGEST_TIER}).")
+                   help=f"Ingest guidance docs (all families) with tier <= N "
+                        f"(default: {DEFAULT_INGEST_TIER}).")
     p.add_argument("--no-wipe", action="store_true",
                    help="Incremental load — keep existing graph data (default: wipe).")
     p.add_argument("--no-communities", action="store_true",
@@ -394,6 +456,7 @@ def main() -> None:
         _confirm_wipe(docs, args.yes)
 
     ingest = stage_ingest(docs, args.lang, strict=args.strict)
+    stage_consolidate(docs, args.lang, strict=args.strict)
     stage_load(args.lang, wipe=wipe)
     stage_embed()
     stage_canonicalize(no_communities=args.no_communities)
