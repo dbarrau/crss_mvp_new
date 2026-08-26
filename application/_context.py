@@ -79,8 +79,23 @@ _CONTEXT_CHAR_BUDGET = _int_env("CRSS_CONTEXT_CHAR_BUDGET", 140_000)
 _PROVISION_BLOCK_CAP = 9_000
 _BLOCK_TRUNCATION_MARK = "\n  […provision block truncated to context budget…]"
 
-# CELEX prefixes that identify MDCG guidance documents.
-_GUIDANCE_CELEX_PREFIXES = ("MDCG_",)
+# Guidance documents are detected from the catalog (MDCG + AI Office + any future
+# family) so a new guidance publisher is recognised automatically — a hardcoded
+# "MDCG_"-only list silently mislabels new families as [LEGISLATION] and leaks
+# their internal id as a fake CELEX badge.
+from domain.guidance_catalog import GUIDANCE_DOCUMENTS as _GUIDANCE_DOCUMENTS
+
+_GUIDANCE_DOC_IDS = frozenset(_GUIDANCE_DOCUMENTS)
+# Prefix fallback (belt-and-suspenders; membership above is the primary check).
+_GUIDANCE_CELEX_PREFIXES = ("MDCG_", "AI_OFFICE_")
+
+
+def _celex_is_guidance(celex: str) -> bool:
+    """True if *celex* identifies a guidance document (any family), per the catalog."""
+    return bool(celex) and (
+        celex in _GUIDANCE_DOC_IDS
+        or any(celex.startswith(pfx) for pfx in _GUIDANCE_CELEX_PREFIXES)
+    )
 
 # Provision-role bucket ordering and human-readable section labels.
 # The order below is semantic, not alphabetical: definitions first (so the LLM
@@ -436,7 +451,7 @@ def _format_one_provision(index: int, p: dict, role: str) -> str:
     """
     regulation = p.get("regulation", "")
     celex = p.get("celex", "")
-    is_guidance = any(celex.startswith(pfx) for pfx in _GUIDANCE_CELEX_PREFIXES)
+    is_guidance = _celex_is_guidance(celex)
     layer_tag = " [GUIDANCE]" if is_guidance else " [LEGISLATION]"
     celex_badge = f" (CELEX: {celex})" if celex and not is_guidance else ""
     role_badge = f" [role: {role}]" if role in _KNOWN_ROLES else ""
@@ -474,6 +489,11 @@ def _format_one_provision(index: int, p: dict, role: str) -> str:
     article_id = p.get("article_id", "")
     if article_id:
         header += f"\n    id: {article_id}"
+    # For guidance, give the model the document's exact title on its own labelled
+    # line so it attributes the interpretation to the real source and does not
+    # blend the section heading into an invented document title.
+    if is_guidance and regulation:
+        header += f"\n    Source document (name this exact title when citing it): {regulation}"
     path = p.get("article_path", "")
     if path:
         header += f"\n    Path: {path}"

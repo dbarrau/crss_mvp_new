@@ -44,6 +44,19 @@ _CHART_HEADING_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Roman-numeral top-level sections (AI Office scheme): "## I. Introduction".
+# Arabic subsections under them: "### 1. The system must be an AI system".
+# Heading depth (# count) is unreliable in AI Office PDFs, so the numbering
+# token — not the hashes — drives the hierarchy.
+_ROMAN_HEADING_RE = re.compile(
+    r"^#{1,6}\s+(?P<num>[IVXLCDM]+)\.\s+(?P<title>.+?)\s*$"
+)
+# Arabic subsection numbering under a Roman section — single ("1.") or dotted
+# ("2.1", "2.2.1"), with an optional trailing dot.
+_ARABIC_HEADING_RE = re.compile(
+    r"^#{1,6}\s+(?P<num>\d+(?:\.\d+)*)\.?\s+(?P<title>.+?)\s*$"
+)
+
 # "## Footnotes" section — we skip it (metadata, not a provision)
 _FOOTNOTES_RE = re.compile(r"^#{1,3}\s+Footnotes\s*$", re.IGNORECASE)
 
@@ -81,8 +94,9 @@ def structure_mdcg(
     doc_id: str,
     doc_name: str,
     lang: str = "EN",
+    scheme: str = "dotted_decimal",
 ) -> dict[str, Any]:
-    """Parse MDCG clean markdown into the ``parsed.json`` schema.
+    """Parse guidance clean markdown into the ``parsed.json`` schema.
 
     Parameters
     ----------
@@ -95,6 +109,9 @@ def structure_mdcg(
         Human-readable name (e.g. ``"MDCG 2020-3 Rev.1"``).
     lang:
         Language code.
+    scheme:
+        Section-numbering scheme: ``"dotted_decimal"`` (MDCG, default) or
+        ``"roman_arabic"`` (AI Office — Roman top-level, Arabic subsections).
 
     Returns
     -------
@@ -103,7 +120,10 @@ def structure_mdcg(
         :meth:`RegulationGraphLoader.load_file`.
     """
     md_text = Path(md_path).read_text(encoding="utf-8")
-    provisions = _build_provision_tree(md_text, doc_id, doc_name, lang)
+    if scheme == "auto":
+        scheme = _detect_scheme(md_text)
+        logger.info("Auto-detected section scheme for %s: %s", doc_id, scheme)
+    provisions = _build_provision_tree(md_text, doc_id, doc_name, lang, scheme)
 
     # Run text enrichment (populates text_for_analysis)
     try:
@@ -138,16 +158,32 @@ def structure_mdcg(
 
 # ── internal ───────────────────────────────────────────────────────────────
 
+def _detect_scheme(md_text: str) -> str:
+    """Detect the section-numbering scheme from the markdown headings.
+
+    Returns ``"roman_arabic"`` if the document uses Roman-numeral top-level
+    headings (``## I.``, ``## II.`` …), else ``"dotted_decimal"``. Used for the
+    AI Office family, which is not uniform across documents.
+    """
+    roman = 0
+    for line in md_text.split("\n"):
+        s = line.strip()
+        if s.startswith("#") and _ROMAN_HEADING_RE.match(s):
+            roman += 1
+    return "roman_arabic" if roman >= 2 else "dotted_decimal"
+
+
 def _build_provision_tree(
     md_text: str,
     doc_id: str,
     doc_name: str,
     lang: str,
+    scheme: str = "dotted_decimal",
 ) -> list[dict[str, Any]]:
     """Split markdown into heading-delimited sections and build a tree."""
 
     # Phase 1: split into (heading_level, section_number, title, body) tuples
-    sections = _split_sections(md_text)
+    sections = _split_sections(md_text, scheme)
 
     if not sections:
         logger.warning("No sections found in markdown for %s", doc_id)
@@ -279,11 +315,17 @@ def _build_provision_tree(
 
 def _split_sections(
     md_text: str,
+    scheme: str = "dotted_decimal",
 ) -> list[tuple[int, str | None, str, str, bool, str | None]]:
     """Split markdown into sections delimited by headings.
 
     Returns list of:
         (heading_level, section_number, title, body_text, is_chart, chart_id)
+
+    *scheme* selects section-number recognition: ``"dotted_decimal"`` (MDCG) or
+    ``"roman_arabic"`` (AI Office — Roman top-level, Arabic subsections nested
+    under the current Roman section; the # count is ignored in favour of the
+    numbering token).
     """
     lines = md_text.split("\n")
     sections: list[tuple[int, str | None, str, str, bool, str | None]] = []
@@ -295,6 +337,7 @@ def _split_sections(
     seen_chart_ids: set[str] = set()
 
     in_preamble = True  # skip lines before the first numbered section
+    current_roman: str | None = None  # last Roman section (roman_arabic scheme)
 
     for line in lines:
         stripped = line.strip()
@@ -310,6 +353,53 @@ def _split_sections(
         # Skip contents heading
         if _CONTENTS_RE.match(stripped):
             continue
+
+        # ── AI Office (roman_arabic) heading recognition ──────────────────
+        # Runs before the dotted-decimal logic; unrecognised headings fall
+        # through to it (so a mixed doc still gets decimal handling).
+        if scheme == "roman_arabic" and stripped.startswith("#"):
+            roman_m = _ROMAN_HEADING_RE.match(stripped)
+            arabic_m = _ARABIC_HEADING_RE.match(stripped)
+            if roman_m:
+                # First real Roman section ends the front-matter/TOC preamble.
+                in_preamble = False
+                current_roman = roman_m.group("num")
+                if current:
+                    sections.append(_flush(current))
+                current = {
+                    "level": 2,                       # top-level → child of root
+                    "sec_num": current_roman,         # e.g. "I"
+                    "title": _clean_heading(roman_m.group("title")),
+                    "body_lines": [],
+                    "is_chart": False,
+                    "chart_id": None,
+                }
+                continue
+            if arabic_m and not in_preamble:
+                arabic = arabic_m.group("num")        # "1" or "2.1" or "2.2.1"
+                # Nest under the current Roman section via a dotted sec_num
+                # ("II.1", "II.2.1") so the existing tree-builder assigns the
+                # right kind, a unique id, and the correct parent. Depth follows
+                # the numbering token, not the (unreliable) # count: Roman is
+                # level 2, so an n-component number sits at level 2 + n.
+                sec_num = f"{current_roman}.{arabic}" if current_roman else arabic
+                level = 2 + len(arabic.split("."))
+                if current:
+                    sections.append(_flush(current))
+                current = {
+                    "level": level,
+                    "sec_num": sec_num,
+                    "title": _clean_heading(arabic_m.group("title")),
+                    "body_lines": [],
+                    "is_chart": False,
+                    "chart_id": None,
+                }
+                continue
+            # Unrecognised heading while still in the preamble: drop it
+            # (front matter, the title, the Contents block).
+            if in_preamble:
+                continue
+            # Past the preamble: fall through to the dotted-decimal handler.
 
         # Check for heading
         if stripped.startswith("#"):
@@ -466,6 +556,7 @@ def write_parsed_json(
     doc_name: str,
     lang: str = "EN",
     output_path: str | Path | None = None,
+    scheme: str = "dotted_decimal",
 ) -> Path:
     """Structure markdown and write parsed.json.
 
@@ -482,6 +573,8 @@ def write_parsed_json(
     output_path:
         Where to write parsed.json. Defaults to the same directory
         as *md_path*.
+    scheme:
+        Section-numbering scheme (``"dotted_decimal"`` or ``"roman_arabic"``).
 
     Returns
     -------
@@ -490,7 +583,7 @@ def write_parsed_json(
     """
     import json
 
-    result = structure_mdcg(md_path, doc_id, doc_name, lang)
+    result = structure_mdcg(md_path, doc_id, doc_name, lang, scheme)
 
     if output_path is None:
         output_path = Path(md_path).parent / "parsed.json"

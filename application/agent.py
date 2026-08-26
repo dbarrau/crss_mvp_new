@@ -102,6 +102,7 @@ from application._retrieval import (                     # noqa: F401
 from application._context import (                       # noqa: F401
     _MAX_POINTER_REFS,
     _GUIDANCE_CELEX_PREFIXES,
+    _celex_is_guidance,
     _normalize_ref,
     _extract_inline_refs,
     _collect_cites_targets,
@@ -433,15 +434,30 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                 else "No defined terms detected in question"
             ),
         }
+        # Separate binding regulations from non-binding guidance in the trace —
+        # calling MDCG / AI Office guidance a "regulation" mischaracterises its
+        # legal force to exactly the audience that cares.
+        _reg_names: list[str] = []
+        _guid_names: list[str] = []
+        for _name in sorted(mentioned_regs):
+            _celex = _REG_NAME_TO_CELEX.get(_name, "")
+            _is_guid = _celex_is_guidance(_celex) if _celex else (
+                _name.startswith("MDCG") or _name.startswith("AI Office")
+            )
+            (_guid_names if _is_guid else _reg_names).append(_name)
+        if mentioned_regs:
+            _parts: list[str] = []
+            if _reg_names:
+                _parts.append(f"{len(_reg_names)} regulation(s): " + ", ".join(_reg_names))
+            if _guid_names:
+                _parts.append(f"{len(_guid_names)} guidance doc(s): " + ", ".join(_guid_names))
+            _reg_label = "Targeting " + "; ".join(_parts)
+        else:
+            _reg_label = "No specific regulation detected — searching all"
         yield {
             "type": "step",
             "id": "regulations",
-            "label": (
-                f"Targeting {len(mentioned_regs)} regulation(s): "
-                + ", ".join(sorted(mentioned_regs))
-                if mentioned_regs
-                else "No specific regulation detected — searching all"
-            ),
+            "label": _reg_label,
         }
         if role_specs:
             yield {

@@ -40,7 +40,7 @@ logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
 from application.agent import ask_stream, ask_with_trace
 from domain.legislation_catalog import LEGISLATION
-from domain.mdcg_catalog import MDCG_DOCUMENTS
+from domain.guidance_catalog import GUIDANCE_DOCUMENTS
 from export import generate_markdown
 from logging_store import log_feedback, log_interaction, new_interaction_id
 from retrieval.graph_retriever import GraphRetriever
@@ -210,8 +210,8 @@ def api_legislation():
     The demo's "covered corpus" used to be a hardcoded pill list in the frontend,
     which silently drifted from what is actually ingested (it was missing GDPR and
     the implementing regulation). Serving the catalog directly keeps the demo in
-    sync with ``domain/legislation_catalog.py`` + ``domain/mdcg_catalog.py`` — add
-    a document there and it appears here automatically.
+    sync with ``domain/legislation_catalog.py`` + ``domain/guidance_catalog.py``
+    (MDCG + AI Office) — add a document there and it appears here automatically.
     """
     legislation = [
         {
@@ -222,14 +222,21 @@ def api_legislation():
         }
         for celex, meta in LEGISLATION.items()
     ]
+    # Only advertise guidance that is actually ingested (parsed.json on disk) —
+    # the catalog also holds lower-tier MDCG docs that are not loaded, so serving
+    # the whole catalog overstated the corpus. Tag each with its family so the
+    # front-end can show a correctly-counted pill per publisher (MDCG / AI Office).
+    guidance_dir = Path(__file__).resolve().parents[1] / "data" / "guidance"
     guidance = [
         {
             "id": gid,
             "name": meta.get("name", gid),
             "title": meta.get("title", ""),
             "tier": meta.get("tier"),
+            "family": "AI Office" if gid.startswith("AI_OFFICE_") else "MDCG",
         }
-        for gid, meta in MDCG_DOCUMENTS.items()
+        for gid, meta in GUIDANCE_DOCUMENTS.items()
+        if (guidance_dir / gid / "EN" / "parsed.json").exists()
     ]
     return jsonify({"legislation": legislation, "guidance": guidance})
 

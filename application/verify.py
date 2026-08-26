@@ -45,6 +45,7 @@ from application._faithfulness import (
 )
 from application._confidence import compute_confidence
 from application._phantom import strip_phantom_citations
+from application._attribution import normalize_guidance_attribution
 from application._postprocessing import _strip_foreign_law_citations
 
 logger = logging.getLogger(__name__)
@@ -259,6 +260,18 @@ def verify_answer(
                 "provision(s): %s",
                 ", ".join(_phantom_refs[:10]),
             )
+
+    # Guidance-attribution guard: correct fabricated guidance-document titles
+    # (the model blends a section heading into the doc title, e.g. "AI Office
+    # Guidelines on Exclusions from the Scope…" for a section of the Transparency
+    # guidance) and strip "(referenced in the context)" machinery leaks. Prompt
+    # + context labelling do not hold against this; the correction is
+    # deterministic from the retrieved provisions. Disable with
+    # CRSS_ATTRIBUTION_GUARD=0.
+    if os.environ.get("CRSS_ATTRIBUTION_GUARD", "1") != "0":
+        answer, _attr_changes = normalize_guidance_attribution(answer, provisions)
+        if _attr_changes:
+            logger.info("Attribution guard: %s", "; ".join(_attr_changes))
 
     faith_mode = faithfulness_mode(os.environ.get("CRSS_FAITHFULNESS_CHECK", "1"))
     answer, faith_report = _apply_faithfulness(

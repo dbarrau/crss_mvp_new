@@ -532,7 +532,7 @@
 <div id="chat">
   <div class="welcome" id="welcome">
     <h2>EU Regulatory Compliance Agent</h2>
-    <p>Ask questions grounded in the actual legal text of EU regulations and MDCG guidance. Every answer is traceable to a specific provision.</p>
+    <p>Ask questions grounded in the actual legal text of EU regulations, MDCG and AI Office guidance. Every answer is traceable to a specific provision.</p>
     <!-- Populated from /api/legislation (catalog-sourced). The pills below are a
          static fallback shown only if that fetch fails. -->
     <div class="reg-pills" id="regPills">
@@ -540,6 +540,7 @@
       <span class="reg-pill">IVDR 2017/746</span>
       <span class="reg-pill">EU AI Act 2024/1689</span>
       <span class="reg-pill">MDCG Guidance</span>
+      <span class="reg-pill">AI Office Guidance</span>
     </div>
     <div class="examples">
       <div class="example" onclick="askExample(this)">What are the requirements for clinical evaluation of equivalent devices under the MDR?</div>
@@ -594,12 +595,23 @@ async function loadCorpus() {
     const pills = (data.legislation || []).map(
       (e) => `<span class="reg-pill" title="${esc(e.name)}">${regLabel(e)}</span>`
     );
+    // Guidance: one pill per publisher family, correctly counted (never lump
+    // AI Office into "MDCG", and never count non-ingested catalog entries).
     const g = data.guidance || [];
-    if (g.length) {
+    const byFamily = {};
+    g.forEach((d) => {
+      const fam = d.family || 'MDCG';
+      (byFamily[fam] = byFamily[fam] || []).push(d);
+    });
+    const famOrder = ['MDCG', 'AI Office'];
+    const fams = famOrder.filter((f) => byFamily[f])
+      .concat(Object.keys(byFamily).filter((f) => !famOrder.includes(f)));
+    fams.forEach((fam) => {
+      const docs = byFamily[fam];
       pills.push(
-        `<span class="reg-pill" title="${esc(g.map((d) => d.name).join(', '))}">MDCG Guidance ×${g.length}</span>`
+        `<span class="reg-pill" title="${esc(docs.map((d) => d.name).join(', '))}">${esc(fam)} Guidance ×${docs.length}</span>`
       );
-    }
+    });
     const el = document.getElementById('regPills');
     if (el && pills.length) el.innerHTML = pills.join('\n');
   } catch (_) { /* network/parse error → keep the static fallback */ }
