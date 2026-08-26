@@ -455,6 +455,18 @@ def _is_hollow_quote(text: str) -> bool:
     return text.strip("[]().…·—–-\"'“”‘’ \t\n") == ""
 
 
+def _norm_quote_text(text: str) -> str:
+    """Whitespace/case/quote/dash-normalised quote text for exact-duplicate
+    detection.  Only genuine duplicates (same wording under two ids) collapse; a
+    differently-worded quote keeps its own block."""
+    t = text or ""
+    for a, b in (("“", '"'), ("”", '"'), ("‘", "'"), ("’", "'")):
+        t = t.replace(a, b)
+    for dash in ("‐", "‑", "‒", "–", "—", "−"):
+        t = t.replace(dash, "-")
+    return " ".join(t.split()).lower()
+
+
 def _render_quote(entry: _Entry, char_cap: int = 0) -> str:
     """Verbatim quote as a standalone blockquote, padded with blank lines.
 
@@ -499,6 +511,7 @@ def resolve_pointers(
     suppressed: list[str] = []
     global_resolved: list[str] = []
     seen_quotes: set[str] = set()
+    seen_quote_texts: set[str] = set()
     char_cap = quote_char_cap()
 
     def _sub(m: re.Match[str]) -> str:
@@ -525,13 +538,20 @@ def resolve_pointers(
                 suppressed.append(node_id)
                 return ""
             return _render_ref(disp, reg)
-        # Dedupe: a repeat quote of an already-quoted node renders as a cite,
-        # so the reader never sees the same verbatim block twice.
-        if kind == "quote" and node_id not in seen_quotes:
-            seen_quotes.add(node_id)
-            quoted.append(node_id)
-            return _render_quote(entry, char_cap)
+        # Dedupe: a repeat quote renders as a cite, so the reader never sees the
+        # same verbatim block twice.  Keyed on BOTH the node id AND the quote text
+        # — the same provision text can live under two ids (the Article 3(14)
+        # provision node and its definitions-block/DefinedTerm copy), which the
+        # model may quote separately; id-only dedup let identical blocks render
+        # twice (observed: the safety-component definition repeated).
         if kind == "quote":
+            norm = _norm_quote_text(entry.text)
+            if node_id not in seen_quotes and (not norm or norm not in seen_quote_texts):
+                seen_quotes.add(node_id)
+                if norm:
+                    seen_quote_texts.add(norm)
+                quoted.append(node_id)
+                return _render_quote(entry, char_cap)
             deduped.append(node_id)
         cited.append(node_id)
         # Render an article-anchored reference ("Article 23(1)"), not the child's

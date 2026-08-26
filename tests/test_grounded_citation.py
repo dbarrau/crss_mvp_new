@@ -235,3 +235,31 @@ def test_clean_husks_leaves_normal_parenthetical_prose_alone():
     # A parenthetical that does NOT wrap a lifted quote is untouched.
     line = "The device (a Class IIb product) requires third-party assessment."
     assert _clean_husks(line) == line
+
+
+# The same provision text can live under two ids — the Article 3(14) provision
+# node AND its definitions-block / DefinedTerm copy — which the model may quote
+# separately. id-only de-dup let the identical block render twice (observed: the
+# safety-component definition repeated). De-dup by text collapses the second.
+def test_identical_quote_text_under_two_ids_renders_block_once():
+    _DEF = ('"safety component" means a component of a product or of an AI system '
+            "which fulfils a safety function for that product or AI system")
+    provs = [
+        {"article_id": "32024R1689_art_3_pt_14", "article_ref": "Article 3(14)",
+         "regulation": "EU AI Act", "binding_force": "binding",
+         "article_text": _DEF, "children": []},
+        {"article_id": "32024R1689_defterm_safety_component", "article_ref": "Article 3(14)",
+         "regulation": "EU AI Act", "binding_force": "binding",
+         "article_text": _DEF, "children": []},
+        {"article_id": "32024R1689_art_6", "article_ref": "Article 6",
+         "regulation": "EU AI Act", "binding_force": "binding",
+         "article_text": "A distinct operative provision.", "children": []},
+    ]
+    idx = build_pointer_index(provs)
+    answer = ("Def: [quote: 32024R1689_art_3_pt_14]. "
+              "Restated: [quote: 32024R1689_defterm_safety_component]. "
+              "Other: [quote: 32024R1689_art_6].")
+    out = resolve_pointers(answer, idx).text
+    assert out.count('> "safety component" means') == 1      # block rendered once
+    assert "Article 3(14)" in out                            # duplicate -> cite ref
+    assert "> A distinct operative provision." in out        # different quote kept
