@@ -117,6 +117,25 @@ def test_legit_clause_ending_in_ai_act_not_mangled():
     assert not any("corrected fabricated" in c for c in changes)
 
 
+def test_interpretive_links_in_the_context_leak_stripped():
+    # Real observed leak: "(interpretive links in the context)" — the broader
+    # "(… in the context)" family, not just "referenced in the context".
+    ans = "The AI Act guidance (interpretive links in the context) provides clarifications."
+    out, changes = normalize_guidance_attribution(ans, _transparency_provisions())
+    assert "in the context" not in out
+    assert out == "The AI Act guidance provides clarifications."
+    assert any("machinery-leak" in c for c in changes)
+
+
+def test_in_the_context_of_article_parenthetical_preserved():
+    # The legitimate phrase closes on "… of Article 50", not on "context)", so
+    # the broader paren leak must NOT strip it.
+    ans = "This applies (in the context of Article 50 AI Act) to certain outputs."
+    out, changes = normalize_guidance_attribution(ans, _transparency_provisions())
+    assert out == ans
+    assert not changes
+
+
 def test_empty_answer():
     out, changes = normalize_guidance_attribution("", _transparency_provisions())
     assert out == ""

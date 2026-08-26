@@ -16,7 +16,9 @@ The guard is conservative: it only rewrites an AI Office title when (a) exactly
 one AI Office guidance document was retrieved (so the correction is unambiguous)
 and (b) the fabricated tail actually matches a retrieved *section* name (so it is
 provably a section→document conflation, not a legitimate phrase). It also strips
-the "(referenced in the context)" machinery leak.
+machinery leaks — "(referenced in the context)" and the broader family of short
+parentheticals ending in "in the context)" (e.g. "(interpretive links in the
+context)").
 """
 from __future__ import annotations
 
@@ -29,6 +31,17 @@ from application._context import _celex_is_guidance
 # legitimate legal phrase "in the context of Article 50 AI Act".
 _LEAK_RE = re.compile(
     r"\s*\(?\b(?:as\s+)?referenced\s+in\s+(?:the\s+)?context\b\)?[.,]?",
+    re.IGNORECASE,
+)
+
+# Broader machinery leak: any short parenthetical that ENDS in "in the context)"
+# — e.g. "(interpretive links in the context)", "(as provided in context)". The
+# closing paren must come immediately after "context", which is what separates
+# the leak from the legitimate phrase "(… in the context of Article 50)" (there
+# "context" is followed by " of", so the paren never closes on it). Bounded to a
+# single parenthetical (no nested parens / newlines) so it stays local.
+_LEAK_PAREN_RE = re.compile(
+    r"\s*\([^()\n]*?\bin\s+(?:the\s+)?context\)",
     re.IGNORECASE,
 )
 
@@ -106,8 +119,9 @@ def normalize_guidance_attribution(
 
     # 1. Strip machinery-leak phrases.
     answer, n = _LEAK_RE.subn("", answer)
-    if n:
-        changes.append(f"stripped {n} machinery-leak phrase(s)")
+    answer, n2 = _LEAK_PAREN_RE.subn("", answer)
+    if n + n2:
+        changes.append(f"stripped {n + n2} machinery-leak phrase(s)")
 
     # 2. Correct fabricated AI Office document titles by resolving the fabricated
     #    tail through its owning section — precise even with several AI Office
