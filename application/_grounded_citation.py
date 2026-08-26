@@ -397,6 +397,19 @@ def _clean_husks(text: str) -> str:
         else:
             out_lines.append(line)
     text = "\n".join(out_lines)
+    # A quote marker the model wrapped in a parenthetical after a label —
+    # "**Safety Component Definition** ([quote: …]):" — strands the "(" on the
+    # label line and the ")"/"):"  on its own line once _render_quote lifts the
+    # quote to a standalone block, so the reader sees dangling punctuation around
+    # the blockquote.  Re-attach a trailing ":" to the label and drop the now-empty
+    # parens.  Only fires when "(" directly wraps a lifted "> " block (which the
+    # model never authors itself — quotes are always lifted from markers), so a
+    # legitimate parenthetical is never touched.
+    text = re.sub(
+        r"[ \t]*\(\n+(> .+(?:\n> .+)*)\n+\)([ \t]*:?)",
+        lambda m: (":" if ":" in m.group(2) else "") + "\n\n" + m.group(1) + "\n\n",
+        text,
+    )
     text = re.sub(r"[ \t]{2,}", " ", text)
     text = re.sub(r" +\n", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)

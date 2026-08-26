@@ -205,3 +205,33 @@ def test_resolve_pointers_repairs_glued_heading_end_to_end():
     out = resolve_pointers(answer, idx).text
     assert "### 3. Treatment of Pre-Determined Changes\n\n" in out
     assert "Article 43(4) states:" in out
+
+
+# A quote marker the model wraps in a parenthetical after a label —
+# "Definition (<quote>):" — used to strand the "(" on the label line and the
+# ")"/"):"  on its own line once the quote lifts to a standalone block.
+def test_clean_husks_unwraps_parenthesised_quote_reattaching_colon():
+    raw = (
+        "1. Safety Component Definition (\n\n"
+        '> "safety component" means a component of a product or of an AI system\n\n'
+        "):\n"
+        "   - A component fulfils a safety function.\n"
+    )
+    out = _clean_husks(raw)
+    assert "(\n" not in out and "):" not in out          # no stranded parens
+    assert "Safety Component Definition:" in out          # colon re-attached to label
+    assert '> "safety component" means' in out            # quote block intact
+    assert "- A component fulfils a safety function." in out
+
+
+def test_clean_husks_unwraps_parenthesised_quote_without_colon():
+    raw = "High-Risk Classification (\n\n> Directive 2006/42/EC on machinery\n\n)\n"
+    out = _clean_husks(raw)
+    assert "(" not in out and ")" not in out
+    assert "> Directive 2006/42/EC on machinery" in out
+
+
+def test_clean_husks_leaves_normal_parenthetical_prose_alone():
+    # A parenthetical that does NOT wrap a lifted quote is untouched.
+    line = "The device (a Class IIb product) requires third-party assessment."
+    assert _clean_husks(line) == line
