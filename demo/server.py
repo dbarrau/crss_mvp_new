@@ -222,14 +222,21 @@ def api_legislation():
         }
         for celex, meta in LEGISLATION.items()
     ]
+    # Only advertise guidance that is actually ingested (parsed.json on disk) —
+    # the catalog also holds lower-tier MDCG docs that are not loaded, so serving
+    # the whole catalog overstated the corpus. Tag each with its family so the
+    # front-end can show a correctly-counted pill per publisher (MDCG / AI Office).
+    guidance_dir = Path(__file__).resolve().parents[1] / "data" / "guidance"
     guidance = [
         {
             "id": gid,
             "name": meta.get("name", gid),
             "title": meta.get("title", ""),
             "tier": meta.get("tier"),
+            "family": "AI Office" if gid.startswith("AI_OFFICE_") else "MDCG",
         }
         for gid, meta in GUIDANCE_DOCUMENTS.items()
+        if (guidance_dir / gid / "EN" / "parsed.json").exists()
     ]
     return jsonify({"legislation": legislation, "guidance": guidance})
 
