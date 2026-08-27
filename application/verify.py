@@ -46,6 +46,7 @@ from application._faithfulness import (
 from application._confidence import compute_confidence
 from application._phantom import strip_phantom_citations
 from application._attribution import normalize_guidance_attribution
+from application._date_currency import correct_superseded_dates
 from application._postprocessing import _strip_foreign_law_citations
 
 logger = logging.getLogger(__name__)
@@ -272,6 +273,29 @@ def verify_answer(
         answer, _attr_changes = normalize_guidance_attribution(answer, provisions)
         if _attr_changes:
             logger.info("Attribution guard: %s", "; ".join(_attr_changes))
+
+    # Date-currency guard: correct superseded AI Act high-risk application dates
+    # the model states from pre-Omnibus training memory (e.g. "Annex III high-risk
+    # applies from 2 August 2026") against current law. The consolidated graph
+    # holds the current dates and they reach context, but a prompt rule does not
+    # hold against a confident parametric date — the model overrides context and
+    # even misattributes the stale date to Article 113. Conservative: rewrites a
+    # superseded date only when pinned to the matching high-risk scope, never the
+    # (unchanged) general-application 2 Aug 2026. Disable with
+    # CRSS_DATE_CURRENCY_GUARD=0.
+    if os.environ.get("CRSS_DATE_CURRENCY_GUARD", "1") != "0":
+        answer, _date_notes = correct_superseded_dates(answer)
+        if _date_notes:
+            _note_lines = "\n".join(f"> - {n}" for n in _date_notes)
+            answer = (
+                f"{answer}\n\n> 🔧 **Date currency** — a superseded pre-Omnibus "
+                "application date was corrected against current law (Digital "
+                f"Omnibus, Regulation (EU) 2026/1744):\n{_note_lines}"
+            )
+            logger.info(
+                "Date-currency guard: corrected %d superseded date(s).",
+                len(_date_notes),
+            )
 
     faith_mode = faithfulness_mode(os.environ.get("CRSS_FAITHFULNESS_CHECK", "1"))
     answer, faith_report = _apply_faithfulness(
