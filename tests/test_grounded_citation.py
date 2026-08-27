@@ -205,3 +205,61 @@ def test_resolve_pointers_repairs_glued_heading_end_to_end():
     out = resolve_pointers(answer, idx).text
     assert "### 3. Treatment of Pre-Determined Changes\n\n" in out
     assert "Article 43(4) states:" in out
+
+
+# A quote marker the model wraps in a parenthetical after a label —
+# "Definition (<quote>):" — used to strand the "(" on the label line and the
+# ")"/"):"  on its own line once the quote lifts to a standalone block.
+def test_clean_husks_unwraps_parenthesised_quote_reattaching_colon():
+    raw = (
+        "1. Safety Component Definition (\n\n"
+        '> "safety component" means a component of a product or of an AI system\n\n'
+        "):\n"
+        "   - A component fulfils a safety function.\n"
+    )
+    out = _clean_husks(raw)
+    assert "(\n" not in out and "):" not in out          # no stranded parens
+    assert "Safety Component Definition:" in out          # colon re-attached to label
+    assert '> "safety component" means' in out            # quote block intact
+    assert "- A component fulfils a safety function." in out
+
+
+def test_clean_husks_unwraps_parenthesised_quote_without_colon():
+    raw = "High-Risk Classification (\n\n> Directive 2006/42/EC on machinery\n\n)\n"
+    out = _clean_husks(raw)
+    assert "(" not in out and ")" not in out
+    assert "> Directive 2006/42/EC on machinery" in out
+
+
+def test_clean_husks_leaves_normal_parenthetical_prose_alone():
+    # A parenthetical that does NOT wrap a lifted quote is untouched.
+    line = "The device (a Class IIb product) requires third-party assessment."
+    assert _clean_husks(line) == line
+
+
+# The same provision text can live under two ids — the Article 3(14) provision
+# node AND its definitions-block / DefinedTerm copy — which the model may quote
+# separately. id-only de-dup let the identical block render twice (observed: the
+# safety-component definition repeated). De-dup by text collapses the second.
+def test_identical_quote_text_under_two_ids_renders_block_once():
+    _DEF = ('"safety component" means a component of a product or of an AI system '
+            "which fulfils a safety function for that product or AI system")
+    provs = [
+        {"article_id": "32024R1689_art_3_pt_14", "article_ref": "Article 3(14)",
+         "regulation": "EU AI Act", "binding_force": "binding",
+         "article_text": _DEF, "children": []},
+        {"article_id": "32024R1689_defterm_safety_component", "article_ref": "Article 3(14)",
+         "regulation": "EU AI Act", "binding_force": "binding",
+         "article_text": _DEF, "children": []},
+        {"article_id": "32024R1689_art_6", "article_ref": "Article 6",
+         "regulation": "EU AI Act", "binding_force": "binding",
+         "article_text": "A distinct operative provision.", "children": []},
+    ]
+    idx = build_pointer_index(provs)
+    answer = ("Def: [quote: 32024R1689_art_3_pt_14]. "
+              "Restated: [quote: 32024R1689_defterm_safety_component]. "
+              "Other: [quote: 32024R1689_art_6].")
+    out = resolve_pointers(answer, idx).text
+    assert out.count('> "safety component" means') == 1      # block rendered once
+    assert "Article 3(14)" in out                            # duplicate -> cite ref
+    assert "> A distinct operative provision." in out        # different quote kept

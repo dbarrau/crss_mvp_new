@@ -87,7 +87,9 @@ def test_format_context_renders_interpreting_guidance():
         ]
     )
     output = _format_context([prov])
-    assert "[GUIDANCE interprets this] Section 4:" in output
+    # The owning document is named inline (resolved from the node id) so the
+    # model can cite it verbatim; the section ref and text follow.
+    assert "[GUIDANCE interprets this — Source document: MDCG 2020-3 Rev.1; section: Section 4]:" in output
     assert "Article 120(3c)" in output
 
 

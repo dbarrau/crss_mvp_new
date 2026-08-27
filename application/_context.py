@@ -97,6 +97,26 @@ def _celex_is_guidance(celex: str) -> bool:
         or any(celex.startswith(pfx) for pfx in _GUIDANCE_CELEX_PREFIXES)
     )
 
+
+# Citable document title per guidance doc id ("AI Office Guidelines on …"), used
+# to name the source on the [GUIDANCE interprets this] lines — which otherwise
+# show only a section ref, leaving the model nothing to cite (it then fabricates a
+# title from the section or falls back to a generic "the guidance"). Longest
+# catalog-key prefix wins so "…HIGHRISK_ANNEX_III_point_4" resolves to the Annex
+# III doc, not a shorter sibling.
+_GUIDANCE_DOC_TITLES = {gid: (meta.get("name") or gid) for gid, meta in _GUIDANCE_DOCUMENTS.items()}
+_GUIDANCE_DOC_KEYS_BY_LEN = sorted(_GUIDANCE_DOC_TITLES, key=len, reverse=True)
+
+
+def _guidance_doc_title(node_id: str) -> str:
+    """Citable title of the guidance document owning *node_id*, or '' if unmapped."""
+    if not node_id:
+        return ""
+    for key in _GUIDANCE_DOC_KEYS_BY_LEN:
+        if node_id == key or node_id.startswith(key + "_"):
+            return _GUIDANCE_DOC_TITLES[key]
+    return ""
+
 # Provision-role bucket ordering and human-readable section labels.
 # The order below is semantic, not alphabetical: definitions first (so the LLM
 # anchors actor/object identity), then scope/classification (when each thing
@@ -375,7 +395,12 @@ def _cross_ref_and_interp_lines(p: dict) -> tuple[list[str], list[str]]:
         ref = g.get("ref", "")
         text = (g.get("text") or "")[:_INTERP_CHARS]
         if text:
-            interp_lines.append(f"  [GUIDANCE interprets this] {ref}: {text}")
+            # Name the owning document inline so the model can cite it verbatim
+            # (the same "Source document:" phrasing it is told to copy). Without
+            # it these lines carry only a section ref and the doc goes unnamed.
+            doc = _guidance_doc_title(g.get("id", ""))
+            src = f"Source document: {doc}; " if doc else ""
+            interp_lines.append(f"  [GUIDANCE interprets this — {src}section: {ref}]: {text}")
     for ip in (p.get("interpreted_provisions") or [])[:_MAX_INTERP_LINES]:
         ref = ip.get("ref", "")
         text = (ip.get("text") or "")[:_INTERP_CHARS]
