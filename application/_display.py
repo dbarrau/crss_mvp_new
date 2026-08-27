@@ -215,6 +215,20 @@ def _render_nodes(nodes: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _render_single_node_body(text: str | None) -> str:
+    """Blockquote body for a single-node article (its own text, not a heading).
+
+    Used when a directly-looked-up article has no HAS_PART children — a short
+    article written as one unnumbered paragraph, whose operative text lives on the
+    article node itself. Whitespace is collapsed (matching the per-node handling in
+    :func:`_render_nodes`); blank-line-separated paragraphs each become their own
+    ``> …`` block so a multi-paragraph single node still reads as prose."""
+    raw = (text or "").replace("\xa0", " ")
+    paras = [re.sub(r"\s+", " ", p).strip() for p in re.split(r"\n\s*\n", raw)]
+    paras = [p for p in paras if p]
+    return "\n>\n".join(f"> {p}" for p in paras)
+
+
 def _pick_subject(provisions: list[dict], ref: str, celex: str) -> dict | None:
     want = ref.strip().lower()
     for p in provisions:
@@ -258,10 +272,24 @@ def render_provision_display(retriever, ref: str, celex: str) -> str | None:
     if not subject or not subject.get("subtree"):
         return None
     subtree = subject["subtree"]
-    base_ref = (subtree[0].get("ref") or ref).strip()
-    heading = re.sub(r"\s+", " ", (subtree[0].get("text") or "")).strip()
+    root = subtree[0]
+    base_ref = (root.get("ref") or ref).strip()
 
-    body = _render_nodes(subtree)
+    if len(subtree) > 1:
+        # Normal article: the depth-0 node's text is its rubric/caption; the body
+        # is its HAS_PART children (rendered here, root skipped as the heading).
+        heading = re.sub(r"\s+", " ", (root.get("text") or "")).strip()
+        body = _render_nodes(subtree)
+    else:
+        # Single-node article: it has NO child paragraphs, so its OWN text is the
+        # operative body, not a caption (~11% of articles are written this way —
+        # one unnumbered paragraph). _render_nodes skips depth 0, so it would
+        # return an empty body and "show me Article X" would fall through to
+        # generation. Render the text as the body and use the node's rubric
+        # (`title`) as the heading instead.
+        heading = re.sub(r"\s+", " ", (root.get("title") or "")).strip()
+        body = _render_single_node_body(root.get("text"))
+
     if not body:
         return None
 
