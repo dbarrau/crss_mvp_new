@@ -224,3 +224,36 @@ def test_orphaned_paragraph_number_lands_on_its_first_subparagraph_only():
     assert "**2.** Where a distributor" not in out             # not repeated on subparagraph 3
     assert "Where a distributor has reason to believe" in out
     assert out.count("**2.**") == 1                            # printed exactly once for the whole paragraph
+
+
+# ── single-node articles (no child paragraphs) ───────────────────────────────
+# ~11% of articles are one unnumbered paragraph, with the whole body on the
+# article node and NO HAS_PART children. _render_nodes skips depth 0, so these
+# used to render EMPTY (body dropped as a heading) and "show me X" fell through
+# to generation. The render now uses the node's own text as the body and its
+# `title` rubric as the heading. Regression: 59 such articles across the corpus.
+
+def test_single_node_article_renders_own_text_as_body():
+    subtree = [{
+        "id": "32017R0745_art_26", "depth": 0, "kind": "article", "number": "26",
+        "ref": "Article 26", "title": "Medical devices nomenclature",
+        "text": "To facilitate the functioning of Eudamed, the Commission shall ensure "
+                "that an internationally recognised nomenclature is available free of charge.",
+    }]
+    out = render_provision_display(_Retriever(subtree, ref="Article 26"), "Article 26", "32024R1689")
+    assert out is not None                                          # no longer empty
+    assert "### Article 26 — Medical devices nomenclature" in out   # rubric is the heading
+    assert "> To facilitate the functioning of Eudamed" in out      # own text is the body
+    assert "internationally recognised nomenclature is available free of charge." in out
+
+
+def test_single_node_article_without_title_falls_back_to_bare_ref():
+    subtree = [{
+        "id": "32024R1689_art_102", "depth": 0, "kind": "article", "number": "102",
+        "ref": "Article 102", "title": None,
+        "text": "In Article 4(3) of Regulation (EC) No 300/2008, the following subparagraph is added.",
+    }]
+    out = render_provision_display(_Retriever(subtree, ref="Article 102"), "Article 102", "32024R1689")
+    assert out is not None
+    assert "### Article 102" in out                                 # bare ref heading, no rubric
+    assert "In Article 4(3) of Regulation (EC) No 300/2008" in out  # body still rendered

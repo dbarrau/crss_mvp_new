@@ -361,6 +361,7 @@ RETURN rootId          AS root_id,
        node.number     AS number,
        node.kind       AS kind,
        node.text       AS text,
+       node.title      AS title,
        node.amended_by AS amended_by,
        depth
 ORDER BY rootId, ord

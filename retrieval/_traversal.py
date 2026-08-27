@@ -172,10 +172,12 @@ def retrieve_by_refs(
 def _attach_subtrees(driver, db: str, results: list[dict[str, Any]]) -> None:
     """Populate ``result["subtree"]`` with the ordered HAS_PART descendants.
 
-    Each subtree entry is ``{id, ref, number, kind, text, depth}`` in document
-    (pre-order) order, with the root at ``depth == 0``.  ``text`` is the node's
-    *own* text — not the flattened ``text_for_analysis`` — so every semantic unit
-    renders as the exact, referenceable text of the regulation.
+    Each subtree entry is ``{id, ref, number, kind, text, title, depth}`` in
+    document (pre-order) order, with the root at ``depth == 0``.  ``text`` is the
+    node's *own* text — not the flattened ``text_for_analysis`` — so every
+    semantic unit renders as the exact, referenceable text of the regulation.
+    ``title`` is the node's rubric caption (used as the heading when a single-node
+    article's ``text`` is its body, not a caption).
     """
     ids = [r["article_id"] for r in results if r.get("article_id")]
     if not ids:
@@ -190,6 +192,7 @@ def _attach_subtrees(driver, db: str, results: list[dict[str, Any]]) -> None:
             "number": row["number"],
             "kind": row["kind"],
             "text": row["text"],
+            "title": row.get("title"),
             "depth": row["depth"],
             "amended_by": row.get("amended_by"),
         })
