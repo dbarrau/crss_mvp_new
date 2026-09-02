@@ -447,6 +447,7 @@ RETURN
     d.celex               AS celex,
     p.text                AS definition_text,
     p.id                  AS source_provision_id,
+    p.display_ref         AS point_ref,
     art.display_ref       AS article_ref,
     art.display_path      AS article_path
 """

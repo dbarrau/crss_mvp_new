@@ -238,7 +238,13 @@ def _format_definitions(definitions: list[dict]) -> str:
     parts: list[str] = []
     for d in definitions:
         reg = d.get("regulation", "")
-        ref = d.get("article_ref", "")
+        # Prefer the defining point's own ref (e.g. "Article 2, point (30)") over
+        # the parent article ("Article 2"): the point-level ref is what actually
+        # cites the definition, and the graph already carries it on the node. The
+        # find_by_term traversal historically returned only the parent article, so
+        # the LLM was handed a coarse label and faithfully echoed the imprecise
+        # "Article 2" in prose. Fall back to the parent when a point ref is absent.
+        ref = d.get("point_ref") or d.get("article_ref", "")
         term = d.get("term", "")
         text = d.get("definition_text", "")
         dtype = d.get("definition_type", "formal")
