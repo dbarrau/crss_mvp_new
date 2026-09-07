@@ -161,18 +161,26 @@ def _resolve_celex(
     return None
 
 
+# Amending acts put a base regulation's amendments in a single article (the
+# Digital Omnibus amends the AI Act entirely within its Article 1); an inserted
+# article has no anchor of its own anywhere, so it links there. Article-level is
+# the finest EUR-Lex anchor, so this is as precise as the amending act allows.
+_AMENDER_ARTICLE_ANCHOR = "art_1"
+
+
 def build_link_scope(
     provisions: list[dict[str, Any]] | None,
     target_celexes: Iterable[str] | None,
-) -> tuple[frozenset[str], frozenset[tuple[str, str]]]:
+) -> tuple[frozenset[str], dict[tuple[str, str], str]]:
     """Return ``(in_scope_celexes, inserted_articles)`` for :func:`link_references`.
 
-    ``inserted_articles`` is the set of ``(celex, article_number)`` whose article
-    *root* was inserted by an amending act (root-level ``amended_by``); Phase 1
-    suppresses links on these because the base act has no such anchor.
+    ``inserted_articles`` maps ``(celex, article_number)`` -> the amending act's
+    CELEX, for every article whose *root* was inserted by an amending act
+    (root-level ``amended_by``). The base act has no anchor for these, so they
+    link to the amending act instead of the base.
     """
     in_scope: set[str] = {c for c in (target_celexes or []) if c}
-    inserted: set[tuple[str, str]] = set()
+    inserted: dict[tuple[str, str], str] = {}
     for p in provisions or []:
         celex = p.get("celex")
         if celex:
@@ -180,18 +188,19 @@ def build_link_scope(
         subtree = p.get("subtree") or []
         if subtree and celex:
             root = subtree[0]
-            if root.get("amended_by") and root.get("kind") == "article":
+            amender = root.get("amended_by")
+            if amender and root.get("kind") == "article":
                 m = _ARTICLE_ID_NUM.search(root.get("id") or "")
                 if m:
-                    inserted.add((celex, m.group(1).lower()))
-    return frozenset(in_scope), frozenset(inserted)
+                    inserted[(celex, m.group(1).lower())] = amender
+    return frozenset(in_scope), inserted
 
 
 def link_references(
     text: str,
     *,
     in_scope_celexes: frozenset[str] = frozenset(),
-    inserted_articles: frozenset[tuple[str, str]] = frozenset(),
+    inserted_articles: dict[tuple[str, str], str] | None = None,
     default_celex: str | None = None,
     cited: dict[tuple[str, str], str] | None = None,
 ) -> str:
@@ -212,6 +221,7 @@ def link_references(
     anywhere in the answer — the source for :func:`build_provisions_footer` — so
     the footer stays complete even though inline links are deduped.
     """
+    inserted_articles = inserted_articles or {}
     qid = int(time.time() * 1000)                   # one fresh EUR-Lex qid per answer
     linked_here: set[tuple[str, str]] = set()       # (celex, anchor) linked in this section
 
@@ -225,8 +235,19 @@ def link_references(
         )
         if celex is None or celex not in _URL_CELEX:
             return f"**{ref}**"
-        if anchor.startswith("art_") and (celex, anchor[4:]) in inserted_articles:
-            return f"**{ref}**"                     # inserted: no base anchor
+        # Inserted article (no base anchor) → link to the amending act instead.
+        amender = inserted_articles.get((celex, anchor[4:])) if anchor.startswith("art_") else None
+        if amender and amender in _URL_CELEX:
+            key = (amender, _AMENDER_ARTICLE_ANCHOR)
+            if key in linked_here:
+                return f"**{ref}**"
+            linked_here.add(key)
+            url = _EURLEX_TMPL.format(
+                celex=_URL_CELEX[amender], qid=qid, anchor=_AMENDER_ARTICLE_ANCHOR
+            )
+            return f"[**{ref}**]({url})"
+        if amender:                                 # amender not linkable → bold-only
+            return f"**{ref}**"
         key = (celex, anchor)
         if cited is not None and key not in cited:  # footer records every provision
             cited[key] = _display_from_anchor(anchor)
@@ -285,17 +306,29 @@ def _footer_sort_key(anchor: str) -> tuple[int, int, str]:
     return (rank, 0, rest)
 
 
+def _reg_label(celex: str, reg_names: dict[str, str]) -> str:
+    """Display label for a regulation in the footer: the answer's own label, else
+    the catalog name, else its number, else the raw CELEX."""
+    meta = LEGISLATION.get(celex, {})
+    return reg_names.get(celex) or meta.get("name") or meta.get("number") or celex
+
+
 def build_provisions_footer(
     cited: dict[tuple[str, str], str],
     reg_names: dict[str, str] | None = None,
+    amender_celexes: Iterable[str] | None = None,
 ) -> str:
     """Return a "Provisions cited" appendix — one EUR-Lex link per distinct
-    provision, grouped by regulation and ordered within each group.
+    provision, grouped by regulation and ordered within each group, plus an
+    "Amending act" line per amending act the answer relies on (its provisions are
+    consolidated into the base act, so the amending act itself is where the change
+    is authoritatively found).
 
     Empty when nothing was linked.  ``reg_names`` maps a base CELEX to its display
     label (e.g. "EU AI Act"); a CELEX with no label falls back to its number.
     """
-    if not cited:
+    amender_celexes = [c for c in (amender_celexes or []) if c]
+    if not cited and not amender_celexes:
         return ""
     reg_names = reg_names or {}
     qid = int(time.time() * 1000)
@@ -306,10 +339,20 @@ def build_provisions_footer(
 
     lines = ["", "---", "", "**Provisions cited**", ""]
     for celex, anchors in groups.items():
-        reg = reg_names.get(celex) or LEGISLATION.get(celex, {}).get("number") or celex
         items = []
         for anchor in sorted(set(anchors), key=_footer_sort_key):
             url = _EURLEX_TMPL.format(celex=_URL_CELEX.get(celex, celex), qid=qid, anchor=anchor)
             items.append(f"[{_display_from_anchor(anchor)}]({url})")
-        lines.append(f"- **{reg}** — " + " · ".join(items))
+        lines.append(f"- **{_reg_label(celex, reg_names)}** — " + " · ".join(items))
+
+    for amender in dict.fromkeys(amender_celexes):  # de-dup, keep order
+        if amender in groups:
+            continue                                # already listed as a cited regulation
+        url = _EURLEX_TMPL.format(
+            celex=_URL_CELEX.get(amender, amender), qid=qid, anchor=_AMENDER_ARTICLE_ANCHOR
+        )
+        lines.append(
+            f"- **Amending act — {_reg_label(amender, reg_names)}** — "
+            f"[Article 1]({url}) *(amendments applied above)*"
+        )
     return "\n".join(lines)

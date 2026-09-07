@@ -136,12 +136,23 @@ def test_preceding_name_also_resolves():
 
 # ── amendment awareness ──────────────────────────────────────────────────────
 
-def test_inserted_article_left_bold_only():
-    # base act has no #art_4a anchor → suppress the link in Phase 1
+_OMNIBUS = "32026R1744"
+
+
+def test_inserted_article_links_to_amending_act():
+    # base act has no #art_4a anchor → link to the amending act's Article 1
     out = link_references("Article 4a AI Act applies",
                           in_scope_celexes=frozenset({_AI}),
-                          inserted_articles=frozenset({(_AI, "4a")}))
-    assert out == "**Article 4a** AI Act applies"
+                          inserted_articles={(_AI, "4a"): _OMNIBUS})
+    assert _links_to(out, _OMNIBUS, "art_1")
+    assert "[**Article 4a**](" in out
+
+
+def test_inserted_article_dedupes_to_one_amender_link_per_section():
+    s = "Article 4a AI Act and Article 75a AI Act both apply."
+    out = link_references(s, in_scope_celexes=frozenset({_AI}),
+                          inserted_articles={(_AI, "4a"): _OMNIBUS, (_AI, "75a"): _OMNIBUS})
+    assert out.count("](https://eur-lex") == 1        # both point at Omnibus art_1 → dedupe
 
 
 def test_amended_article_still_links_to_base():
@@ -171,7 +182,7 @@ def test_build_link_scope_collects_celexes_and_inserted_articles():
     ]
     in_scope, inserted = build_link_scope(provisions, target_celexes={_AI})
     assert in_scope == frozenset({_AI, _MDR})
-    assert inserted == frozenset({(_AI, "4a")})       # only the inserted root
+    assert inserted == {(_AI, "4a"): "32026R1744"}    # inserted root → its amender
 
 
 def test_build_link_scope_ignores_root_amend_on_normal_article():
@@ -181,7 +192,21 @@ def test_build_link_scope_ignores_root_amend_on_normal_article():
         {"id": f"{_AI}_025.002", "kind": "paragraph", "amended_by": "32026R1744"},
     ]}]
     _, inserted = build_link_scope(provisions, target_celexes=None)
-    assert inserted == frozenset()
+    assert inserted == {}
+
+
+def test_footer_amending_act_line_links_to_omnibus():
+    cited = {(_AI, "art_50"): "Article 50"}
+    out = build_provisions_footer(cited, {_AI: "EU AI Act"}, amender_celexes={_OMNIBUS})
+    assert "Amending act" in out
+    assert f"uri=CELEX:{_OMNIBUS}&qid=" in out and "#art_1" in out
+
+
+def test_footer_skips_amender_already_listed_as_cited_regulation():
+    # if the amender itself is a cited regulation, no duplicate "Amending act" line
+    cited = {(_OMNIBUS, "art_1"): "Article 1"}
+    out = build_provisions_footer(cited, {}, amender_celexes={_OMNIBUS})
+    assert "Amending act" not in out
 
 
 # ── dedupe: article-grained anchors linked once per section ───────────────────
@@ -236,6 +261,6 @@ def test_footer_empty_when_nothing_cited():
     assert build_provisions_footer({}, {}) == ""
 
 
-def test_footer_falls_back_to_number_without_reg_name():
+def test_footer_falls_back_to_catalog_name_without_reg_name():
     out = build_provisions_footer({(_AI, "art_6"): "Article 6"}, reg_names={})
-    assert LEGISLATION[_AI]["number"] in out           # e.g. "2024/1689"
+    assert LEGISLATION[_AI]["name"] in out             # e.g. "EU AI Act"

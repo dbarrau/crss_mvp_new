@@ -347,6 +347,31 @@ def _act_display(act: str) -> str:
     return f"{act} ({name})" if name and name.lower() not in act.lower() else act
 
 
+# Reverse of the act-name map: the ``amending_act`` string back to its CELEX, so
+# the citation layer can link the amending act (its provisions live in the base
+# act now, so the reader traces the change to the instrument itself).
+_ACT_TO_CELEX = {
+    f"Regulation (EU) {meta['number']}": celex
+    for celex, meta in LEGISLATION.items()
+    if meta.get("number")
+}
+
+
+def amendment_amender_celexes(answer: str, amendments: list[dict]) -> set[str]:
+    """CELEXes of the amending acts the *answer* actually relies on — the same
+    answer-scoping as :func:`_build_amendment_provenance`, so the "Provisions
+    cited" footer lists an amending act only when its change is cited above."""
+    out: set[str] = set()
+    for a in amendments or []:
+        target, act = a.get("_amends_target_ref"), a.get("amending_act")
+        if not (target and act) or not _amendment_target_in_answer(target, answer):
+            continue
+        celex = _ACT_TO_CELEX.get(act)
+        if celex:
+            out.add(celex)
+    return out
+
+
 def _build_amendment_provenance(answer: str, amendments: list[dict]) -> str:
     """Deterministic amendment-pedigree footer built from the AMENDS-edge metadata
     of the amendments surfaced into context (``_amends_target_ref`` +

@@ -139,6 +139,7 @@ from application._postprocessing import (                # noqa: F401
     _validate_legal_backbone,
     _postprocess_answer,
     _build_amendment_provenance,
+    amendment_amender_celexes,
 )
 from application._confidence import (                    # noqa: F401
     compute_confidence,
@@ -1170,15 +1171,19 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
         # Deterministic amendment pedigree: name the later act that modified each
         # amended provision the answer cites, from the AMENDS-edge metadata —
         # traceability the model repeats only unreliably (see #2).
-        _provenance = _build_amendment_provenance(
-            final_answer, retrieval_result.get("amendments") or []
-        )
+        _amendments = retrieval_result.get("amendments") or []
+        _provenance = _build_amendment_provenance(final_answer, _amendments)
         if _provenance:
             final_answer += _provenance
         # "Provisions cited" appendix — one EUR-Lex link per distinct provision the
-        # answer relies on, grouped by regulation. Built after provenance so the
-        # pedigree scan sees only the body, not the footer's own refs.
-        _footer = build_provisions_footer(_cited, _reg_names)
+        # answer relies on, grouped by regulation, plus an "Amending act" line for
+        # each amending act whose change is cited (its provisions live in the base
+        # act now, so the reader traces the change to the instrument). Built after
+        # provenance so the pedigree scan sees only the body, not the footer's refs.
+        _amenders = set(_inserted.values()) | amendment_amender_celexes(
+            final_answer, _amendments
+        )
+        _footer = build_provisions_footer(_cited, _reg_names, amender_celexes=_amenders)
         if _footer:
             final_answer += "\n" + _footer
         yield {"type": "done", "answer": final_answer, "audit_trace": audit_trace}
