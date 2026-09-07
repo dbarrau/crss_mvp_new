@@ -123,6 +123,10 @@ from application._grounded_citation import (             # noqa: F401
     resolve_pointers,
     _bold_references,
 )
+from application._eurlex_links import (                  # noqa: F401
+    build_link_scope,
+    link_references,
+)
 from application._grounded_answer import (               # noqa: F401
     GroundedAnswer,
     RenderResult,
@@ -1116,9 +1120,17 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
         )
         full_answer = _verification.answer
         # Bold provision references deterministically — the model writes them as
-        # plain prose and will not bold them itself. Runs after verification so
-        # faithfulness matched against clean text; skips verbatim quote lines.
-        full_answer = _bold_references(full_answer)
+        # plain prose and will not bold them itself — and, where the regulation
+        # resolves unambiguously, wrap each in a clickable EUR-Lex link to the
+        # actual provision. Runs after verification so faithfulness matched
+        # against clean text; skips verbatim quote lines. A reference whose CELEX
+        # can't be resolved stays bold-only (never a wrong-regulation link).
+        _in_scope, _inserted = build_link_scope(provisions, target_celexes)
+        full_answer = link_references(
+            full_answer,
+            in_scope_celexes=_in_scope,
+            inserted_articles=_inserted,
+        )
         confidence = _verification.confidence
         yield {
             "type": "confidence",

@@ -938,7 +938,14 @@ function normalizeLegalLists(md) {
 }
 
 function renderAnswer(md) {
-  return marked.parse(normalizeLegalLists(md));
+  const html = marked.parse(normalizeLegalLists(md));
+  // Provision references carry EUR-Lex links (off-site): open them in a new tab
+  // so the reader keeps CRSS, and harden with rel=noopener. Only external
+  // http(s) anchors are rewritten — the answer contains no other links.
+  return html.replace(
+    /<a href="(https?:\/\/[^"]+)"/g,
+    '<a href="$1" target="_blank" rel="noopener noreferrer"'
+  );
 }
 
 async function sendQuestion() {
