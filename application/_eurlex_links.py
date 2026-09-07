@@ -178,15 +178,27 @@ def link_references(
     *,
     in_scope_celexes: frozenset[str] = frozenset(),
     inserted_articles: frozenset[tuple[str, str]] = frozenset(),
+    cited: dict[tuple[str, str], str] | None = None,
 ) -> str:
-    """Bold every provision reference and, where the CELEX resolves, link it.
+    """Bold every provision reference and link the *first* mention of each article.
 
     Same reference detection and heading/quote-line skipping as
     :func:`_bold_references`; a reference whose CELEX cannot be resolved (or is an
-    inserted article) is wrapped in ``**bold**`` exactly as before, so this is a
-    strict superset of the bold-only behaviour.
+    inserted article) is wrapped in ``**bold**`` exactly as before.
+
+    Because EUR-Lex anchors are article-grained ("Article 50(1)", "Article 50(2)"
+    and "Article 50(3)" all resolve to ``#art_50``), only the **first** mention of
+    a given article *within a section* is linked — later mentions stay bold-only,
+    so the prose reads like a memo, not a wall of identical links. The section
+    resets at each heading so a long answer keeps a nearby link per section.
+
+    When *cited* is provided it is filled (in first-seen order) with
+    ``{(celex, anchor): "Article 50"}`` for every distinct provision linked
+    anywhere in the answer — the source for :func:`build_provisions_footer` — so
+    the footer stays complete even though inline links are deduped.
     """
     qid = int(time.time() * 1000)                   # one fresh EUR-Lex qid per answer
+    linked_here: set[tuple[str, str]] = set()       # (celex, anchor) linked in this section
 
     def _sub(m: "re.Match[str]") -> str:
         ref = m.group(1)
@@ -198,14 +210,89 @@ def link_references(
             return f"**{ref}**"
         if anchor.startswith("art_") and (celex, anchor[4:]) in inserted_articles:
             return f"**{ref}**"                     # inserted: no base anchor
+        key = (celex, anchor)
+        if cited is not None and key not in cited:  # footer records every provision
+            cited[key] = _display_from_anchor(anchor)
+        if key in linked_here:
+            return f"**{ref}**"                     # already linked this section — dedupe
+        linked_here.add(key)
         url = _EURLEX_TMPL.format(celex=_URL_CELEX[celex], qid=qid, anchor=anchor)
         return f"[**{ref}**]({url})"
 
     out: list[str] = []
     for line in text.split("\n"):
         stripped = line.lstrip()
-        if stripped.startswith("#") or stripped.startswith(">"):
-            out.append(line)                        # heading or verbatim quote
+        if stripped.startswith("#"):
+            linked_here.clear()                     # new section — first mention links again
+            out.append(line)
+            continue
+        if stripped.startswith(">"):
+            out.append(line)                        # verbatim quote — untouched
             continue
         out.append(_BOLD_REF_RE.sub(_sub, line))
     return "\n".join(out)
+
+
+# ── "Provisions cited" footer (the RA table of authorities) ──────────────────
+
+def _display_from_anchor(anchor: str) -> str:
+    """``"art_50"`` -> ``"Article 50"``, ``"anx_III"`` -> ``"Annex III"``,
+    ``"rct_81"`` -> ``"Recital 81"`` — the article-level label for the footer."""
+    kind, _, rest = anchor.partition("_")
+    return {"art": "Article", "anx": "Annex", "rct": "Recital"}.get(kind, kind) + f" {rest}"
+
+
+_ROMAN_VALUES = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100, "D": 500, "M": 1000}
+
+
+def _roman_to_int(s: str) -> int:
+    total, prev = 0, 0
+    for ch in reversed(s.upper()):
+        v = _ROMAN_VALUES.get(ch, 0)
+        total += -v if v < prev else v
+        prev = max(prev, v)
+    return total
+
+
+def _footer_sort_key(anchor: str) -> tuple[int, int, str]:
+    """Order the footer in document order: articles (numeric) → annexes → recitals."""
+    kind, _, rest = anchor.partition("_")
+    rank = {"art": 0, "anx": 1, "rct": 2}.get(kind, 3)
+    if kind == "art":
+        m = re.match(r"(\d+)([a-z]*)", rest)
+        return (rank, int(m.group(1)) if m else 0, m.group(2) if m else "")
+    if kind == "anx":
+        return (rank, _roman_to_int(rest), "")
+    if kind == "rct":
+        return (rank, int(rest) if rest.isdigit() else 0, "")
+    return (rank, 0, rest)
+
+
+def build_provisions_footer(
+    cited: dict[tuple[str, str], str],
+    reg_names: dict[str, str] | None = None,
+) -> str:
+    """Return a "Provisions cited" appendix — one EUR-Lex link per distinct
+    provision, grouped by regulation and ordered within each group.
+
+    Empty when nothing was linked.  ``reg_names`` maps a base CELEX to its display
+    label (e.g. "EU AI Act"); a CELEX with no label falls back to its number.
+    """
+    if not cited:
+        return ""
+    reg_names = reg_names or {}
+    qid = int(time.time() * 1000)
+
+    groups: dict[str, list[str]] = {}               # celex -> anchors, first-seen celex order
+    for (celex, anchor) in cited:
+        groups.setdefault(celex, []).append(anchor)
+
+    lines = ["", "---", "", "**Provisions cited**", ""]
+    for celex, anchors in groups.items():
+        reg = reg_names.get(celex) or LEGISLATION.get(celex, {}).get("number") or celex
+        items = []
+        for anchor in sorted(set(anchors), key=_footer_sort_key):
+            url = _EURLEX_TMPL.format(celex=_URL_CELEX.get(celex, celex), qid=qid, anchor=anchor)
+            items.append(f"[{_display_from_anchor(anchor)}]({url})")
+        lines.append(f"- **{reg}** — " + " · ".join(items))
+    return "\n".join(lines)

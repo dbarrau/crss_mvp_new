@@ -235,6 +235,17 @@
     color: var(--text-muted);
   }
   .msg.agent strong { font-weight: 600; }
+  /* Provision citations link to EUR-Lex: keep them quiet so they read as legal
+     references, not hyperlink-soup. Muted colour, underline only on hover, and a
+     small ↗ cue that the link opens the source off-site. */
+  .msg.agent a { color: #1a4b8c; text-decoration: none; }
+  .msg.agent a:hover { text-decoration: underline; }
+  .msg.agent a[href^="http"]::after {
+    content: "\2197"; font-size: 0.72em; margin-left: 1px;
+    vertical-align: 0.15em; color: #7a8aa3;
+  }
+  /* "Provisions cited" appendix reads as a compact reference list, not prose. */
+  .msg.agent hr { border: none; border-top: 1px solid #e2e8f2; margin: 14px 0 10px; }
   .msg.agent table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.87em; }
   .msg.agent th, .msg.agent td { border: 1px solid #d1d9e6; padding: 5px 10px; text-align: left; }
   .msg.agent th { background: #eef2f8; font-weight: 600; }

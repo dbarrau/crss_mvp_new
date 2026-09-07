@@ -11,6 +11,7 @@ from __future__ import annotations
 from application._eurlex_links import (
     _anchor_from_ref,
     build_link_scope,
+    build_provisions_footer,
     link_references,
 )
 from domain.legislation_catalog import (
@@ -147,3 +148,60 @@ def test_build_link_scope_ignores_root_amend_on_normal_article():
     ]}]
     _, inserted = build_link_scope(provisions, target_celexes=None)
     assert inserted == frozenset()
+
+
+# ── dedupe: article-grained anchors linked once per section ───────────────────
+
+def test_repeated_article_linked_once_per_section():
+    s = "Under Article 50(1) AI Act; then Article 50(2) AI Act and Article 50(3) AI Act."
+    out = link_references(s, in_scope_celexes=frozenset({_AI}))
+    assert out.count("](https://eur-lex") == 1        # only the first Article 50 is a link
+    assert "**Article 50(2)**" in out and "](https" not in out.split("**Article 50(2)**")[0][-20:]
+    assert "[**Article 50(1)**](" in out              # first mention is the link
+
+
+def test_dedupe_resets_at_section_heading():
+    s = "### A\nArticle 50 AI Act here.\n### B\nArticle 50 AI Act again."
+    out = link_references(s, in_scope_celexes=frozenset({_AI}))
+    assert out.count("](https://eur-lex") == 2        # one link per section
+
+
+def test_distinct_articles_each_link_in_same_section():
+    s = "Article 6 AI Act and Article 50 AI Act and Article 6 AI Act again."
+    out = link_references(s, in_scope_celexes=frozenset({_AI}))
+    # Article 6 linked once, Article 50 linked once → 2 links (second Art 6 deduped)
+    assert out.count("](https://eur-lex") == 2
+
+
+# ── "Provisions cited" footer ────────────────────────────────────────────────
+
+def test_cited_collects_every_distinct_provision_even_when_deduped():
+    s = "Article 50(1) AI Act, Article 50(2) AI Act, Annex III AI Act."
+    cited: dict = {}
+    link_references(s, in_scope_celexes=frozenset({_AI}), cited=cited)
+    assert cited == {(_AI, "art_50"): "Article 50", (_AI, "anx_III"): "Annex III"}
+
+
+def test_footer_grouped_sorted_and_linked():
+    cited = {
+        (_AI, "art_50"): "Article 50",
+        (_AI, "art_6"): "Article 6",
+        (_AI, "anx_III"): "Annex III",
+        (_MDR, "art_2"): "Article 2",
+    }
+    out = build_provisions_footer(cited, {_AI: "EU AI Act", _MDR: "MDR 2017/745"})
+    assert "**Provisions cited**" in out
+    # AI Act group ordered Article 6 → Article 50 → Annex III (document order)
+    assert out.index("Article 6](") < out.index("Article 50](") < out.index("Annex III](")
+    # MDR links to its consolidated source_celex
+    assert f"uri=CELEX:{_MDR_CONS}&qid=" in out
+    assert "**EU AI Act**" in out and "**MDR 2017/745**" in out
+
+
+def test_footer_empty_when_nothing_cited():
+    assert build_provisions_footer({}, {}) == ""
+
+
+def test_footer_falls_back_to_number_without_reg_name():
+    out = build_provisions_footer({(_AI, "art_6"): "Article 6"}, reg_names={})
+    assert LEGISLATION[_AI]["number"] in out           # e.g. "2024/1689"

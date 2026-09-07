@@ -126,6 +126,7 @@ from application._grounded_citation import (             # noqa: F401
 from application._eurlex_links import (                  # noqa: F401
     build_link_scope,
     link_references,
+    build_provisions_footer,
 )
 from application._grounded_answer import (               # noqa: F401
     GroundedAnswer,
@@ -1126,10 +1127,17 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
         # against clean text; skips verbatim quote lines. A reference whose CELEX
         # can't be resolved stays bold-only (never a wrong-regulation link).
         _in_scope, _inserted = build_link_scope(provisions, target_celexes)
+        _cited: dict[tuple[str, str], str] = {}     # (celex, anchor) -> "Article 50"
+        _reg_names: dict[str, str] = {}
+        for _p in provisions or []:
+            _c, _r = _p.get("celex"), _p.get("regulation")
+            if _c and _r and _c not in _reg_names:
+                _reg_names[_c] = _r
         full_answer = link_references(
             full_answer,
             in_scope_celexes=_in_scope,
             inserted_articles=_inserted,
+            cited=_cited,
         )
         confidence = _verification.confidence
         yield {
@@ -1156,6 +1164,12 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
         )
         if _provenance:
             final_answer += _provenance
+        # "Provisions cited" appendix — one EUR-Lex link per distinct provision the
+        # answer relies on, grouped by regulation. Built after provenance so the
+        # pedigree scan sees only the body, not the footer's own refs.
+        _footer = build_provisions_footer(_cited, _reg_names)
+        if _footer:
+            final_answer += "\n" + _footer
         yield {"type": "done", "answer": final_answer, "audit_trace": audit_trace}
 
         # --- Eval capture: finalise the pre-audit draft through the IDENTICAL
