@@ -1128,6 +1128,15 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
         # against clean text; skips verbatim quote lines. A reference whose CELEX
         # can't be resolved stays bold-only (never a wrong-regulation link).
         _in_scope, _inserted = build_link_scope(provisions, target_celexes)
+        # The authoritative inserted-article set (e.g. AI Act 75a-d → Omnibus) comes
+        # from the graph, not from what this query happened to retrieve — otherwise
+        # an inserted article cited but not retrieved with a subtree links to a base
+        # anchor that does not exist. Merge it over the subtree-derived fallback.
+        try:
+            _inserted = {**retriever.get_inserted_articles_index(), **_inserted}
+        except Exception:
+            logger.debug("Inserted-articles index unavailable; using subtree fallback.",
+                         exc_info=True)
         _cited: dict[tuple[str, str], str] = {}     # (celex, anchor) -> "Article 50"
         _reg_names: dict[str, str] = {}
         for _p in provisions or []:

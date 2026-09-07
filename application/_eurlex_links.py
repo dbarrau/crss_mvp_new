@@ -95,7 +95,10 @@ _ANCHOR_ARTICLE = re.compile(r"Articles?\s+(\d+[a-z]?)", re.IGNORECASE)
 _ANCHOR_ANNEX = re.compile(r"Annex(?:es)?\s+([IVXLC]+)", re.IGNORECASE)
 _ANCHOR_RECITAL = re.compile(r"Recitals?\s+(\d+)", re.IGNORECASE)
 
-_ARTICLE_ID_NUM = re.compile(r"_art_(\d+[a-z]?)$")
+# Only a letter-suffixed article (75d) is *inserted* and absent from the base act;
+# a purely-numeric amended article (75) still lives in the base and must keep its
+# base link, so the suffix is required here.
+_ARTICLE_ID_NUM = re.compile(r"_art_(\d+[a-z]+)$")
 
 
 def _anchor_from_ref(ref: str) -> str | None:

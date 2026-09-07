@@ -429,6 +429,35 @@ def load_defined_terms_index(driver, db: str) -> dict[str, str]:
     return {r["term"].lower(): r["tn"] for r in rows}
 
 
+_INSERTED_ART_ID = re.compile(r"_art_(\d+[a-z]+)$")
+
+
+def load_inserted_articles_index(driver, db: str) -> dict[tuple[str, str], str]:
+    """Fetch ``{(celex, article_number): amender_celex}`` for every article an
+    amending act *inserted* — the authoritative set, independent of what a given
+    query retrieved.
+
+    An inserted article carries a root-level ``amended_by`` AND a letter suffix
+    (``75d``): EU drafting inserts *between* numbers, so a new article is 75a/75b/…
+    and exists only in the amending act, never the base. A merely-amended article
+    keeps its number (``75``) and stays in the base act — it must NOT appear here,
+    or its citation would be routed off to the amending act instead of the base.
+    """
+    with driver.session(database=db) as s:
+        rows = s.run(
+            "MATCH (a:Provision) "
+            "WHERE a.amended_by IS NOT NULL AND a.kind = 'article' "
+            "AND a.id =~ '.*_art_[0-9]+[a-z]+$' "
+            "RETURN a.celex AS celex, a.id AS id, a.amended_by AS amender"
+        ).data()
+    out: dict[tuple[str, str], str] = {}
+    for r in rows:
+        m = _INSERTED_ART_ID.search(r.get("id") or "")
+        if m and r.get("celex") and r.get("amender"):
+            out[(r["celex"], m.group(1).lower())] = r["amender"]
+    return out
+
+
 def find_by_term(driver, db: str, term: str) -> list[dict[str, Any]]:
     """Exact-match lookup for a :DefinedTerm by its normalized term name."""
     # Mirror the normalisation used in definitions.py

@@ -195,6 +195,24 @@ def test_build_link_scope_ignores_root_amend_on_normal_article():
     assert inserted == {}
 
 
+def test_build_link_scope_amended_numeric_article_is_not_inserted():
+    # Article 75 is amended in place (root amended_by) but KEEPS its number, so it
+    # still exists in the base act — it must not be treated as inserted, or its
+    # citation would be wrongly routed to the amending act.
+    provisions = [{"celex": _AI, "subtree": [
+        {"id": f"{_AI}_art_75", "kind": "article", "amended_by": "32026R1744"},
+    ]}]
+    _, inserted = build_link_scope(provisions, target_celexes=None)
+    assert inserted == {}                             # numeric → not inserted
+
+
+def test_amended_numeric_article_links_to_base_not_amender():
+    # even flagged amended, Article 75 exists in the base act → base link
+    out = link_references("Article 75 AI Act", in_scope_celexes=frozenset({_AI}),
+                          inserted_articles={})       # 75 not in inserted set
+    assert _links_to(out, _AI, "art_75")
+
+
 def test_footer_amending_act_line_links_to_omnibus():
     cited = {(_AI, "art_50"): "Article 50"}
     out = build_provisions_footer(cited, {_AI: "EU AI Act"}, amender_celexes={_OMNIBUS})
