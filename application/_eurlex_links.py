@@ -39,14 +39,20 @@ Link target follows amendment status:
 from __future__ import annotations
 
 import re
+import time
 from typing import Any, Iterable
 
 from application._config import _REG_NAME_TO_CELEX, _REG_PATTERNS
 from application._grounded_citation import _BOLD_REF_RE
 from domain.legislation_catalog import LEGISLATION
 
+# EUR-Lex's /TXT/ viewer loads its body client-side; on a URL with no ``qid`` it
+# navigates to append one and DROPS the ``#anchor`` in the process (landing at
+# the top of the document). A ``qid`` already present suppresses that redirect so
+# the anchor survives — it is only a millisecond timestamp and is not validated,
+# so we mint a fresh one per answer. The fragment must stay last.
 _EURLEX_TMPL = (
-    "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:{celex}#{anchor}"
+    "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:{celex}&qid={qid}#{anchor}"
 )
 
 # A CELEX code (e.g. 32024R1689) — filters MDCG guidance keys ("MDCG_2020_3")
@@ -180,6 +186,7 @@ def link_references(
     inserted article) is wrapped in ``**bold**`` exactly as before, so this is a
     strict superset of the bold-only behaviour.
     """
+    qid = int(time.time() * 1000)                   # one fresh EUR-Lex qid per answer
 
     def _sub(m: "re.Match[str]") -> str:
         ref = m.group(1)
@@ -191,7 +198,7 @@ def link_references(
             return f"**{ref}**"
         if anchor.startswith("art_") and (celex, anchor[4:]) in inserted_articles:
             return f"**{ref}**"                     # inserted: no base anchor
-        url = _EURLEX_TMPL.format(celex=_URL_CELEX[celex], anchor=anchor)
+        url = _EURLEX_TMPL.format(celex=_URL_CELEX[celex], qid=qid, anchor=anchor)
         return f"[**{ref}**]({url})"
 
     out: list[str] = []

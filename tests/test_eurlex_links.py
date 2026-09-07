@@ -40,36 +40,43 @@ def test_anchor_from_ref_shapes():
 
 # ── CELEX resolution + link target ───────────────────────────────────────────
 
+def _links_to(out: str, celex: str, anchor: str) -> bool:
+    # EUR-Lex needs a qid between the CELEX and the fragment or the anchor is
+    # dropped (the /TXT/ viewer's client-side redirect); assert both parts.
+    return f"uri=CELEX:{celex}&qid=" in out and f"#{anchor}" in out
+
+
 def test_adjacent_name_resolves_celex_and_links_base_act():
     out = link_references("under Article 6(1) AI Act", in_scope_celexes=frozenset({_AI}))
-    assert f"CELEX:{_AI}#art_6" in out
+    assert _links_to(out, _AI, "art_6")
+    assert "&qid=" in out                            # the load-bearing qid is present
     assert out.startswith("under [**Article 6(1)**](")
 
 
 def test_mdr_links_to_consolidated_source_celex():
     out = link_references("the manufacturer under Article 2(30) MDR",
                           in_scope_celexes=frozenset({_MDR}))
-    assert f"CELEX:{_MDR_CONS}#art_2" in out
-    assert _MDR not in out.split("](", 1)[1]        # base CELEX must not be the URL
+    assert _links_to(out, _MDR_CONS, "art_2")
+    assert f"CELEX:{_MDR}&" not in out              # base CELEX must not be the URL
 
 
 def test_gdpr_links_to_consolidated_source_celex():
     out = link_references("Article 35 GDPR", in_scope_celexes=frozenset({_GDPR}))
-    assert f"CELEX:{_GDPR_CONS}#art_35" in out
+    assert _links_to(out, _GDPR_CONS, "art_35")
 
 
 def test_nearest_name_wins_for_two_refs_in_one_sentence():
     s = "Article 6(1) AI Act and the manufacturer under Article 2(30) MDR"
     out = link_references(s, in_scope_celexes=frozenset({_AI, _MDR}))
-    assert f"CELEX:{_AI}#art_6" in out
-    assert f"CELEX:{_MDR_CONS}#art_2" in out
+    assert _links_to(out, _AI, "art_6")
+    assert _links_to(out, _MDR_CONS, "art_2")
 
 
 def test_annex_and_recital_anchors():
     out = link_references("Annex III AI Act; Recital 81 AI Act",
                           in_scope_celexes=frozenset({_AI}))
-    assert f"CELEX:{_AI}#anx_III" in out
-    assert f"CELEX:{_AI}#rct_81" in out
+    assert _links_to(out, _AI, "anx_III")
+    assert _links_to(out, _AI, "rct_81")
 
 
 # ── the safety rule: never a wrong-regulation link ───────────────────────────
@@ -84,12 +91,12 @@ def test_ambiguous_reference_stays_bold_only():
 
 def test_scope_uniqueness_resolves_when_single_reg():
     out = link_references("This turns on Article 6.", in_scope_celexes=frozenset({_AI}))
-    assert f"CELEX:{_AI}#art_6" in out
+    assert _links_to(out, _AI, "art_6")
 
 
 def test_preceding_name_also_resolves():
     out = link_references("the AI Act's Article 6 test", in_scope_celexes=frozenset({_AI, _MDR}))
-    assert f"CELEX:{_AI}#art_6" in out
+    assert _links_to(out, _AI, "art_6")
 
 
 # ── amendment awareness ──────────────────────────────────────────────────────
@@ -105,7 +112,7 @@ def test_inserted_article_left_bold_only():
 def test_amended_article_still_links_to_base():
     # Article 25 is partly Omnibus-amended but exists in the base act → still links
     out = link_references("Article 25 AI Act", in_scope_celexes=frozenset({_AI}))
-    assert f"CELEX:{_AI}#art_25" in out
+    assert _links_to(out, _AI, "art_25")
 
 
 # ── heading / quote lines are never altered ──────────────────────────────────
