@@ -95,6 +95,40 @@ def test_scope_uniqueness_resolves_when_single_reg():
     assert _links_to(out, _AI, "art_6")
 
 
+# ── single-target default: the dropped-qualifier gap ─────────────────────────
+
+def test_single_target_default_links_unqualified_reference():
+    # all-AI-Act answer where the model dropped the "AI Act" qualifier; GDPR is
+    # also retrieved so scope-uniqueness cannot fire — the default must catch it
+    out = link_references(
+        "Providers must report under Article 55(1)(c) to the AI Office.",
+        in_scope_celexes=frozenset({_AI, _GDPR}),
+        default_celex=_AI,
+    )
+    assert _links_to(out, _AI, "art_55")
+
+
+def test_named_cross_reference_overrides_the_default():
+    # adjacency wins over the default: a named GDPR ref inside an AI-Act answer
+    out = link_references(
+        "deployers must comply with Article 9 GDPR on special categories",
+        in_scope_celexes=frozenset({_AI, _GDPR}),
+        default_celex=_AI,
+    )
+    assert _links_to(out, _GDPR_CONS, "art_9")
+    assert f"CELEX:{_AI}" not in out
+
+
+def test_no_default_leaves_unqualified_bold_only():
+    # without a single target, an unqualified ref across two regs stays bold-only
+    out = link_references(
+        "Providers must report under Article 55.",
+        in_scope_celexes=frozenset({_AI, _GDPR}),
+        default_celex=None,
+    )
+    assert out == "Providers must report under **Article 55**."
+
+
 def test_preceding_name_also_resolves():
     out = link_references("the AI Act's Article 6 test", in_scope_celexes=frozenset({_AI, _MDR}))
     assert _links_to(out, _AI, "art_6")

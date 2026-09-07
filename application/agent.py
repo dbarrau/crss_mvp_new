@@ -1133,10 +1133,21 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
             _c, _r = _p.get("celex"), _p.get("regulation")
             if _c and _r and _c not in _reg_names:
                 _reg_names[_c] = _r
+        # When the question targets a single regulation, unqualified references
+        # ("Article 53 …", after the model drops the "AI Act" qualifier) default to
+        # it — otherwise most citations in a single-reg answer never link and the
+        # "Provisions cited" footer lists only the few with a name nearby. A named
+        # cross-reference still wins via adjacency, so this never mislabels.
+        _default_celex = (
+            next(iter(target_celexes))
+            if target_celexes and len(target_celexes) == 1
+            else None
+        )
         full_answer = link_references(
             full_answer,
             in_scope_celexes=_in_scope,
             inserted_articles=_inserted,
+            default_celex=_default_celex,
             cited=_cited,
         )
         confidence = _verification.confidence

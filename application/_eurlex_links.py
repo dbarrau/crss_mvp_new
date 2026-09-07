@@ -114,14 +114,26 @@ def _anchor_from_ref(ref: str) -> str | None:
 
 
 def _resolve_celex(
-    line: str, start: int, end: int, in_scope: frozenset[str]
+    line: str,
+    start: int,
+    end: int,
+    in_scope: frozenset[str],
+    default_celex: str | None = None,
 ) -> str | None:
     """Recover the CELEX for a reference at ``line[start:end]``.
 
     Nearest regulation name *after* the reference wins ("Article 6 AI Act");
-    then nearest *before* ("the AI Act's Article 6"); then, if exactly one
-    regulation is in scope, that one.  ``None`` when still ambiguous — the caller
-    leaves the reference bold-only.
+    then nearest *before* ("the AI Act's Article 6"); then the answer's dominant
+    regulation (*default_celex*, set only when the question targets a single
+    regulation); then, if exactly one regulation is in scope, that one. ``None``
+    when still ambiguous — the caller leaves the reference bold-only.
+
+    The default is what closes the single-regulation gap: in an all-AI-Act answer
+    the model drops the "AI Act" qualifier after the first mentions ("Article 53
+    …", "Article 96 …"), leaving nothing for adjacency to catch, so those
+    references (and the whole "Provisions cited" footer) fell through. An
+    explicitly-named cross-reference still resolves by adjacency first, so a
+    "Article 9 GDPR" inside an AI-Act answer is never mislabelled.
     """
     after = line[end : end + _ADJACENCY_WINDOW].lower()
     best: str | None = None
@@ -142,6 +154,8 @@ def _resolve_celex(
     if best is not None:
         return best
 
+    if default_celex is not None:
+        return default_celex
     if len(in_scope) == 1:
         return next(iter(in_scope))
     return None
@@ -178,6 +192,7 @@ def link_references(
     *,
     in_scope_celexes: frozenset[str] = frozenset(),
     inserted_articles: frozenset[tuple[str, str]] = frozenset(),
+    default_celex: str | None = None,
     cited: dict[tuple[str, str], str] | None = None,
 ) -> str:
     """Bold every provision reference and link the *first* mention of each article.
@@ -205,7 +220,9 @@ def link_references(
         anchor = _anchor_from_ref(ref)
         if anchor is None:
             return f"**{ref}**"
-        celex = _resolve_celex(m.string, m.start(), m.end(), in_scope_celexes)
+        celex = _resolve_celex(
+            m.string, m.start(), m.end(), in_scope_celexes, default_celex
+        )
         if celex is None or celex not in _URL_CELEX:
             return f"**{ref}**"
         if anchor.startswith("art_") and (celex, anchor[4:]) in inserted_articles:
