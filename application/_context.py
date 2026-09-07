@@ -434,19 +434,36 @@ def _render_subtree(subtree: list[dict]) -> str:
     for node in subtree:
         depth = node.get("depth") or 0
         text = (node.get("text") or "").replace("\xa0", " ").strip()
-        if not text:
-            continue
-        indent = "  " * depth
-        # The root paragraph/article already carries its own number ("1.  …");
-        # descendant points/items store the bare body, so prefix the enumerator
-        # the way the source cites it: "(a)" / "(i)" for lettered/roman points,
-        # an em-dash for unnumbered "indent" bullets (whose number is only an
-        # ordinal, not part of the text).
+        kind = node.get("kind")
         number = (node.get("number") or "").strip()
+        indent = "  " * depth
+        if not text:
+            # A paragraph whose text lives entirely in its subparagraphs carries
+            # no body of its own. Emit its enumerator as a boundary header at the
+            # paragraph's OWN indent so the paragraph stays visible; otherwise its
+            # subparagraphs detach and read as belonging to the PREVIOUS paragraph
+            # — the model then mis-cited them (observed: MDR Article 33(5)'s
+            # "user-friendly and easily-searchable" subparagraph, rendered as a
+            # bare "(2)" under "(4)", attributed by the answer to Article 33(4)).
+            # _display._render_nodes already preserves this boundary for the
+            # verbatim "show me" view; this keeps the model-facing context in step.
+            if kind == "paragraph" and number:
+                lines.append(f"{indent}({number})")
+            continue
+        # The root article carries its own heading above; descendant points/items
+        # store the bare body, so prefix the enumerator the way the source cites
+        # it: "(a)" / "(i)" for lettered/roman points, an em-dash for unnumbered
+        # "indent" bullets (whose number is only an ordinal, not part of the
+        # text). A subparagraph is UNNUMBERED in the source (referenced in prose
+        # as "the first/second subparagraph", never a literal "(2)"): a fabricated
+        # "(n)" there collides with real paragraph numbering and is the misread
+        # that displaced sub-paragraph citations — so it gets no printed label.
         if depth == 0:
             label = ""
-        elif node.get("kind") == "indent":
+        elif kind == "indent":
             label = "— "
+        elif kind == "subparagraph":
+            label = ""
         elif number:
             label = f"({number}) "
         else:
