@@ -202,10 +202,19 @@ def test_amended_numeric_article_links_to_base_not_amender():
 
 
 def test_footer_amending_act_line_links_to_omnibus():
-    cited = {(_AI, "art_50"): "Article 50"}
+    cited = {(_AI, "art_50"): "Article 50"}          # answer cites the AI Act → Omnibus is relevant
     out = build_provisions_footer(cited, {_AI: "EU AI Act"}, amender_celexes={_OMNIBUS})
     assert "Amending act" in out
     assert f"uri=CELEX:{_OMNIBUS}&qid=" in out and "#art_1" in out
+
+
+def test_footer_drops_amender_that_amends_an_uncited_regulation():
+    # an MDR answer must NOT show "Amending act — Digital Omnibus on AI": the
+    # Omnibus amends the AI Act, which this answer does not cite.
+    cited = {(_MDR, "art_33"): "Article 33"}
+    out = build_provisions_footer(cited, {_MDR: "MDR 2017/745"}, amender_celexes={_OMNIBUS})
+    assert "Amending act" not in out
+    assert _OMNIBUS not in out
 
 
 def test_footer_skips_amender_already_listed_as_cited_regulation():

@@ -298,6 +298,7 @@ def build_provisions_footer(
     groups: dict[str, list[str]] = {}               # celex -> anchors, first-seen celex order
     for (celex, anchor) in cited:
         groups.setdefault(celex, []).append(anchor)
+    cited_bases = set(groups)                        # base regulations the answer actually cites
 
     lines = ["", "---", "", "**Provisions cited**", ""]
     for celex, anchors in groups.items():
@@ -310,6 +311,14 @@ def build_provisions_footer(
     for amender in dict.fromkeys(amender_celexes):  # de-dup, keep order
         if amender in groups:
             continue                                # already listed as a cited regulation
+        # An amending act belongs here only if the answer cites the base act it
+        # amends. Otherwise it is a cross-reference that got pulled into retrieval
+        # (e.g. an AI Act provision surfacing in an MDR answer dragged in the
+        # Digital Omnibus) — showing "Amending act — Digital Omnibus on AI" on an
+        # MDR answer is just noise.
+        amends = LEGISLATION.get(amender, {}).get("amends")
+        if amends and amends not in cited_bases:
+            continue
         url = provision_url(amender, AMENDER_ARTICLE_ANCHOR, qid=qid)
         lines.append(
             f"- **Amending act — {_reg_label(amender, reg_names)}** — "
