@@ -21,8 +21,11 @@ Verified against the live site and the cached EUR-Lex HTML:
   navigates to append one and drops the ``#anchor`` (landing at the top). A
   ``qid`` already present suppresses that redirect. It is only a millisecond
   timestamp and is not validated, so a fresh one is minted per URL.
-* Consolidated documents (``source_celex``) share the base act's anchor scheme,
-  so pointing at the consolidated CELEX shows current law at the same ``#anchor``.
+* Consolidated documents (``source_celex``) share the base act's anchor scheme
+  for articles and annexes, so pointing at the consolidated CELEX shows current
+  law at the same ``#anchor`` — BUT a consolidation drops the preamble, so a
+  recital (``#rct_43``) exists only in the original OJ text and must link to the
+  base CELEX, never the consolidation.
 """
 from __future__ import annotations
 
@@ -57,19 +60,27 @@ def is_known_celex(celex: str) -> bool:
     return celex in _DISPLAY_CELEX
 
 
-def display_celex(celex: str) -> str:
-    """The CELEX to put in a URL for *celex* — its consolidation when one exists."""
+def display_celex(celex: str, anchor: str | None = None) -> str:
+    """The CELEX to put in a URL for *celex*.
+
+    Articles and annexes use the official consolidation (current law) when the
+    catalog declares one; a **recital** always uses the base act, because a
+    consolidation drops the preamble — the recital exists only in the original OJ.
+    """
+    if anchor and anchor.startswith("rct_"):
+        return celex                                # recitals live only in the base OJ text
     return _DISPLAY_CELEX.get(celex, celex)
 
 
 def provision_url(celex: str, anchor: str, *, qid: int | None = None) -> str:
-    """Full EUR-Lex URL for *anchor* within *celex* (consolidated when available).
+    """Full EUR-Lex URL for *anchor* within *celex* (consolidated for articles /
+    annexes when available, base act for recitals).
 
     A fresh ``qid`` is minted unless one is supplied (pass a shared one to keep a
     single answer's links uniform)."""
     return _URL_TEMPLATE.format(
         view=_VIEW,
-        celex=display_celex(celex),
+        celex=display_celex(celex, anchor),
         qid=qid if qid is not None else int(time.time() * 1000),
         anchor=anchor,
     )

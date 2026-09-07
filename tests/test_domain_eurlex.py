@@ -36,6 +36,18 @@ def test_display_celex_prefers_consolidation_when_one_exists():
     assert eurlex.display_celex(AI_ACT_CELEX) == AI_ACT_CELEX     # AI Act has none → base
 
 
+def test_recitals_link_to_the_base_act_not_the_consolidation():
+    # a consolidation drops the preamble → a recital exists only in the base OJ
+    assert eurlex.display_celex(MDR_CELEX, "rct_43") == MDR_CELEX
+    assert eurlex.display_celex(MDR_CELEX, "art_33") == _MDR_CONS  # articles stay consolidated
+
+
+def test_provision_url_recital_uses_base_celex():
+    url = eurlex.provision_url(MDR_CELEX, "rct_43")
+    assert f"uri=CELEX:{MDR_CELEX}&qid=" in url and url.endswith("#rct_43")
+    assert _MDR_CONS not in url                                   # not the consolidation
+
+
 def test_is_known_celex():
     assert eurlex.is_known_celex(AI_ACT_CELEX)
     assert not eurlex.is_known_celex("99999R9999")
