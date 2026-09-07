@@ -9,7 +9,6 @@ bold-only). No Neo4j / LLM.
 from __future__ import annotations
 
 from application._eurlex_links import (
-    _anchor_from_ref,
     build_link_scope,
     build_provisions_footer,
     link_references,
@@ -26,17 +25,6 @@ _MDR = MDR_CELEX
 _GDPR = GDPR_CELEX
 _MDR_CONS = LEGISLATION[_MDR]["source_celex"]      # 02017R0745-...
 _GDPR_CONS = LEGISLATION[_GDPR]["source_celex"]
-
-
-# ── anchor derivation ────────────────────────────────────────────────────────
-
-def test_anchor_from_ref_shapes():
-    assert _anchor_from_ref("Article 25") == "art_25"
-    assert _anchor_from_ref("Article 25(2)") == "art_25"        # article is finest grain
-    assert _anchor_from_ref("Article 4a") == "art_4a"           # inserted-article suffix
-    assert _anchor_from_ref("Annex III") == "anx_III"
-    assert _anchor_from_ref("Recital 81") == "rct_81"
-    assert _anchor_from_ref("Chapter II") is None               # unrecognised → no anchor
 
 
 # ── CELEX resolution + link target ───────────────────────────────────────────

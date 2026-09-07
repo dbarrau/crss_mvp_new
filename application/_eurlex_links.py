@@ -45,25 +45,21 @@ from typing import Any, Iterable
 from application._config import _REG_NAME_TO_CELEX, _REG_PATTERNS
 from application._grounded_citation import _BOLD_REF_RE
 from domain.legislation_catalog import LEGISLATION
-
-# EUR-Lex's /TXT/ viewer loads its body client-side; on a URL with no ``qid`` it
-# navigates to append one and DROPS the ``#anchor`` in the process (landing at
-# the top of the document). A ``qid`` already present suppresses that redirect so
-# the anchor survives — it is only a millisecond timestamp and is not validated,
-# so we mint a fresh one per answer. The fragment must stay last.
-_EURLEX_TMPL = (
-    "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:{celex}&qid={qid}#{anchor}"
+from domain.eurlex import (
+    AMENDER_ARTICLE_ANCHOR,
+    anchor_for_ref,
+    display_from_anchor,
+    is_known_celex,
+    provision_url,
 )
+
+# All EUR-Lex URL construction — the viewer form, the qid, which CELEX to point
+# at, the anchor grammar — lives in ``domain.eurlex`` (single source of truth).
+# This module only parses answers and decides *what* to link.
 
 # A CELEX code (e.g. 32024R1689) — filters MDCG guidance keys ("MDCG_2020_3")
 # out of the name→CELEX table, since those have no EUR-Lex CELEX article anchors.
 _CELEX_RE = re.compile(r"^\d{5}[A-Z]\d{4}$")
-
-# base CELEX -> the CELEX to link to (its official consolidation when one exists,
-# else itself).  Consolidated documents share the base's #art_N anchor scheme.
-_URL_CELEX: dict[str, str] = {
-    celex: (meta.get("source_celex") or celex) for celex, meta in LEGISLATION.items()
-}
 
 # (name-pattern, base CELEX) pairs for adjacency resolution, longest pattern
 # first so a specific name ("medical device regulation") wins over a short one
@@ -91,29 +87,10 @@ _NAME_PATTERNS: list[tuple[str, str]] = _build_name_patterns()
 
 _ADJACENCY_WINDOW = 48  # chars scanned each side of a reference for a reg name
 
-_ANCHOR_ARTICLE = re.compile(r"Articles?\s+(\d+[a-z]?)", re.IGNORECASE)
-_ANCHOR_ANNEX = re.compile(r"Annex(?:es)?\s+([IVXLC]+)", re.IGNORECASE)
-_ANCHOR_RECITAL = re.compile(r"Recitals?\s+(\d+)", re.IGNORECASE)
-
 # Only a letter-suffixed article (75d) is *inserted* and absent from the base act;
 # a purely-numeric amended article (75) still lives in the base and must keep its
 # base link, so the suffix is required here.
 _ARTICLE_ID_NUM = re.compile(r"_art_(\d+[a-z]+)$")
-
-
-def _anchor_from_ref(ref: str) -> str | None:
-    """``"Article 25(2)"`` -> ``"art_25"``; ``"Annex III"`` -> ``"anx_III"``;
-    ``"Recital 81"`` -> ``"rct_81"``.  ``None`` for an unrecognised shape."""
-    m = _ANCHOR_ARTICLE.search(ref)
-    if m:
-        return f"art_{m.group(1).lower()}"
-    m = _ANCHOR_ANNEX.search(ref)
-    if m:
-        return f"anx_{m.group(1).upper()}"
-    m = _ANCHOR_RECITAL.search(ref)
-    if m:
-        return f"rct_{m.group(1)}"
-    return None
 
 
 def _resolve_celex(
@@ -162,13 +139,6 @@ def _resolve_celex(
     if len(in_scope) == 1:
         return next(iter(in_scope))
     return None
-
-
-# Amending acts put a base regulation's amendments in a single article (the
-# Digital Omnibus amends the AI Act entirely within its Article 1); an inserted
-# article has no anchor of its own anywhere, so it links there. Article-level is
-# the finest EUR-Lex anchor, so this is as precise as the amending act allows.
-_AMENDER_ARTICLE_ANCHOR = "art_1"
 
 
 def build_link_scope(
@@ -230,35 +200,31 @@ def link_references(
 
     def _sub(m: "re.Match[str]") -> str:
         ref = m.group(1)
-        anchor = _anchor_from_ref(ref)
+        anchor = anchor_for_ref(ref)
         if anchor is None:
             return f"**{ref}**"
         celex = _resolve_celex(
             m.string, m.start(), m.end(), in_scope_celexes, default_celex
         )
-        if celex is None or celex not in _URL_CELEX:
+        if celex is None or not is_known_celex(celex):
             return f"**{ref}**"
         # Inserted article (no base anchor) → link to the amending act instead.
         amender = inserted_articles.get((celex, anchor[4:])) if anchor.startswith("art_") else None
-        if amender and amender in _URL_CELEX:
-            key = (amender, _AMENDER_ARTICLE_ANCHOR)
+        if amender and is_known_celex(amender):
+            key = (amender, AMENDER_ARTICLE_ANCHOR)
             if key in linked_here:
                 return f"**{ref}**"
             linked_here.add(key)
-            url = _EURLEX_TMPL.format(
-                celex=_URL_CELEX[amender], qid=qid, anchor=_AMENDER_ARTICLE_ANCHOR
-            )
-            return f"[**{ref}**]({url})"
+            return f"[**{ref}**]({provision_url(amender, AMENDER_ARTICLE_ANCHOR, qid=qid)})"
         if amender:                                 # amender not linkable → bold-only
             return f"**{ref}**"
         key = (celex, anchor)
         if cited is not None and key not in cited:  # footer records every provision
-            cited[key] = _display_from_anchor(anchor)
+            cited[key] = display_from_anchor(anchor)
         if key in linked_here:
             return f"**{ref}**"                     # already linked this section — dedupe
         linked_here.add(key)
-        url = _EURLEX_TMPL.format(celex=_URL_CELEX[celex], qid=qid, anchor=anchor)
-        return f"[**{ref}**]({url})"
+        return f"[**{ref}**]({provision_url(celex, anchor, qid=qid)})"
 
     out: list[str] = []
     for line in text.split("\n"):
@@ -275,13 +241,6 @@ def link_references(
 
 
 # ── "Provisions cited" footer (the RA table of authorities) ──────────────────
-
-def _display_from_anchor(anchor: str) -> str:
-    """``"art_50"`` -> ``"Article 50"``, ``"anx_III"`` -> ``"Annex III"``,
-    ``"rct_81"`` -> ``"Recital 81"`` — the article-level label for the footer."""
-    kind, _, rest = anchor.partition("_")
-    return {"art": "Article", "anx": "Annex", "rct": "Recital"}.get(kind, kind) + f" {rest}"
-
 
 _ROMAN_VALUES = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100, "D": 500, "M": 1000}
 
@@ -342,18 +301,16 @@ def build_provisions_footer(
 
     lines = ["", "---", "", "**Provisions cited**", ""]
     for celex, anchors in groups.items():
-        items = []
-        for anchor in sorted(set(anchors), key=_footer_sort_key):
-            url = _EURLEX_TMPL.format(celex=_URL_CELEX.get(celex, celex), qid=qid, anchor=anchor)
-            items.append(f"[{_display_from_anchor(anchor)}]({url})")
+        items = [
+            f"[{display_from_anchor(a)}]({provision_url(celex, a, qid=qid)})"
+            for a in sorted(set(anchors), key=_footer_sort_key)
+        ]
         lines.append(f"- **{_reg_label(celex, reg_names)}** — " + " · ".join(items))
 
     for amender in dict.fromkeys(amender_celexes):  # de-dup, keep order
         if amender in groups:
             continue                                # already listed as a cited regulation
-        url = _EURLEX_TMPL.format(
-            celex=_URL_CELEX.get(amender, amender), qid=qid, anchor=_AMENDER_ARTICLE_ANCHOR
-        )
+        url = provision_url(amender, AMENDER_ARTICLE_ANCHOR, qid=qid)
         lines.append(
             f"- **Amending act — {_reg_label(amender, reg_names)}** — "
             f"[Article 1]({url}) *(amendments applied above)*"
