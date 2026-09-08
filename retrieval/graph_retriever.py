@@ -98,6 +98,7 @@ class GraphRetriever:
         # Whole-graph lookup caches (fetched once, on first use).
         self._reference_index_cache: dict[str, tuple[str, str]] | None = None
         self._term_index_cache: dict[str, str] | None = None
+        self._inserted_articles_cache: dict[tuple[str, str], str] | None = None
 
     # ------------------------------------------------------------------
     # Encoding
@@ -414,6 +415,21 @@ class GraphRetriever:
                 self._driver, self._db,
             )
         return self._term_index_cache
+
+    def get_inserted_articles_index(self) -> dict[tuple[str, str], str]:
+        """Return ``{(celex, article_number): amender_celex}`` for every article
+        an amending act inserted (e.g. AI Act ``75d`` → Digital Omnibus).
+
+        Fetched once from Neo4j and cached for the retriever's lifetime. The
+        citation layer uses it to route an inserted article's link to the amending
+        act (the base act has no anchor for it), independent of whether that
+        article was among the retrieved provisions for a given question.
+        """
+        if self._inserted_articles_cache is None:
+            self._inserted_articles_cache = _traversal.load_inserted_articles_index(
+                self._driver, self._db,
+            )
+        return self._inserted_articles_cache
 
     # ------------------------------------------------------------------
     # DefinedTerm lookups

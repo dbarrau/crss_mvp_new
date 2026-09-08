@@ -123,6 +123,11 @@ from application._grounded_citation import (             # noqa: F401
     resolve_pointers,
     _bold_references,
 )
+from application._eurlex_links import (                  # noqa: F401
+    build_link_scope,
+    link_references,
+    build_provisions_footer,
+)
 from application._grounded_answer import (               # noqa: F401
     GroundedAnswer,
     RenderResult,
@@ -134,6 +139,7 @@ from application._postprocessing import (                # noqa: F401
     _validate_legal_backbone,
     _postprocess_answer,
     _build_amendment_provenance,
+    amendment_amender_celexes,
 )
 from application._confidence import (                    # noqa: F401
     compute_confidence,
@@ -1116,9 +1122,44 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
         )
         full_answer = _verification.answer
         # Bold provision references deterministically — the model writes them as
-        # plain prose and will not bold them itself. Runs after verification so
-        # faithfulness matched against clean text; skips verbatim quote lines.
-        full_answer = _bold_references(full_answer)
+        # plain prose and will not bold them itself — and, where the regulation
+        # resolves unambiguously, wrap each in a clickable EUR-Lex link to the
+        # actual provision. Runs after verification so faithfulness matched
+        # against clean text; skips verbatim quote lines. A reference whose CELEX
+        # can't be resolved stays bold-only (never a wrong-regulation link).
+        _in_scope, _inserted = build_link_scope(provisions, target_celexes)
+        # The authoritative inserted-article set (e.g. AI Act 75a-d → Omnibus) comes
+        # from the graph, not from what this query happened to retrieve — otherwise
+        # an inserted article cited but not retrieved with a subtree links to a base
+        # anchor that does not exist. Merge it over the subtree-derived fallback.
+        try:
+            _inserted = {**retriever.get_inserted_articles_index(), **_inserted}
+        except Exception:
+            logger.debug("Inserted-articles index unavailable; using subtree fallback.",
+                         exc_info=True)
+        _cited: dict[tuple[str, str], str] = {}     # (celex, anchor) -> "Article 50"
+        _reg_names: dict[str, str] = {}
+        for _p in provisions or []:
+            _c, _r = _p.get("celex"), _p.get("regulation")
+            if _c and _r and _c not in _reg_names:
+                _reg_names[_c] = _r
+        # When the question targets a single regulation, unqualified references
+        # ("Article 53 …", after the model drops the "AI Act" qualifier) default to
+        # it — otherwise most citations in a single-reg answer never link and the
+        # "Provisions cited" footer lists only the few with a name nearby. A named
+        # cross-reference still wins via adjacency, so this never mislabels.
+        _default_celex = (
+            next(iter(target_celexes))
+            if target_celexes and len(target_celexes) == 1
+            else None
+        )
+        full_answer = link_references(
+            full_answer,
+            in_scope_celexes=_in_scope,
+            inserted_articles=_inserted,
+            default_celex=_default_celex,
+            cited=_cited,
+        )
         confidence = _verification.confidence
         yield {
             "type": "confidence",
@@ -1139,11 +1180,21 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
         # Deterministic amendment pedigree: name the later act that modified each
         # amended provision the answer cites, from the AMENDS-edge metadata —
         # traceability the model repeats only unreliably (see #2).
-        _provenance = _build_amendment_provenance(
-            final_answer, retrieval_result.get("amendments") or []
-        )
+        _amendments = retrieval_result.get("amendments") or []
+        _provenance = _build_amendment_provenance(final_answer, _amendments)
         if _provenance:
             final_answer += _provenance
+        # "Provisions cited" appendix — one EUR-Lex link per distinct provision the
+        # answer relies on, grouped by regulation, plus an "Amending act" line for
+        # each amending act whose change is cited (its provisions live in the base
+        # act now, so the reader traces the change to the instrument). Built after
+        # provenance so the pedigree scan sees only the body, not the footer's refs.
+        _amenders = set(_inserted.values()) | amendment_amender_celexes(
+            final_answer, _amendments
+        )
+        _footer = build_provisions_footer(_cited, _reg_names, amender_celexes=_amenders)
+        if _footer:
+            final_answer += "\n" + _footer
         yield {"type": "done", "answer": final_answer, "audit_trace": audit_trace}
 
         # --- Eval capture: finalise the pre-audit draft through the IDENTICAL
