@@ -1399,16 +1399,16 @@
   "label": "AI Act application dates — Article 113 timeline for high-risk and prohibitions",
   "tests": "temporal correctness; exact dates; Article 113",
   "question": "We operate a high-risk AI system listed in Annex III of the AI Act. Which parts of the AI Act already apply to us today, and from what exact dates do the high-risk obligations and the Article 5 prohibitions apply? Please give the specific application dates.",
-  "judge_notes": "The anchor is Article 113: the Regulation applies generally from 2 August 2026 (this covers the Annex III high-risk obligations); Chapters I and II — including the Article 5 prohibitions — apply from 2 February 2025 (already in force); the GPAI/governance chapters from 2 August 2025; Article 6(1) embedded-product high-risk route from 2 August 2027. Wrong or invented dates are fatal for compliance use. A caveat that pending legislative amendments could shift dates is acceptable but the corpus dates above are the required baseline.",
+  "judge_notes": "The anchor is Article 113 AS AMENDED by the Digital Omnibus (Regulation (EU) 2026/1744), which the corpus applies as current law. Chapters I and II — including the core Article 5 prohibitions (e.g. workplace/education emotion recognition, social scoring) — apply from 2 February 2025 (already in force); the Omnibus-inserted Article 5(1) points (ba)/(bb) and Article 5(1a)/(1b) apply from 2 December 2026. The GPAI/governance chapters apply from 2 August 2025. The Regulation applies generally from 2 August 2026. High-risk obligations (Chapter III, Sections 1-3) apply from 2 December 2027 for Annex III / Article 6(2) systems (the decisive date for this Annex III operator) and from 2 August 2028 for Annex I / Article 6(1) embedded-product systems. NOTE: the pre-Omnibus dates were 2 August 2026 (Annex III) and 2 August 2027 (Annex I); an answer giving those OLD dates for high-risk is now WRONG. Wrong or invented dates are fatal for compliance use; the amended dates above are current law and are the required baseline. A caveat that further legislative amendments could shift dates is acceptable.",
   "answer_key": {
    "must_cite": [
     "Article 113"
    ],
    "must_state": [
     [
-     "2 August 2026",
-     "2026-08-02",
-     "August 2, 2026"
+     "2 December 2027",
+     "2027-12-02",
+     "December 2, 2027"
     ],
     [
      "2 February 2025",
