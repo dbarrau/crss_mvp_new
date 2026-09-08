@@ -70,6 +70,16 @@ _LEGISLATION_PATTERNS: dict[str, list[str]] = {
         "notified body fee", "notified body fees", "notified body quotation",
         "conformity assessment quotation",
     ],
+    # The Digital Omnibus is a first-time amending act, so `_build_core_mappings`
+    # would otherwise register only its bare number "2026/1744" — leaving the name
+    # forms undetectable. Without this, "Show me Article 1 of the Digital Omnibus"
+    # failed the verbatim-display gate (0 regs detected), fell through to ordinary
+    # RAG, and returned only the top-similarity chunk (point 1 of Article 1's 43
+    # amendment points) instead of the whole article.
+    "Digital Omnibus on AI": [
+        "2026/1744", "regulation (eu) 2026/1744",
+        "digital omnibus", "omnibus on ai", "ai omnibus",
+    ],
 }
 
 # Validate that every curated legislation pattern key exists in the catalog.

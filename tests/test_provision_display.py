@@ -31,6 +31,17 @@ def test_detector_needs_exactly_one_provision_and_one_reg():
     assert wants_verbatim_display("Show me Article 6") is None                        # no reg named
 
 
+def test_detector_fires_on_the_digital_omnibus_by_name():
+    # The Omnibus is a first-time amending act; without a curated name pattern only
+    # its bare number was detectable, so "Show me Article 1 of the Digital Omnibus"
+    # failed the gate and fell through to RAG, returning only point (1) of Article 1's
+    # 43 amendment points instead of the whole article.
+    expected = ("Article 1", "32026R1744")
+    assert wants_verbatim_display("Show me Article 1 of the Digital Omnibus on AI") == expected
+    assert wants_verbatim_display("Show me Article 1 of the Digital Omnibus") == expected
+    assert wants_verbatim_display("Show me Article 1 of Regulation (EU) 2026/1744") == expected
+
+
 # ── render helpers ───────────────────────────────────────────────────────────
 
 class _Retriever:
