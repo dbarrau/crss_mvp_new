@@ -780,14 +780,16 @@ _GDPR_CROSS_REG_EDGES: list[LegalReasoningEdge] = [
         target_refs=("Article 9",),
         cross_celex="32016R0679",
         rationale=(
-            "AI Act Article 10(5) permits processing of special categories of "
+            "AI Act Article 4a(1) permits processing of special categories of "
             "personal data (including health data and biometric data) for bias "
             "monitoring, detection, and correction in high-risk AI systems, to the "
-            "extent strictly necessary. This permission under AI Act does NOT create "
-            "a GDPR lawful basis — the controller must still establish a derogation "
-            "under GDPR Article 9(2), most likely Article 9(2)(g) (substantial "
-            "public interest) or Article 9(2)(j) (research purposes subject to "
-            "Article 89 safeguards)."
+            "extent strictly necessary (inserted by the Digital Omnibus, Regulation "
+            "(EU) 2026/1744; it superseded the former Article 10(5), which was "
+            "deleted). This permission under the AI Act does NOT create a GDPR "
+            "lawful basis — the controller must still establish a derogation under "
+            "GDPR Article 9(2), most likely Article 9(2)(g) (substantial public "
+            "interest) or Article 9(2)(j) (research purposes subject to Article 89 "
+            "safeguards)."
         ),
     ),
     LegalReasoningEdge(
