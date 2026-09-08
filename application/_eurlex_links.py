@@ -112,21 +112,40 @@ _NAME_PATTERNS: list[tuple[str, str]] = _build_name_patterns()
 _ADJACENCY_WINDOW = 48  # chars scanned each side of a reference for a reg name
 
 # A regulation name only disambiguates a reference when it is BOUND to it as part
-# of the same citation phrase ("Article 6 of the AI Act", "the GDPR's Article 6",
-# "MDR Article 10") — never when a content word sits between them ("under the MDR,
-# *satisfying* Article 6(1)"). The gap between the name and the reference may hold
-# only citation scaffolding; any other word means the name describes something
+# of the SAME citation phrase ("Article 6 of the AI Act", "the GDPR's Article 6",
+# "MDR Article 10"). The gap between the name and the reference may hold only that
+# phrase's own scaffolding; any other word means the name belongs to something
 # else in the sentence, so the reference is left unresolved (→ bold-only).
+#
+# The set is deliberately MINIMAL. Coordinators and clause words are excluded on
+# purpose: "and" joins two *separate* items, so "Article 32 GDPR and Annex I …
+# MDR" must NOT bind the Annex I to the GDPR (observed wrong link); likewise a
+# content word ("under the MDR, *satisfying* Article 6") must break the bind. Only
+# scaffolding that appears *inside* a single citation ("of the", "'s", "under",
+# "Regulation (EU) No", act-type words) belongs here.
 _CONNECTOR_WORDS = frozenset(
-    {"of", "the", "a", "an", "under", "in", "to", "as", "per", "pursuant",
-     "regulation", "eu", "ec", "no", "council", "european", "directive", "and", "s"}
+    {"of", "the", "under", "s",
+     "regulation", "eu", "ec", "no", "council", "european", "directive"}
 )
 
 
 def _is_bound(gap: str) -> bool:
     """True when *gap* (text between a reg name and a reference) is only citation
-    scaffolding — so the name genuinely labels the reference."""
+    scaffolding — so the name genuinely labels the reference. Used for a name
+    *after* the reference ("Article 6 of the AI Act", "Article 6 under the GDPR")."""
     return all(t in _CONNECTOR_WORDS for t in re.findall(r"[a-z]+", gap.lower()))
+
+
+# A name *before* the reference labels it only when it directly abuts it —
+# adjacency ("MDR Article 10") or possessive ("the AI Act's Article 6"). Anything
+# else, punctuation included, means the name belongs to an earlier item: a comma
+# is a list separator ("Article 32 GDPR, Annex I …"), not an apposition we can
+# trust, so it must NOT bind. Stricter than _is_bound on purpose.
+_BEFORE_BIND_RE = re.compile(r"^\s*(?:['’]s)?\s*$")
+
+
+def _before_bound(gap: str) -> bool:
+    return bool(_BEFORE_BIND_RE.match(gap))
 
 # Only a letter-suffixed article (75d) is *inserted* and absent from the base act;
 # a purely-numeric amended article (75) still lives in the base and must keep its
@@ -173,7 +192,7 @@ def _resolve_celex(
     best_end = -1
     for pat, celex in _NAME_PATTERNS:
         i = before_l.rfind(pat)
-        if i != -1 and (i + len(pat)) > best_end and _is_bound(before[i + len(pat):]):
+        if i != -1 and (i + len(pat)) > best_end and _before_bound(before[i + len(pat):]):
             best_end, best = i + len(pat), celex
     if best is not None:
         return best

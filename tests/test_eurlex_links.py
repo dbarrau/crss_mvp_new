@@ -8,6 +8,8 @@ bold-only). No Neo4j / LLM.
 """
 from __future__ import annotations
 
+import re
+
 from application._eurlex_links import (
     build_link_scope,
     build_provisions_footer,
@@ -165,6 +167,28 @@ def test_bound_mdr_name_still_resolves():
     # the fix must not over-reject: a genuinely bound MDR reference still links
     out = link_references("see Article 10 of the MDR", in_scope_celexes=frozenset({_AI, _MDR}))
     assert _links_to(out, _MDR_CONS, "art_10")
+
+
+def test_coordinator_and_does_not_bind_a_name_across_items():
+    # "Article 32 GDPR and Annex I … MDR": the GDPR name must NOT bind across the
+    # coordinator "and" to the Annex I (GDPR has no Annex I). Article 32 links to
+    # the GDPR; the Annex I is left bold-only, never linked to the GDPR.
+    out = link_references(
+        "aligning with Article 32 GDPR and Annex I, Section 14.2 MDR",
+        in_scope_celexes=frozenset({_MDR, _GDPR}),
+    )
+    assert _links_to(out, _GDPR_CONS, "art_32")                      # correct
+    assert not re.search(rf"CELEX:{_GDPR_CONS}[^)]*#anx_I", out)     # never GDPR Annex I
+
+
+def test_comma_list_before_does_not_bind_a_name():
+    # "Article 32 GDPR, Annex I MDR" — for Annex I the trailing MDR binds it
+    # correctly; but even without a trailing name a comma-separated preceding name
+    # must not bind: "the GDPR, Annex I" leaves Annex I bold-only, never GDPR.
+    out = link_references("the GDPR, Annex I governs this",
+                          in_scope_celexes=frozenset({_MDR, _GDPR}))
+    assert not re.search(rf"CELEX:{_GDPR_CONS}[^)]*#anx_I", out)
+    assert "](http" not in out                                       # bold-only
 
 
 # ── amendment awareness ──────────────────────────────────────────────────────
