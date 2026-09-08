@@ -189,14 +189,30 @@ def test_amended_article_not_scoped_to_amending_act(ref_index_omnibus):
         assert refs == [], f"amended article false-flagged: {answer!r} -> {refs}"
 
 
-def test_direct_miscitation_to_amending_act_still_flagged(ref_index_omnibus):
-    """The exemption is narrow — only amendment *connectives* are excused. A
-    direct 'Article 113 of Regulation (EU) 2026/1744' claims the Omnibus itself
-    contains an Article 113 (it stops at 4): a genuine mis-scoping that must
-    still flag, so the guard is not blindly weakened."""
-    answer = "This is governed by Article 113 of Regulation (EU) 2026/1744."
+def test_real_amended_article_kept_next_to_its_amender_any_phrasing(ref_index_omnibus):
+    """A real AI Act article written next to the act that amends it must be KEPT,
+    regardless of the connective phrasing — the phantom guard checks *existence*,
+    and Article 113 exists (in the AI Act, which the Omnibus amends). Stripping it
+    was the reported false positive: because Article 113 is THE dates article, the
+    model constantly writes it beside "Regulation (EU) 2026/1744", and the older
+    'only excuse the exact words as-amended-by' rule dropped the correct provision
+    (and its date) on every other phrasing. The structural rule — admit the base
+    act an adjacent amender amends — covers them all."""
+    for answer in (
+        "This is governed by Article 113 of Regulation (EU) 2026/1744.",
+        "Under Regulation (EU) 2026/1744, Article 113 sets the date to 2 December 2027.",
+        "The amended Article 113 of Regulation (EU) 2026/1744 applies from 2 August 2028.",
+    ):
+        _, refs = strip_phantom_citations(answer, ref_index_omnibus)
+        assert refs == [], f"real amended article false-flagged: {answer!r} -> {refs}"
+
+
+def test_genuine_phantom_next_to_amender_still_flagged(ref_index_omnibus):
+    """The excuse opens no hole: a number that exists in NEITHER the amender nor
+    the base it amends is still a phantom next to the Omnibus."""
+    answer = "This is governed by Article 999 of Regulation (EU) 2026/1744."
     _, refs = strip_phantom_citations(answer, ref_index_omnibus)
-    assert refs == ["article 113"]
+    assert refs == ["article 999"]
 
 
 def test_nonexistent_article_with_amendment_connective_still_flagged(ref_index_omnibus):
