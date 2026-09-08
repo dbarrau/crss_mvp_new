@@ -42,7 +42,6 @@ import re
 import time
 from typing import Any, Iterable
 
-from application._config import _REG_NAME_TO_CELEX, _REG_PATTERNS
 from application._grounded_citation import _BOLD_REF_RE
 from domain.legislation_catalog import LEGISLATION
 from domain.eurlex import (
@@ -61,18 +60,43 @@ from domain.eurlex import (
 # out of the name→CELEX table, since those have no EUR-Lex CELEX article anchors.
 _CELEX_RE = re.compile(r"^\d{5}[A-Z]\d{4}$")
 
+# High-precision regulation IDENTIFIERS for link disambiguation — deliberately
+# NOT application._config._REG_PATTERNS. Those patterns include subject-matter
+# concepts ("class iib", "ai system", "personal data", "data subject") tuned for
+# retrieval-SCOPE detection ("does this answer mention the MDR at all?"). Reused
+# for per-reference disambiguation they are catastrophic: an "Article 6" near the
+# words "Class IIb" or "personal data" would link to the MDR/GDPR regardless of
+# which act the article actually belongs to (observed: AI-Act Article 6(1)(b)
+# linked to MDR Article 6 because the sentence said "under the MDR"). Only an
+# actual act identifier — acronym, official short name, or number — may say which
+# regulation a bare "Article N" belongs to. Numbers are added from the catalog.
+_LINK_ALIASES: dict[str, list[str]] = {
+    "32024R1689": ["ai act", "eu ai act", "artificial intelligence act",
+                   "artificial intelligence regulation"],
+    "32017R0745": ["mdr", "medical device regulation", "medical devices regulation"],
+    "32017R0746": ["ivdr", "in vitro diagnostic regulation",
+                   "in-vitro diagnostic regulation"],
+    "32016R0679": ["gdpr", "general data protection regulation"],
+    "32026R1744": ["digital omnibus", "ai omnibus", "omnibus regulation", "omnibus"],
+    "32026R0977": ["common implementing regulation"],
+}
+
+
 # (name-pattern, base CELEX) pairs for adjacency resolution, longest pattern
 # first so a specific name ("medical device regulation") wins over a short one
 # ("mdr") and short/noisy patterns do not shadow it.
 def _build_name_patterns() -> list[tuple[str, str]]:
     pairs: list[tuple[str, str]] = []
-    for name, celex in _REG_NAME_TO_CELEX.items():
-        if not _CELEX_RE.match(celex):
+    for celex, aliases in _LINK_ALIASES.items():
+        if not is_known_celex(celex):
             continue
-        for pat in _REG_PATTERNS.get(name, [name]):
+        for pat in aliases:
             p = pat.strip().lower()
-            if len(p) >= 3:                       # skip ultra-generic 1-2 char noise
+            if len(p) >= 3:
                 pairs.append((p, celex))
+        number = (LEGISLATION.get(celex, {}).get("number") or "").strip().lower()
+        if number:                                # e.g. "2024/1689"
+            pairs.append((number, celex))
     # de-dup, keep first (a pattern maps to one reg), longest first
     seen: set[str] = set()
     uniq: list[tuple[str, str]] = []
@@ -86,6 +110,23 @@ def _build_name_patterns() -> list[tuple[str, str]]:
 _NAME_PATTERNS: list[tuple[str, str]] = _build_name_patterns()
 
 _ADJACENCY_WINDOW = 48  # chars scanned each side of a reference for a reg name
+
+# A regulation name only disambiguates a reference when it is BOUND to it as part
+# of the same citation phrase ("Article 6 of the AI Act", "the GDPR's Article 6",
+# "MDR Article 10") — never when a content word sits between them ("under the MDR,
+# *satisfying* Article 6(1)"). The gap between the name and the reference may hold
+# only citation scaffolding; any other word means the name describes something
+# else in the sentence, so the reference is left unresolved (→ bold-only).
+_CONNECTOR_WORDS = frozenset(
+    {"of", "the", "a", "an", "under", "in", "to", "as", "per", "pursuant",
+     "regulation", "eu", "ec", "no", "council", "european", "directive", "and", "s"}
+)
+
+
+def _is_bound(gap: str) -> bool:
+    """True when *gap* (text between a reg name and a reference) is only citation
+    scaffolding — so the name genuinely labels the reference."""
+    return all(t in _CONNECTOR_WORDS for t in re.findall(r"[a-z]+", gap.lower()))
 
 # Only a letter-suffixed article (75d) is *inserted* and absent from the base act;
 # a purely-numeric amended article (75) still lives in the base and must keep its
@@ -115,21 +156,24 @@ def _resolve_celex(
     explicitly-named cross-reference still resolves by adjacency first, so a
     "Article 9 GDPR" inside an AI-Act answer is never mislabelled.
     """
-    after = line[end : end + _ADJACENCY_WINDOW].lower()
+    after = line[end : end + _ADJACENCY_WINDOW]
+    after_l = after.lower()
     best: str | None = None
     best_pos = len(after) + 1
     for pat, celex in _NAME_PATTERNS:
-        i = after.find(pat)
-        if i != -1 and i < best_pos:
+        i = after_l.find(pat)
+        # bound only if nothing but scaffolding sits between the ref and the name
+        if i != -1 and i < best_pos and _is_bound(after[:i]):
             best_pos, best = i, celex
     if best is not None:
         return best
 
-    before = line[max(0, start - _ADJACENCY_WINDOW) : start].lower()
+    before = line[max(0, start - _ADJACENCY_WINDOW) : start]
+    before_l = before.lower()
     best_end = -1
     for pat, celex in _NAME_PATTERNS:
-        i = before.rfind(pat)
-        if i != -1 and (i + len(pat)) > best_end:
+        i = before_l.rfind(pat)
+        if i != -1 and (i + len(pat)) > best_end and _is_bound(before[i + len(pat):]):
             best_end, best = i + len(pat), celex
     if best is not None:
         return best

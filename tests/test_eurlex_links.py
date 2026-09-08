@@ -122,6 +122,51 @@ def test_preceding_name_also_resolves():
     assert _links_to(out, _AI, "art_6")
 
 
+def test_bound_name_after_ref_with_of_the_resolves():
+    # "Article 6(1) of the AI Act" — the name is bound to the reference (only
+    # citation scaffolding between them), so it links to the AI Act even though
+    # the MDR is also in scope.
+    out = link_references(
+        "high-risk under Article 6(1) of the AI Act",
+        in_scope_celexes=frozenset({_AI, _MDR, _GDPR}),
+    )
+    assert _links_to(out, _AI, "art_6")
+
+
+# ── never a WRONG-regulation link (unbound / concept names must not hijack) ───
+
+def test_ambient_other_regulation_name_does_not_hijack_the_link():
+    # An AI-Act Article 6 reference in a sentence that merely MENTIONS the MDR
+    # ("under the MDR, satisfying Article 6(1)(b)") must never link to MDR
+    # Article 6 (which is 'Distance sales'). A content word sits between the name
+    # and the reference, so the name is not bound to it → bold-only, never wrong.
+    out = link_references(
+        "conformity assessment under the MDR, satisfying Article 6(1)(b)",
+        in_scope_celexes=frozenset({_AI, _MDR, _GDPR}),
+    )
+    assert f"CELEX:{_MDR_CONS}" not in out          # NOT linked to the MDR
+    assert "](http" not in out                       # bold-only, no link emitted
+    assert "**Article 6(1)**" in out
+
+
+def test_subject_matter_concept_never_disambiguates_a_reference():
+    # "Class IIb" is a subject-matter concept, not an act identifier; it must not
+    # pull an Article into the MDR (the old retrieval-scope patterns did exactly
+    # this). No bound act name → bold-only.
+    out = link_references(
+        "A Class IIb device must comply with Article 6.",
+        in_scope_celexes=frozenset({_AI, _MDR}),
+    )
+    assert f"CELEX:{_MDR_CONS}" not in out
+    assert "](http" not in out
+
+
+def test_bound_mdr_name_still_resolves():
+    # the fix must not over-reject: a genuinely bound MDR reference still links
+    out = link_references("see Article 10 of the MDR", in_scope_celexes=frozenset({_AI, _MDR}))
+    assert _links_to(out, _MDR_CONS, "art_10")
+
+
 # ── amendment awareness ──────────────────────────────────────────────────────
 
 _OMNIBUS = "32026R1744"
