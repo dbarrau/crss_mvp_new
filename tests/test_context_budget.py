@@ -92,6 +92,20 @@ def test_normal_provision_untouched_by_block_cap():
     assert "truncated" not in block
 
 
+def test_named_provision_capped_on_analytical_route():
+    """A direct-ref provision renders its full subtree only on the display route.
+    On an analytical route (allow_subject_render=False) it is context, not the
+    user's subject, so it stays bounded by the block cap — closing the bloat where
+    AI Act Article 5 (20 KB) / MDR Article 10 (15 KB) rendered full and crowded the
+    decisive backbone out of the budget."""
+    giant = _giant(5, _direct_ref_match=True)
+    subject = _format_one_provision(1, giant, "OBLIGATION", allow_subject_render=True)
+    analytical = _format_one_provision(1, giant, "OBLIGATION", allow_subject_render=False)
+    assert len(subject) > _PROVISION_BLOCK_CAP          # display route: full render
+    assert len(analytical) <= _PROVISION_BLOCK_CAP + 100  # analytical: capped
+    assert "truncated to context budget" in analytical
+
+
 # ── budget trim ─────────────────────────────────────────────────────────────
 
 def test_small_bag_over_budget_is_now_trimmed():

@@ -79,6 +79,12 @@ _CONTEXT_CHAR_BUDGET = _int_env("CRSS_CONTEXT_CHAR_BUDGET", 140_000)
 _PROVISION_BLOCK_CAP = 9_000
 _BLOCK_TRUNCATION_MARK = "\n  […provision block truncated to context budget…]"
 
+# Routes on which the user asked to SEE a provision ("show me / what does Annex III
+# list?"), so its full uncapped HAS_PART subtree is the point of the answer. On any
+# other (analytical) route a named or force-loaded provision is context and stays
+# bounded by _PROVISION_BLOCK_CAP. Consumed via _format_context's allow_subject_render.
+_SUBJECT_RENDER_ROUTES = frozenset({"provision_lookup"})
+
 # Guidance documents are detected from the catalog (MDCG + AI Office + any future
 # family) so a new guidance publisher is recognised automatically — a hardcoded
 # "MDCG_"-only list silently mislabels new families as [LEGISLATION] and leaks
@@ -292,7 +298,10 @@ def _community_summary_header(provisions: list[dict]) -> str:
 
 
 def _trim_provisions_to_budget(
-    provisions: list[dict], budget: int = _CONTEXT_CHAR_BUDGET
+    provisions: list[dict],
+    budget: int = _CONTEXT_CHAR_BUDGET,
+    *,
+    allow_subject_render: bool = True,
 ) -> list[dict]:
     """Drop the lowest-priority tail so the rendered context fits ``budget`` chars.
 
@@ -325,7 +334,10 @@ def _trim_provisions_to_budget(
     if not provisions:
         return provisions
     sizes = [
-        len(_format_one_provision(i, p, (p.get("provision_role") or "").strip().upper()))
+        len(_format_one_provision(
+            i, p, (p.get("provision_role") or "").strip().upper(),
+            allow_subject_render=allow_subject_render,
+        ))
         for i, p in enumerate(provisions, 1)
     ]
     # Stable two-tier order: backbone (direct-ref) first, everything else after,
@@ -347,7 +359,7 @@ def _trim_provisions_to_budget(
     return [p for i, p in enumerate(provisions) if i in keep]
 
 
-def _format_context(provisions: list[dict]) -> str:
+def _format_context(provisions: list[dict], *, allow_subject_render: bool = True) -> str:
     """Turn retriever results into a structured text block for the LLM.
 
     Provisions are grouped into ordered semantic buckets by ``provision_role``
@@ -355,6 +367,10 @@ def _format_context(provisions: list[dict]) -> str:
     sections; per-provision numbering is contiguous across buckets so that
     answer-side citations like ``[3]`` remain stable. Provisions without a
     recognised role fall into the OTHER bucket at the end.
+
+    ``allow_subject_render`` is forwarded to :func:`_format_one_provision`: the
+    uncapped full-subtree render fires only on the display route, not on an
+    analytical one. See that function.
     """
     # 1) Render each provision to its own block (header + body + paragraphs +
     #    cross-references) with a contiguous citation index. We also stamp the
@@ -366,7 +382,10 @@ def _format_context(provisions: list[dict]) -> str:
             (label for r, label in _ROLE_BUCKET_ORDER if r == role),
             _OTHER_BUCKET_LABEL,
         )
-        blocks.append((bucket_label, _format_one_provision(i, p, role)))
+        blocks.append((
+            bucket_label,
+            _format_one_provision(i, p, role, allow_subject_render=allow_subject_render),
+        ))
 
     # 2) Group blocks by bucket while preserving the canonical bucket order
     #    and the original within-bucket ordering (which is the retriever's
@@ -515,11 +534,23 @@ def _format_subject_provision(header: str, subtree: list[dict], p: dict) -> str:
     return section
 
 
-def _format_one_provision(index: int, p: dict, role: str) -> str:
+def _format_one_provision(
+    index: int, p: dict, role: str, *, allow_subject_render: bool = True
+) -> str:
     """Render a single retrieved provision block.
 
     Extracted from ``_format_context`` so the bucket-grouping wrapper can
     iterate without duplicating the per-provision rendering logic.
+
+    ``allow_subject_render`` gates the full, uncapped HAS_PART subtree render
+    reserved for the provision the user asked to *see*. It is True only on the
+    display route (``provision_lookup`` — "what does Annex III list?"). On an
+    analytical route (legal_qualification, cross_regulation, …) the user wants
+    reasoning, not a dump: a named or force-loaded provision is context and stays
+    bounded by ``_PROVISION_BLOCK_CAP``. Without this, an explicit-ref or
+    safety-net provision that is NOT a ``_system_anchor`` (e.g. AI Act Article 5
+    at 20 KB, MDR Article 10 at 15 KB) rendered full and crowded the decisive
+    backbone out of the budget.
     """
     regulation = p.get("regulation", "")
     celex = p.get("celex", "")
@@ -582,7 +613,8 @@ def _format_one_provision(index: int, p: dict, role: str) -> str:
     # provision the user actually named (a force-loaded Annex I subtree
     # starved the role channel out of the budget; v6 eval, HQ_003).
     is_user_subject = bool(
-        p.get("_direct_ref_match")
+        allow_subject_render
+        and p.get("_direct_ref_match")
         and not p.get("_pointer_expansion")
         and not p.get("_system_anchor")
     )

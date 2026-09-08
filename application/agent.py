@@ -110,6 +110,7 @@ from application._context import (                       # noqa: F401
     _format_context,
     _trim_provisions_to_budget,
     _CONTEXT_CHAR_BUDGET,
+    _SUBJECT_RENDER_ROUTES,
     _community_summary_header,
 )
 from application._prompts import (                       # noqa: F401
@@ -775,6 +776,12 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
 
         _sep = "\n\n---\n\n"
         _budgeted: list[dict] = provisions
+        # The full uncapped subtree render is reserved for the display route
+        # ("show me X"); on analytical routes every provision stays bounded by the
+        # block cap so a large named/force-loaded article (AI Act Article 5, MDR
+        # Article 10) cannot crowd the decisive backbone out of the budget. Bound
+        # unconditionally (the audit-pass render below also reads it).
+        _allow_subject = route.id in _SUBJECT_RENDER_ROUTES
         if provisions:
             if route.id == "community_summary_search":
                 header = _community_summary_header(provisions)
@@ -794,14 +801,18 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                 context_parts
             )
             _prov_budget = max(0, _CONTEXT_CHAR_BUDGET - _reserved)
-            _budgeted = _trim_provisions_to_budget(provisions, _prov_budget)
+            _budgeted = _trim_provisions_to_budget(
+                provisions, _prov_budget, allow_subject_render=_allow_subject
+            )
             if len(_budgeted) < len(provisions):
                 logger.info(
                     "Context budget: kept %d of %d provisions (%d chars reserved "
                     "for definitions/overview; %d budgeted for provisions)",
                     len(_budgeted), len(provisions), _reserved, _prov_budget,
                 )
-            context_parts.append(_format_context(_budgeted))
+            context_parts.append(
+                _format_context(_budgeted, allow_subject_render=_allow_subject)
+            )
         context = _sep.join(context_parts)
 
         logger.info(
@@ -1013,7 +1024,7 @@ def ask_stream(question: str, retriever, k: int = 20, history: list[dict[str, st
                     audit_context = (
                         context
                         + "\n\n--- ADDITIONAL PROVISIONS (audit pass) ---\n\n"
-                        + _format_context(new_provs)
+                        + _format_context(new_provs, allow_subject_render=_allow_subject)
                     )
                     yield {
                         "type": "step",
