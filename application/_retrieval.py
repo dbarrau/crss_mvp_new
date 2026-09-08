@@ -275,9 +275,18 @@ def _has_lookup_target_coverage(
     provisions: list[dict],
     target: _ProvisionLookupTarget,
 ) -> bool:
-    """Return whether a curated target is present in the retrieved provisions."""
+    """Return whether a curated target is present in the retrieved provisions.
+
+    Compares on the format-insensitive key: a curated target is in bare-paren form
+    ("Article 3(14)") while a retrieved provision's ``article_ref`` is qualified
+    ("Article 3, point (14)"), so a raw ``!=`` reports a target we DID retrieve as
+    missing — firing a redundant recovery pass and printing a misleading
+    "missing qualification targets: Article 3(14)" trace. Mirrors the
+    ``missing_refs`` check, which already normalizes for the same reason.
+    """
+    target_key = _normalize_ref_key(target.ref)
     for provision in provisions:
-        if provision.get("article_ref") != target.ref:
+        if _normalize_ref_key(provision.get("article_ref") or "") != target_key:
             continue
         if target.celexes and provision.get("celex") not in target.celexes:
             continue

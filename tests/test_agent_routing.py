@@ -601,6 +601,30 @@ def test_role_driven_route_requires_defines_anchor_for_role_celex():
     ) == []
 
 
+def test_qualification_target_coverage_is_format_insensitive():
+    """A curated target in bare-paren form ("Article 3(14)") must count as covered
+    by a retrieved provision in qualified form ("Article 3, point (14)"), or the
+    sufficiency check false-flags a point we DID retrieve as missing — firing a
+    redundant recovery pass and printing "missing qualification targets:
+    Article 3(14)" even though the safety-component definition is in context."""
+    from application._retrieval import _has_lookup_target_coverage
+    from application._routing import _ProvisionLookupTarget
+    from domain.legislation_catalog import AI_ACT_CELEX
+
+    target = _ProvisionLookupTarget(ref="Article 3(14)", celexes=frozenset({AI_ACT_CELEX}))
+    retrieved = [{"article_ref": "Article 3, point (14)", "celex": AI_ACT_CELEX}]
+    assert _has_lookup_target_coverage(retrieved, target) is True
+
+    # A different point (3(40) = biometric categorisation) must NOT satisfy it,
+    # nor the right point under the wrong regulation.
+    assert _has_lookup_target_coverage(
+        [{"article_ref": "Article 3, point (40)", "celex": AI_ACT_CELEX}], target
+    ) is False
+    assert _has_lookup_target_coverage(
+        [{"article_ref": "Article 3, point (14)", "celex": "32017R0745"}], target
+    ) is False
+
+
 def test_evaluate_route_sufficiency_passes_with_multi_community_coverage():
     route = _select_question_route(
         "How do AI Act and MDR deployer obligations compare?",
