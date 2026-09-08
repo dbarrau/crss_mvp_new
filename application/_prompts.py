@@ -687,7 +687,7 @@ def _build_route_answer_guidance(
         "citations.\n"
         "  Step 5 — CROSS-REGULATORY CHAIN: where two regulations are in "
         "scope, surface the cross-reg dependencies explicitly (e.g. MDR "
-        "Article 10 PMS → GDPR Article 9; AI Act Article 10(5) bias testing → "
+        "Article 10 PMS → GDPR Article 9; AI Act Article 4a bias testing → "
         "GDPR Article 9(2) derogation). Do NOT present obligations from "
         "different regulations in disconnected parallel tables; tie them "
         "together with the dependency statement.\n"
