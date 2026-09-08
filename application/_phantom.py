@@ -64,6 +64,7 @@ import logging
 import re
 
 from application._faithfulness import _base_ref_family
+from domain.legislation_catalog import LEGISLATION
 
 logger = logging.getLogger(__name__)
 
@@ -324,9 +325,22 @@ def _line_phantoms(
         )
         if celex is None:
             continue  # adjacent out-of-corpus act — cannot adjudicate
-        if _kind(family) not in kinds_by_celex.get(celex, set()):
-            continue  # act's families of this kind not ingested — silent
-        if family not in families_by_celex[celex]:
+        # An amending act cited next to a mention is not that mention's home: it
+        # amends a BASE act, where a high-numbered article it merely touches
+        # actually lives. So when the nearest act is an amender, admit the base act
+        # it amends as an in-scope candidate too — otherwise a real amended
+        # provision (AI Act Article 113 written next to "Regulation (EU) 2026/1744",
+        # its date-amending act) is stripped as "absent from the Omnibus", which
+        # has only 4 articles. This is the structural form of the _is_amender_alias
+        # heuristic — independent of the connective phrasing ("as amended by" vs
+        # "under Regulation …, Article 113").
+        scope = {celex}
+        amends = LEGISLATION.get(celex, {}).get("amends")
+        if amends:
+            scope.add(amends)
+        if not any(_kind(family) in kinds_by_celex.get(c, set()) for c in scope):
+            continue  # no scoped act has families of this kind — silent
+        if all(family not in families_by_celex.get(c, set()) for c in scope):
             phantoms.append(family)
     return phantoms
 
