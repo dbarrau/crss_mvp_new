@@ -152,6 +152,26 @@ def _before_bound(gap: str) -> bool:
 # base link, so the suffix is required here.
 _ARTICLE_ID_NUM = re.compile(r"_art_(\d+[a-z]+)$")
 
+# link_references detects references the model may have ALREADY wrapped in bold —
+# the system prompt orders it to bold EVERY reference — which the shared
+# _BOLD_REF_RE (guarded with (?<!\*)…(?!\*) for _bold_references' idempotency)
+# cannot see, so a "**Article 3(3)**" got neither a link nor a footer entry. This
+# link-local pattern matches a reference whether plain or **bolded**, and also
+# captures a sub-point the model left OUTSIDE the bold ("**Article 5(1)**(c)"),
+# so that stray "(c)" does not sit between the ref and a following act name and
+# break adjacency resolution. Single-letter sub-points ("(c)", "(h)") are included
+# (the shared regex captured only digit-led "(1)"/"(1a)").
+_SUBPOINT = r"(?:\s*\((?:\d+[a-z]?|[a-z])\))*"
+_LINK_REF_RE = re.compile(
+    r"(?<!\[)\*{0,2}"                                     # optional model bold; not inside a [..](..) link
+    r"\b(Articles?\s+\d+[a-z]?" + _SUBPOINT +
+    r"(?:\s*[–—-]\s*\(\d+[a-z]?\))?"
+    r"|Annex(?:es)?\s+[IVXLC]+(?:\s*\(\d+\))?"
+    r"|Recitals?\s+\d+)"
+    r"\*{0,2}"                                            # optional closing bold
+    r"(" + _SUBPOINT + r")"                               # sub-points left outside the bold
+)
+
 
 def _resolve_celex(
     line: str,
@@ -262,8 +282,10 @@ def link_references(
     linked_here: set[tuple[str, str]] = set()       # (celex, anchor) linked in this section
 
     def _sub(m: "re.Match[str]") -> str:
-        ref = m.group(1)
-        anchor = anchor_for_ref(ref)
+        core = m.group(1)
+        trailing = (m.group(2) or "").replace(" ", "")   # "(c)" the model left outside the bold
+        ref = re.sub(r"\s+", " ", core).strip() + trailing
+        anchor = anchor_for_ref(core)
         if anchor is None:
             return f"**{ref}**"
         celex = _resolve_celex(
@@ -299,7 +321,7 @@ def link_references(
         if stripped.startswith(">"):
             out.append(line)                        # verbatim quote — untouched
             continue
-        out.append(_BOLD_REF_RE.sub(_sub, line))
+        out.append(_LINK_REF_RE.sub(_sub, line))
     return "\n".join(out)
 
 

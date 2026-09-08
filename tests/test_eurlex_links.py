@@ -124,6 +124,48 @@ def test_preceding_name_also_resolves():
     assert _links_to(out, _AI, "art_6")
 
 
+def test_model_prebolded_reference_is_still_linked_and_footered():
+    # The system prompt tells the model to bold EVERY reference. A model-bolded
+    # "**Article 10** AI Act" was invisible to the old (?<!\*)…(?!\*) regex, so it
+    # got neither a link nor a footer entry. It must now resolve like a plain ref.
+    cited: dict = {}
+    out = link_references(
+        "compliance with **Article 10** AI Act",
+        in_scope_celexes=frozenset({_AI, _MDR, _GDPR}),
+        cited=cited,
+    )
+    assert _links_to(out, _AI, "art_10")
+    assert (_AI, "art_10") in cited                      # footer records it
+
+
+def test_subpoint_left_outside_the_bold_folds_in_and_resolves():
+    # The model writes "**Article 5(1)**(c) GDPR" — the stray "(c)" sat between the
+    # ref and "GDPR" and broke adjacency, dropping both the link and the footer entry.
+    cited: dict = {}
+    out = link_references(
+        "the minimisation principle (**Article 5(1)**(c) GDPR)",
+        in_scope_celexes=frozenset({_AI, _MDR, _GDPR}),
+        cited=cited,
+    )
+    assert _links_to(out, _GDPR_CONS, "art_5")           # link URL uses the consolidated celex
+    assert "**Article 5(1)(c)**" in out                  # sub-point folded into the bold
+    assert (_GDPR, "art_5") in cited                      # footer keys on the base celex
+
+
+def test_unqualified_prebolded_reference_stays_bold_only():
+    # A bolded but act-unqualified "Article 3(3)" in a 3-regulation answer must NOT
+    # be guessed onto one act (Article 3 exists in all three) — safe failure, and it
+    # is correctly absent from the footer.
+    cited: dict = {}
+    out = link_references(
+        "the provider (**Article 3(3)**).",
+        in_scope_celexes=frozenset({_AI, _MDR, _GDPR}),
+        cited=cited,
+    )
+    assert "](http" not in out                           # bold-only, no guessed link
+    assert cited == {}
+
+
 def test_bound_name_after_ref_with_of_the_resolves():
     # "Article 6(1) of the AI Act" — the name is bound to the reference (only
     # citation scaffolding between them), so it links to the AI Act even though
@@ -148,7 +190,7 @@ def test_ambient_other_regulation_name_does_not_hijack_the_link():
     )
     assert f"CELEX:{_MDR_CONS}" not in out          # NOT linked to the MDR
     assert "](http" not in out                       # bold-only, no link emitted
-    assert "**Article 6(1)**" in out
+    assert "**Article 6(1)(b)**" in out              # full ref bolded, sub-point folded in
 
 
 def test_subject_matter_concept_never_disambiguates_a_reference():
