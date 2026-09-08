@@ -45,6 +45,7 @@ from application._faithfulness import (
 )
 from application._confidence import compute_confidence
 from application._phantom import strip_phantom_citations
+from application._superseded import strip_superseded_citations
 from application._attribution import normalize_guidance_attribution
 from application._date_currency import correct_superseded_dates
 from application._postprocessing import _strip_foreign_law_citations
@@ -260,6 +261,23 @@ def verify_answer(
                 "Phantom-provision guard: removed line(s) citing nonexistent "
                 "provision(s): %s",
                 ", ".join(_phantom_refs[:10]),
+            )
+
+    # Superseded-provision guard: strip citations to a provision a later
+    # amendment DELETED, which the model states from pre-amendment training memory
+    # (e.g. AI Act "Article 10(5)", deleted by the Digital Omnibus and relocated to
+    # Article 4a(1)). The phantom guard is article-grained and lets a deleted
+    # *paragraph* through; faithfulness only checks quotes. Deletions are recorded
+    # at consolidation time (domain/ontology/superseded_provisions), never inferred
+    # from node absence, so a parser gap never false-flags. Disable with
+    # CRSS_SUPERSEDED_GUARD=0.
+    if os.environ.get("CRSS_SUPERSEDED_GUARD", "1") != "0":
+        answer, _superseded_notes = strip_superseded_citations(answer)
+        if _superseded_notes:
+            logger.info(
+                "Superseded-provision guard: removed line(s) citing deleted "
+                "provision(s): %s",
+                "; ".join(_superseded_notes[:5]),
             )
 
     # Guidance-attribution guard: correct fabricated guidance-document titles
