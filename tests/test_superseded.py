@@ -29,7 +29,8 @@ def test_ai_act_scoped_citation_is_flagged_and_relocated():
     assert len(notes) == 1
     assert "SUPERSEDED PROVISION FLAG" in out
     assert "Article 10(5)" in out and "was deleted by the Digital Omnibus" in out
-    assert "see **Article 4a(1)**" in out
+    # 4a(1)'s role is named explicitly (relocated content), not a vague "see"
+    assert "its content now lives in **Article 4a(1)**" in out
     assert "point (9)" in out
     # the offending line is removed from the body
     assert "may process special categories" not in out.split("FLAG")[1].split("\n\n", 1)[-1]

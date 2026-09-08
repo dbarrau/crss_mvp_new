@@ -124,7 +124,10 @@ def _format(rec: dict) -> str:
             f"(Regulation (EU) {_num(rec['amender_celex'])}, Article 1 point "
             f"({rec['point_num']}))")
     if rec.get("see_ref"):
-        return base + f"; see **{rec['see_ref']}**."
+        # name 4a(1)'s role explicitly: it is the RELOCATED content, not where the
+        # deletion is recorded (that is the point cited above) — a reader must not
+        # read "see 4a(1)" as "the deletion lives there".
+        return base + f"; its content now lives in **{rec['see_ref']}**."
     return base + " with no direct replacement."
 
 
