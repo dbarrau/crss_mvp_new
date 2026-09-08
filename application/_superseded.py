@@ -31,16 +31,45 @@ import re
 from domain.legislation_catalog import LEGISLATION
 from domain.ontology.superseded_provisions import SUPERSEDED
 
-# Only article-with-paragraph deletions are actively detected here — the form the
-# model actually mis-cites ("Article 10(5)"). Annex-point deletions are recorded
-# but not scanned (their citation grammar is rarely mis-stated).
+# Detection is driven by the RECORD, not a hardcoded shape: every deleted ref is
+# reduced to a citable "family" (an article-paragraph "article 10(5)", or a
+# deleted annex point "annex i section a point 1") and matched against the same
+# families parsed out of the answer. So any provision the consolidation records as
+# deleted is guarded, whatever its shape — the guard stays coherent with the
+# Omnibus as the record grows.
+_ART_PARA = r"Article\s+(\d+[a-z]?)\((\d+[a-z]?)\)"
+_ANNEX_POINT = r"Annex\s+([IVXLC]+)\s*,?\s*Section\s+([A-Za-z])\s*,?\s*point\s+(\d+[a-z]?)"
+_ART_PARA_RE = re.compile(_ART_PARA, re.IGNORECASE)
+_ANNEX_POINT_RE = re.compile(_ANNEX_POINT, re.IGNORECASE)
+
+
+def _ref_family(ref: str) -> str | None:
+    """Reduce a citation (recorded ref OR answer mention) to a comparable family."""
+    m = _ART_PARA_RE.match(ref) or _ART_PARA_RE.search(ref)
+    if m and ref.strip().lower().startswith("article"):
+        return f"article {m.group(1).lower()}({m.group(2).lower()})"
+    m = _ANNEX_POINT_RE.search(ref)
+    if m and ref.strip().lower().startswith("annex"):
+        return f"annex {m.group(1).lower()} section {m.group(2).lower()} point {m.group(3).lower()}"
+    return None
+
+
 _SUPERSEDED_BY_ACT: dict[str, dict[str, dict]] = {}
-_ART_PARA_FAMILY = re.compile(r"^Article\s+(\d+[a-z]?)\((\d+[a-z]?)\)$", re.IGNORECASE)
 for _rec in SUPERSEDED:
-    _m = _ART_PARA_FAMILY.match(_rec.get("deleted_ref", ""))
-    if _m:
-        _fam = f"article {_m.group(1).lower()}({_m.group(2).lower()})"
+    _fam = _ref_family(_rec.get("deleted_ref", ""))
+    if _fam:
         _SUPERSEDED_BY_ACT.setdefault(_rec["celex"], {})[_fam] = _rec
+
+
+def _mentions(line: str):
+    """Yield ``(start, family)`` for every article-paragraph and annex-point
+    citation in *line* — the two citable shapes a deletion can take."""
+    for m in _ART_PARA_RE.finditer(line):
+        yield m.start(), f"article {m.group(1).lower()}({m.group(2).lower()})"
+    for m in _ANNEX_POINT_RE.finditer(line):
+        yield (m.start(),
+               f"annex {m.group(1).lower()} section {m.group(2).lower()} "
+               f"point {m.group(3).lower()}")
 
 # Act identifiers for scoping a bare "Article N(p)" to its regulation — acronym /
 # number, never subject-matter concepts (see the link-disambiguation lesson). ALL
@@ -62,7 +91,6 @@ for _base in _ACT_ALIASES:
     if _src:
         _CELEX_TO_BASE[_src] = _base
 
-_MENTION_RE = re.compile(r"Article\s+(\d+[a-z]?)\((\d+[a-z]?)\)", re.IGNORECASE)
 _LINK_CELEX_RE = re.compile(r"CELEX:([0-9A-Z]{5}[A-Z][0-9]{4}(?:-\d+)?)")
 
 
@@ -138,9 +166,8 @@ def strip_superseded_citations(answer: str) -> tuple[str, list[str]]:
         fams: list[tuple[str, str | None]] = []
         if _scannable(ln):
             refs = _act_references(ln)
-            for m in _MENTION_RE.finditer(ln):
-                fam = f"article {m.group(1).lower()}({m.group(2).lower()})"
-                act = _resolve_act(ln, m.start(), refs)
+            for start, fam in _mentions(ln):
+                act = _resolve_act(ln, start, refs)
                 fams.append((fam, act))
                 if act:
                     fam_acts.setdefault(fam, set()).add(act)

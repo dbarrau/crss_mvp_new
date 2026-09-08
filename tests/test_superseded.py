@@ -97,6 +97,21 @@ def test_blockquote_footer_is_never_stripped():
     assert notes == [] and out == ans
 
 
+def test_deleted_annex_point_is_detected_when_scoped_to_ai_act():
+    # coverage is driven by the record, not just article-paragraphs: a deleted
+    # Annex point (Annex I, Section A, point 1) is caught too, scoped to the AI Act
+    ans = "The harmonisation act is listed in Annex I, Section A, point 1 of the AI Act."
+    out, notes = strip_superseded_citations(ans)
+    assert len(notes) == 1
+    assert "Annex I, Section A, point 1" in out and "was deleted" in out
+
+
+def test_deleted_annex_point_not_flagged_for_another_act():
+    ans = "See Annex I, Section A, point 1 of the MDR."
+    out, notes = strip_superseded_citations(ans)
+    assert notes == [] and out == ans
+
+
 def test_computed_record_matches_the_generated_module():
     # the committed module must equal a fresh computation (no drift)
     from consolidation.superseded import compute_superseded, record_dicts
