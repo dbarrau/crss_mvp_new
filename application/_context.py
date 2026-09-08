@@ -308,19 +308,43 @@ def _trim_provisions_to_budget(
     inflating time-to-first-token and burying decisive provisions (v6 eval,
     HQ_008).  With ``_PROVISION_BLOCK_CAP`` bounding each block, a narrow bag
     that fits is returned unchanged anyway, so the fast path bought nothing.
+
+    **Priority tiers.** The curated/explicit backbone (``_direct_ref_match``: the
+    provisions the router force-loads because they are decisive — the named
+    provisions plus the qualification anchors like Article 3(14), Article 6,
+    Annex I, the GDPR Article 4/9/35 backbone) must not be evicted from context by
+    a lower-priority vector hit or a 0.0-score graph-expansion node. So the budget
+    is filled with the backbone tier FIRST (in arrival order), then the rest.
+    Observed failure this closes: on a heavy 3-regulation question the arrival-order
+    trim kept score-0.0 Omnibus amendment-instruction nodes and dropped the
+    force-loaded GDPR Article 35 / 24 / 28 and the safety-component definition
+    (Article 3(14)). The budget stays a hard cap on time-to-first-token: if the
+    backbone tier alone overflows, its own tail still yields — but only to the
+    budget, never to unpinned filler.
     """
     if not provisions:
         return provisions
-    kept: list[dict] = []
+    sizes = [
+        len(_format_one_provision(i, p, (p.get("provision_role") or "").strip().upper()))
+        for i, p in enumerate(provisions, 1)
+    ]
+    # Stable two-tier order: backbone (direct-ref) first, everything else after,
+    # each keeping arrival order. The keep DECISION walks this order; the returned
+    # list preserves the ORIGINAL order so the rendered context reads unchanged.
+    order = sorted(
+        range(len(provisions)),
+        key=lambda i: 0 if provisions[i].get("_direct_ref_match") else 1,
+    )
+    keep: set[int] = set()
     total = 0
-    for i, p in enumerate(provisions, 1):
-        role = (p.get("provision_role") or "").strip().upper()
-        size = len(_format_one_provision(i, p, role))
-        if kept and total + size > budget:
+    for i in order:
+        if keep and total + sizes[i] > budget:
             break
-        kept.append(p)
-        total += size
-    return kept
+        keep.add(i)
+        total += sizes[i]
+    if not keep:                                   # budget smaller than the first block
+        keep.add(order[0])
+    return [p for i, p in enumerate(provisions) if i in keep]
 
 
 def _format_context(provisions: list[dict]) -> str:

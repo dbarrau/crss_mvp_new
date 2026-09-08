@@ -125,3 +125,35 @@ def test_smaller_budget_keeps_no_more_provisions_monotonic():
     one = len(_format_one_provision(1, bag[0], "OBLIGATION"))
     counts = [len(_trim_provisions_to_budget(bag, budget=one * m)) for m in (2, 5, 10, 20)]
     assert counts == sorted(counts)  # non-decreasing as budget grows
+
+
+# ── backbone priority (direct-ref never evicted by unpinned) ─────────────────
+
+def test_backbone_kept_over_unpinned_when_budget_is_tight():
+    """A force-loaded backbone provision (``_direct_ref_match``) must survive over a
+    lower-priority unpinned provision even when the unpinned one arrives FIRST and
+    the budget fits only one block. Regression: the arrival-order trim kept a
+    score-0.0 Omnibus node and dropped the force-loaded safety-component definition."""
+    unpinned = _make_provision(1)                       # arrives first, not backbone
+    backbone = _make_provision(2, _direct_ref_match=True)  # arrives second, decisive
+    one = len(_format_one_provision(1, unpinned, "OBLIGATION"))
+    kept = _trim_provisions_to_budget([unpinned, backbone], budget=one + 10)
+    refs = [p["article_ref"] for p in kept]
+    assert refs == ["Article 2"]                        # backbone survived, unpinned dropped
+
+
+def test_output_preserves_original_order_across_tiers():
+    a = _make_provision(1)                               # unpinned
+    b = _make_provision(2, _direct_ref_match=True)       # backbone
+    c = _make_provision(3)                               # unpinned
+    kept = _trim_provisions_to_budget([a, b, c], budget=10_000_000)  # all fit
+    assert [p["article_ref"] for p in kept] == ["Article 1", "Article 2", "Article 3"]
+
+
+def test_backbone_tier_still_bounded_by_budget():
+    """Prioritising the backbone must not defeat the hard cap: an all-backbone bag
+    that overflows is still trimmed (time-to-first-token stays bounded)."""
+    bag = [_giant(i, _direct_ref_match=True) for i in range(1, 11)]
+    one = len(_format_one_provision(1, bag[0], "OBLIGATION"))
+    kept = _trim_provisions_to_budget(bag, budget=one * 3)
+    assert 1 <= len(kept) < len(bag)
