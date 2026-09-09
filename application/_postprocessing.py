@@ -256,19 +256,49 @@ _FOREIGN_REG_AFTER_RE = re.compile(
 _FOREIGN_REG_BEFORE_RE = re.compile(rf"(?:{_FOREIGN_REG})\s+$", re.I)
 
 
-def _amendment_target_in_answer(target_ref: str, answer: str) -> bool:
-    """True when the answer cites ``target_ref`` **as an AI Act provision**.
+# The inline-link layer (applied BEFORE the amendment box, agent.py) stamps each
+# body citation with its regulation's CELEX in the EUR-Lex URL — the consolidated
+# form for MDR/IVDR/GDPR (e.g. GDPR's 02016R0679). That URL is the regulation
+# disambiguation already computed for a bare "Article 6", so the amendment box
+# reuses it rather than re-guessing: an AI-Act amendment must not attach to a
+# GDPR/MDR "Article 6" that merely shares the number (observed: HQ_024 — the GDPR
+# Article 6 lawful-basis citation pulled the AI Act's 6(1a) safety-component
+# amendment). Maps every link CELEX (own + source_celex) back to its catalog id.
+_LINK_CELEX_TO_CATALOG: dict[str, str] = {}
+for _lc, _lm in LEGISLATION.items():
+    _LINK_CELEX_TO_CATALOG[_lc] = _lc
+    _src = _lm.get("source_celex")
+    if _src:
+        # source_celex carries a consolidation-date suffix ("02016R0679-20160504");
+        # the URL may show it with or without the date, so map both forms.
+        _LINK_CELEX_TO_CATALOG[_src] = _lc
+        _LINK_CELEX_TO_CATALOG[_src.split("-", 1)[0]] = _lc
+
+# The CELEX in the markdown link that immediately follows a citation
+# ("[Article 6(1)](https://…CELEX:02016R0679-…)"), allowing the paragraph
+# parenthetical to sit between the ref and the "](".
+_LINK_CELEX_AFTER_REF_RE = re.compile(r"\]\([^)]*?CELEX:([0-9A-Za-z]+)", re.I)
+
+
+def _amendment_target_in_answer(
+    target_ref: str, answer: str, base_celex: str | None = None
+) -> bool:
+    """True when the answer cites ``target_ref`` **as a provision of the amended
+    (base) act** — the AI Act for the Digital Omnibus.
 
     Whole-reference match: 'Article 6' matches 'Article 6' and 'Article 6(1a)'
     but not 'Article 60' / 'Article 63'; 'Annex I' matches 'Annex I' not 'Annex III'.
-    An occurrence explicitly scoped to another regulation ('Article 2(30) of the
-    MDR', 'MDR Annex I') is skipped — otherwise an AI Act amendment is wrongly
-    attributed to an MDR/GDPR citation (MDR/IVDR/GDPR each have their own
-    'Article 2' and 'Annex I'). Returns True on the first AI-Act (unscoped)
-    occurrence.
+    An occurrence is skipped when it is not the base act's provision:
+    - explicitly scoped to another regulation ('Article 2(30) of the MDR');
+    - or (when ``base_celex`` is given) the link layer already resolved it to a
+      *different* regulation via the citation's EUR-Lex URL CELEX. Otherwise an
+      AI Act amendment is wrongly attributed to an MDR/GDPR citation sharing the
+      same article number (MDR/IVDR/GDPR each have their own 'Article 6'/'Annex I').
+    Returns True on the first base-act occurrence. ``base_celex=None`` preserves
+    the pre-link-aware behaviour (skip only explicit foreign scoping).
     """
     # Strip markdown emphasis so a bolded '**Article 2(30)** of the MDR' does not
-    # hide the trailing regulation qualifier behind '**'.
+    # hide the trailing regulation qualifier behind '**' (the '](' link survives).
     clean = re.sub(r"[*_`]", "", answer)
     parts = target_ref.split(None, 1)
     if len(parts) == 2:
@@ -276,13 +306,30 @@ def _amendment_target_in_answer(target_ref: str, answer: str) -> bool:
         pattern = rf"\b{re.escape(keyword)}\s+{re.escape(num)}(?![0-9A-Za-z])"
     else:
         pattern = rf"\b{re.escape(target_ref)}\b"
+    # Two-pass: a positive link to the base act wins immediately. Otherwise a
+    # bare/unlinked mention counts as the base act's by default — UNLESS the answer
+    # links this same ref number to a *different* regulation and never to the base
+    # act, in which case the number belongs to that other regulation here and even
+    # the bare prose mentions are not the base act's (HQ_024: GDPR "Article 6",
+    # bare in prose plus two GDPR-linked, never linked to the AI Act).
+    linked_other = False
+    bare_or_base = False
     for m in re.finditer(pattern, clean, re.I):
-        after = clean[m.end():m.end() + 40]
+        after = clean[m.end():m.end() + 200]
         before = clean[max(0, m.start() - 12):m.start()]
-        if _FOREIGN_REG_AFTER_RE.match(after) or _FOREIGN_REG_BEFORE_RE.search(before):
-            continue  # scoped to MDR/IVDR/GDPR — not an AI Act citation
-        return True
-    return False
+        if _FOREIGN_REG_AFTER_RE.match(after[:40]) or _FOREIGN_REG_BEFORE_RE.search(before):
+            continue  # scoped to MDR/IVDR/GDPR — not the base act's citation
+        if base_celex is not None:
+            lm = _LINK_CELEX_AFTER_REF_RE.search(after[:150])
+            if lm:
+                cat = _LINK_CELEX_TO_CATALOG.get(lm.group(1).split("-", 1)[0])
+                if cat == base_celex:
+                    return True  # link resolves this ref to the amended act
+                if cat is not None:
+                    linked_other = True  # link resolves it to a different act
+                    continue
+        bare_or_base = True
+    return bare_or_base and not (base_celex is not None and linked_other)
 
 
 def _amendment_change_summary(amendment: dict, target_ref: str) -> str:
@@ -357,6 +404,15 @@ _ACT_TO_CELEX = {
 }
 
 
+def _amendment_base_celex(act: str | None) -> str | None:
+    """The base act an amending act modifies (the AI Act for the Digital Omnibus),
+    resolved via the catalog ``amends`` field. Used to scope an amendment's
+    target-ref match to the regulation it actually amends. ``None`` when the act
+    is unknown or not an amender — the matcher then falls back to foreign-scope
+    skipping only."""
+    return LEGISLATION.get(_ACT_TO_CELEX.get(act or "", ""), {}).get("amends")
+
+
 def amendment_amender_celexes(answer: str, amendments: list[dict]) -> set[str]:
     """CELEXes of the amending acts the *answer* actually relies on — the same
     answer-scoping as :func:`_build_amendment_provenance`, so the "Provisions
@@ -364,7 +420,9 @@ def amendment_amender_celexes(answer: str, amendments: list[dict]) -> set[str]:
     out: set[str] = set()
     for a in amendments or []:
         target, act = a.get("_amends_target_ref"), a.get("amending_act")
-        if not (target and act) or not _amendment_target_in_answer(target, answer):
+        if not (target and act) or not _amendment_target_in_answer(
+            target, answer, _amendment_base_celex(act)
+        ):
             continue
         celex = _ACT_TO_CELEX.get(act)
         if celex:
@@ -393,7 +451,7 @@ def _build_amendment_provenance(answer: str, amendments: list[dict]) -> str:
         act = a.get("amending_act")
         if not (target and act) or (target, act) in seen:
             continue
-        if not _amendment_target_in_answer(target, answer):
+        if not _amendment_target_in_answer(target, answer, _amendment_base_celex(act)):
             continue
         seen.add((target, act))
         label = _act_display(act)
