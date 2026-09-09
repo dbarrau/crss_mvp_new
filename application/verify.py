@@ -48,6 +48,7 @@ from application._phantom import strip_phantom_citations
 from application._superseded import strip_superseded_citations
 from application._attribution import normalize_guidance_attribution
 from application._date_currency import correct_superseded_dates
+from application._fria_scope import flag_fria_overapplication
 from application._postprocessing import _strip_foreign_law_citations
 
 logger = logging.getLogger(__name__)
@@ -314,6 +315,19 @@ def verify_answer(
                 "Date-currency guard: corrected %d superseded date(s).",
                 len(_date_notes),
             )
+
+    # FRIA-scope guard: the model recurrently asserts that a plain deployer must
+    # perform a fundamental-rights impact assessment, dropping Article 27(1)'s
+    # scope (public bodies / private public-service providers / Annex III point
+    # 5(b),(c) deployers). This is an over-broad legal CLAIM, not fabricated text
+    # or a nonexistent citation, so the faithfulness/phantom/superseded guards
+    # never see it. Rewriting a legal conclusion is unsafe, so this appends a
+    # loud SCOPE caveat only when the duty is asserted unconditionally with no
+    # scope qualifier anywhere. Disable with CRSS_FRIA_GUARD=0.
+    if os.environ.get("CRSS_FRIA_GUARD", "1") != "0":
+        answer, _fria_notes = flag_fria_overapplication(answer)
+        if _fria_notes:
+            logger.info("FRIA-scope guard: %s", "; ".join(_fria_notes))
 
     faith_mode = faithfulness_mode(os.environ.get("CRSS_FAITHFULNESS_CHECK", "1"))
     answer, faith_report = _apply_faithfulness(
