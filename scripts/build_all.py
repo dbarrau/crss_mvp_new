@@ -211,7 +211,7 @@ def preflight(docs: list[str], lang: str, *, want_summaries: bool, strict: bool)
 def stage_ingest(docs: list[str], lang: str, *, strict: bool) -> dict[str, bool]:
     from ingestion.run_pipeline import run as run_pipeline
 
-    print(f"=== [1/5] Scrape & parse ({len(docs)} docs) ===")
+    print(f"=== [1/6] Scrape & parse ({len(docs)} docs) ===")
     results: dict[str, bool] = {}
     for i, doc in enumerate(docs, start=1):
         print(f"  ({i}/{len(docs)}) {doc}")
@@ -383,7 +383,16 @@ def stage_summaries() -> dict:
     from scripts.generate_community_summaries import generate_summaries
 
     print("=== [6/6] Community summaries ===")
-    stats = generate_summaries(rescan=False, batch_size=12, dry_run=False)
+    # The community route reads BOTH levels (retrieval/_communities.py):
+    #   Level-0 summaries carry the summary_embedding that powers community-first
+    #   retrieval; Level-1 (chapter) summaries power the overview route. Generating
+    #   only Level-0 leaves every Level-1 chapter community without a summary_text,
+    #   so the overview/community-summary route silently returns nothing. The
+    #   Level-0 call keeps its default scope (also covers any legacy NULL level).
+    l0 = generate_summaries(rescan=False, batch_size=12, dry_run=False)
+    print("  Level-1 (chapter) summaries...")
+    l1 = generate_summaries(rescan=False, batch_size=12, dry_run=False, level=1)
+    stats = {"level0": l0, "level1": l1}
     print(f"  Community summaries done: {stats}\n")
     return stats
 
