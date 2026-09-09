@@ -570,12 +570,14 @@
  },
  {
   "id": "HQ_017",
-  "label": "MDR post-market surveillance and PMCF (Articles 83-86)",
-  "tests": "role_obligations; PMS; MDR",
-  "question": "What post-market surveillance and post-market clinical follow-up obligations does a manufacturer have under MDR 2017/745?",
+  "label": "Cross-regulation — MDR post-market surveillance vs AI Act post-market monitoring (MDR Art 83 + AI Act Art 72)",
+  "tests": "cross_regulation; post-market; MDR+AI Act; recast from MDR role-lookup",
+  "question": "Our device is both a medical device under MDR 2017/745 and a high-risk AI system under the EU AI Act. How do our post-market surveillance and post-market clinical follow-up (PMCF) obligations under the MDR interact with the post-market monitoring obligation for high-risk AI systems under the AI Act, and can one satisfy the other?",
+  "judge_notes": "The MDR requires a post-market surveillance system (Article 83), a PMS plan (Article 84), a PSUR (Article 86) and PMCF (Annex XIV Part B). The AI Act requires the provider of a high-risk AI system to establish a post-market monitoring system and plan (Article 72). For a device that is BOTH, the two regimes apply cumulatively — neither replaces the other. The AI Act (Article 72(3)) lets the AI post-market monitoring documentation be integrated into the technical documentation already required under sectoral law (the MDR) to avoid duplication, but the substantive duties of each regime remain. Presenting MDR PMS as absorbing the AI Act monitoring, or vice versa, is a lex-specialis error.",
   "answer_key": {
    "must_cite": [
-    "Article 83"
+    "Article 83",
+    "Article 72"
    ],
    "must_state": [
     [
@@ -587,20 +589,30 @@
      "post-market clinical follow-up"
     ],
     [
-     "psur",
-     "periodic safety update"
+     "post-market monitoring",
+     "article 72",
+     "monitoring system"
     ],
     [
-     "plan",
-     "annex iii"
+     "high-risk",
+     "high risk"
     ],
     [
-     "proportionate",
-     "risk class",
-     "class"
+     "in addition",
+     "both apply",
+     "complementary",
+     "cumulative",
+     "does not replace",
+     "alongside",
+     "integrated",
+     "avoid duplication"
     ]
    ],
-   "must_not_claim": []
+   "must_not_claim": [
+    "mdr pms replaces",
+    "ai act monitoring is absorbed",
+    "only the mdr applies"
+   ]
   }
  },
  {
@@ -632,44 +644,6 @@
     [
      "storage",
      "transport condition"
-    ]
-   ],
-   "must_not_claim": []
-  }
- },
- {
-  "id": "HQ_019",
-  "label": "MDR authorised representative mandate for a non-EU manufacturer (Article 11)",
-  "tests": "role_obligations; authorised representative",
-  "question": "A manufacturer established outside the EU wants to place a device on the EU market. What is the role and what are the obligations of its authorised representative under MDR Article 11?",
-  "answer_key": {
-   "must_cite": [
-    "Article 11"
-   ],
-   "must_state": [
-    [
-     "authorised representative",
-     "authorized representative"
-    ],
-    [
-     "mandate",
-     "written mandate"
-    ],
-    [
-     "outside the eu",
-     "non-eu",
-     "third country",
-     "established outside"
-    ],
-    [
-     "technical documentation",
-     "declaration of conformity",
-     "keep available"
-    ],
-    [
-     "liable",
-     "jointly",
-     "defective"
     ]
    ],
    "must_not_claim": []
@@ -1399,16 +1373,16 @@
   "label": "AI Act application dates — Article 113 timeline for high-risk and prohibitions",
   "tests": "temporal correctness; exact dates; Article 113",
   "question": "We operate a high-risk AI system listed in Annex III of the AI Act. Which parts of the AI Act already apply to us today, and from what exact dates do the high-risk obligations and the Article 5 prohibitions apply? Please give the specific application dates.",
-  "judge_notes": "The anchor is Article 113: the Regulation applies generally from 2 August 2026 (this covers the Annex III high-risk obligations); Chapters I and II — including the Article 5 prohibitions — apply from 2 February 2025 (already in force); the GPAI/governance chapters from 2 August 2025; Article 6(1) embedded-product high-risk route from 2 August 2027. Wrong or invented dates are fatal for compliance use. A caveat that pending legislative amendments could shift dates is acceptable but the corpus dates above are the required baseline.",
+  "judge_notes": "The anchor is Article 113 as amended by the Digital Omnibus (Regulation (EU) 2026/1744). For an Annex III high-risk system the high-risk obligations now apply from 2 December 2027 (Article 113(3)(c)(i), delayed from the pre-Omnibus 2 August 2026 — stating 2 August 2026 as the HIGH-RISK date is the stale pre-Omnibus answer and is wrong). The Article 5 prohibitions (Chapters I-II) apply from 2 February 2025 (already in force). Other baselines: general application from 2 August 2026; GPAI/governance chapters from 2 August 2025; the Annex I / Article 6(1) embedded-product high-risk route from 2 August 2028 (also delayed by the Omnibus, from 2 August 2027). Wrong or invented dates are fatal for compliance use.",
   "answer_key": {
    "must_cite": [
     "Article 113"
    ],
    "must_state": [
     [
-     "2 August 2026",
-     "2026-08-02",
-     "August 2, 2026"
+     "2 December 2027",
+     "2027-12-02",
+     "December 2, 2027"
     ],
     [
      "2 February 2025",
@@ -1422,9 +1396,9 @@
  {
   "id": "HQ_039",
   "label": "Negative space — obligations for a NON-high-risk AI provider (draft-numbering trap)",
-  "tests": "thin-corpus region: what applies when high-risk does NOT; resistance to draft AI Act numbering (Title IA / Articles 4a-4c)",
+  "tests": "thin-corpus region: what applies when high-risk does NOT; resistance to draft AI Act numbering (Title IA / Articles 4b-4c; note Article 4a is now real post-Omnibus)",
   "question": "We provide an AI-powered contract-analysis tool for procurement teams in the EU. We have concluded it is not a high-risk AI system under the AI Act. Which obligations under the AI Act still apply to us as its provider, and which requirements do NOT apply to us because they are reserved for high-risk systems? Please cite the specific articles.",
-  "judge_notes": "The correct final-text answer: Article 4 (AI literacy — applies to providers and deployers of ALL AI systems), Article 50 (transparency duties where the system interacts with natural persons or generates synthetic content), and Article 95 (voluntary codes of conduct). The high-risk requirements of Chapter III Section 2 (Articles 8-15: risk management, data governance, technical documentation, logging, accuracy) and Section 3 duties (e.g. Article 17 QMS, Article 43 conformity assessment) do NOT apply to non-high-risk systems — prescribing them as mandatory is a fatal error. CRITICAL TRAP: the pre-final drafts had a 'Title IA' with Articles 4a-4c ('general principles applicable to all AI systems'); none of that exists in the final Regulation — Article 4 is AI literacy. Any citation of Articles 4a/4b/4c or Title IA is a fabricated provision and fatal.",
+  "judge_notes": "The correct final-text answer: Article 4 (AI literacy — applies to providers and deployers of ALL AI systems), Article 50 (transparency duties where the system interacts with natural persons or generates synthetic content), and Article 95 (voluntary codes of conduct). The high-risk requirements of Chapter III Section 2 (Articles 8-15: risk management, data governance, technical documentation, logging, accuracy) and Section 3 duties (e.g. Article 17 QMS, Article 43 conformity assessment) do NOT apply to non-high-risk systems — prescribing them as mandatory is a fatal error. CRITICAL TRAP: the pre-final drafts had a 'Title IA' with draft Articles 4a-4c ('general principles applicable to all AI systems'); that draft content does not exist in the final Regulation — Article 4 is AI literacy. NOTE: the Digital Omnibus (Regulation (EU) 2026/1744) later inserted a REAL Article 4a (processing of special categories of personal data for bias monitoring in high-risk systems, relocating the deleted Article 10(5)) — so a citation of Article 4a is NOT a fabrication, though it is off-topic for a non-high-risk provider. Draft 'Title IA' and Articles 4b/4c remain fabricated provisions and citing them is fatal.",
   "answer_key": {
    "must_cite": [
     "Article 4",
@@ -1453,9 +1427,8 @@
     ]
    ],
    "must_not_claim": [
-    "article 4a",
-    "articles 4a",
     "article 4b",
+    "articles 4b",
     "article 4c",
     "title ia"
    ]
@@ -1518,6 +1491,173 @@
      "medical diagnosis",
      "provision of health care",
      "health care"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_042",
+  "label": "Omnibus 10(5)->4a(1) — special-category data for bias monitoring (AI Act Art 4a + GDPR Art 9)",
+  "tests": "cross_regulation; AI Act+GDPR; temporal-currency; superseded-provision trap; hard",
+  "question": "A hospital wants to process patients' health and biometric data to detect and correct bias in a high-risk diagnostic AI system it is developing. Under the EU AI Act as amended by the Digital Omnibus, what permits this processing of special categories of data, and does that AI Act permission by itself give the hospital a lawful basis to process the data under the GDPR?",
+  "judge_notes": "The controlling AI Act provision is Article 4a(1), inserted by the Digital Omnibus (Regulation (EU) 2026/1744): it permits processing of special categories of personal data (including health and biometric data) for bias monitoring, detection and correction in high-risk AI systems, to the extent strictly necessary. It relocated and replaced the former Article 10(5), which the Omnibus DELETED — citing Article 10(5) as current law is a superseded-provision error. Crucially, the AI Act permission does NOT itself create a GDPR lawful basis: the controller must still establish a derogation under GDPR Article 9(2) — most plausibly 9(2)(g) (substantial public interest) or 9(2)(j) (scientific research, subject to Article 89 safeguards) — alongside an Article 6 legal basis. Treating Article 4a(1) as sufficient under the GDPR is a fatal cross-regulation error.",
+  "answer_key": {
+   "must_cite": [
+    "Article 4a",
+    "Article 9"
+   ],
+   "must_state": [
+    [
+     "bias",
+     "bias monitoring",
+     "detection and correction",
+     "detecting and correcting"
+    ],
+    [
+     "special categor",
+     "health data",
+     "biometric"
+    ],
+    [
+     "strictly necessary"
+    ],
+    [
+     "does not create",
+     "not a lawful basis",
+     "still need",
+     "still require",
+     "in addition",
+     "separate",
+     "article 9(2)",
+     "derogation",
+     "does not by itself"
+    ]
+   ],
+   "must_not_claim": [
+    "article 10(5)",
+    "provides a lawful basis under the gdpr",
+    "is a lawful basis under the gdpr",
+    "sufficient under the gdpr"
+   ]
+  }
+ },
+ {
+  "id": "HQ_043",
+  "label": "IVDR performance evaluation — Class C manufacturer obligations (Art 56 + Annex XIII)",
+  "tests": "role_obligations; IVDR; performance evaluation",
+  "question": "What performance-evaluation obligations apply to the manufacturer of a Class C in vitro diagnostic medical device under IVDR 2017/746, and what must the performance evaluation demonstrate?",
+  "answer_key": {
+   "must_cite": [
+    "Article 56",
+    "Annex XIII"
+   ],
+   "must_state": [
+    [
+     "performance evaluation"
+    ],
+    [
+     "scientific validity"
+    ],
+    [
+     "analytical performance"
+    ],
+    [
+     "clinical performance"
+    ],
+    [
+     "clinical evidence"
+    ],
+    [
+     "class c"
+    ],
+    [
+     "performance study",
+     "pmpf",
+     "post-market performance follow-up"
+    ]
+   ],
+   "must_not_claim": []
+  }
+ },
+ {
+  "id": "HQ_044",
+  "label": "Definition precision — 'safety component' and the Article 6(1) high-risk route (Art 3(14))",
+  "tests": "definition_lookup; graph expansion; high-risk routing; hard",
+  "question": "What does 'safety component of a product' mean under the EU AI Act, and how does that definition determine whether an AI system is high-risk?",
+  "judge_notes": "'Safety component of a product or system' is defined in Article 3(14): a component whose failure or malfunctioning endangers the health and safety of persons or property. It is the pivot of the Article 6(1) high-risk route: an AI system is high-risk when it is a safety component of a product covered by the Union harmonisation legislation in Annex I (or is itself such a product) AND that product requires a third-party conformity assessment. This is distinct from the Article 6(2) / Annex III stand-alone high-risk route. Confusing Article 3(14) with an unrelated definition (e.g. biometric categorisation, Article 3(40)) or collapsing the Annex I and Annex III routes is an error.",
+  "answer_key": {
+   "must_cite": [
+    "Article 3",
+    "Article 6"
+   ],
+   "must_state": [
+    [
+     "safety component"
+    ],
+    [
+     "3(14)",
+     "article 3(14)"
+    ],
+    [
+     "annex i",
+     "article 6(1)",
+     "6(1)"
+    ],
+    [
+     "high-risk",
+     "high risk"
+    ],
+    [
+     "failure",
+     "malfunction",
+     "endanger",
+     "health and safety",
+     "health or safety"
+    ]
+   ],
+   "must_not_claim": [
+    "3(40)",
+    "annex iii is the safety-component route"
+   ]
+  }
+ },
+ {
+  "id": "HQ_045",
+  "label": "Landscape breadth — AI-based companion diagnostic launching in the EU (IVDR-led)",
+  "tests": "community_summary; multi-reg breadth; IVDR-led",
+  "question": "We are a clinical laboratory launching an AI-based companion diagnostic in the EU. Give an overview of the full regulatory compliance landscape we need to address.",
+  "answer_key": {
+   "must_cite": [],
+   "must_state": [
+    [
+     "ivdr",
+     "in vitro diagnostic",
+     "2017/746"
+    ],
+    [
+     "companion diagnostic"
+    ],
+    [
+     "ai act",
+     "artificial intelligence",
+     "2024/1689",
+     "high-risk"
+    ],
+    [
+     "gdpr",
+     "data protection",
+     "2016/679"
+    ],
+    [
+     "performance evaluation",
+     "clinical evidence",
+     "scientific validity"
+    ],
+    [
+     "notified body",
+     "conformity assessment",
+     "class"
     ]
    ],
    "must_not_claim": []
