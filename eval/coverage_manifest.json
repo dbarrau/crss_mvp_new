@@ -1,0 +1,31 @@
+{
+ "_doc": "Declared coverage targets for eval/quality_set.json, enforced by scripts/audit_eval_coverage.py. This is the design the set is governed to; edit the targets here (not the audit code) when the intended shape changes. See docs/eval_strategy.md and the eval-set-coverage-governance memory.",
+ "routes": [
+  "definition",
+  "provision",
+  "role",
+  "classification",
+  "legal_qualification",
+  "cross_regulation",
+  "overview",
+  "meta"
+ ],
+ "difficulties": ["E", "M", "H"],
+ "route_floor": 2,
+ "_route_floor_doc": "Every capability route in use needs >=2 questions: one is a coin-flip to distinguish a route regression from an odd single case.",
+ "reg_floors": {
+  "MDR": 2,
+  "IVDR": 2,
+  "AIAct": 2,
+  "GDPR": 2,
+  "CIR": 1,
+  "MDCG": 0,
+  "OTHER": 1
+ },
+ "_reg_floors_doc": "Counted by membership (a cross-reg question counts toward each reg it touches). Core regulations carry a >=2 floor; CIR has a single implementing reg in the corpus, MDCG guidance is only ever a secondary anchor, OTHER is the out-of-corpus abstention bucket.",
+ "difficulty_cell_ceiling": 3,
+ "_difficulty_cell_ceiling_doc": "Hard cap on (route x primary_reg x difficulty): more than 3 identical-difficulty cases in one single-reg cell is redundancy the LLM judge pays for with no new signal.",
+ "single_reg_buckets": ["MDR", "IVDR", "AIAct", "GDPR"],
+ "single_reg_aggregate_soft": 5,
+ "_aggregate_soft_doc": "Soft REVIEW (not a failure) when a single-reg (route x primary_reg) cell reaches this many cases across all difficulties, e.g. AI Act role obligations at 6 distinct-but-heavy cases. CROSS/CIR/MDCG/OTHER buckets are exempt (cross-regulation is a valued category, the others are single by nature)."
+}
