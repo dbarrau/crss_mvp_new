@@ -433,6 +433,40 @@ for _role in _PARALLEL_SUPPLY_CHAIN_ROLES:
                 },
             ))
 
+# The COMPOSITE containers themselves were unbridged even after their members
+# were: MDR/IVDR 'economic operator' (Art 2(35)/2(28) = manufacturer, authorised
+# representative, importer, distributor) and its AI Act analogue 'operator'
+# (Art 3(8)). A question seeded on the economic-operator umbrella in one regime
+# should surface the parallel umbrella duties in the others (registration, supply-
+# chain cooperation, market-surveillance obligations addressed to the umbrella).
+# MDR↔IVDR is the same device-world concept (PARALLEL_ROLE); the AI Act 'operator'
+# is an ANALOGY (broader membership — provider/deployer/product manufacturer — and
+# a different name), so it is a retrieval analogy, not asserted identity.
+CROSS_REG_EQUIVALENCES.append((
+    ("economic operator", "32017R0745"),
+    ("economic operator", "32017R0746"),
+    {
+        "basis_note": "MDR and IVDR 'economic operator' are the same device-world umbrella role",
+        "mapping_kind": ROLE_MAPPING_KIND_PARALLEL_ROLE,
+        "scope": "product_safety_supply_chain",
+        "confidence": "curated",
+    },
+))
+for _dev_celex in ("32017R0745", "32017R0746"):
+    CROSS_REG_EQUIVALENCES.append((
+        ("economic operator", _dev_celex),
+        ("operator", "32024R1689"),
+        {
+            "basis_note": (
+                "AI Act 'operator' is the analogue umbrella of the MDR/IVDR "
+                "'economic operator' (broader membership; retrieval analogy)"
+            ),
+            "mapping_kind": ROLE_MAPPING_KIND_RETRIEVAL_ANALOGY,
+            "scope": "product_safety_supply_chain",
+            "confidence": "curated",
+        },
+    ))
+
 
 # Curated composite-role structure used when formal definitions describe one
 # role in terms of other roles. This complements the textual heuristic and is

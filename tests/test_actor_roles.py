@@ -557,6 +557,18 @@ def test_parallel_role_equivalences_use_the_parallel_mapping_kind():
     assert kinds == {ROLE_MAPPING_KIND_PARALLEL_ROLE}
 
 
+def test_economic_operator_umbrella_bridged_across_regs():
+    # MDR↔IVDR economic operator is the same device-world umbrella (parallel);
+    # both bridge to the AI Act 'operator' analogue.
+    assert _equiv_pairs("economic operator") == {frozenset({_MDR, _IVDR})}
+    op_bridges = {
+        frozenset({l[1], r[1]})
+        for l, r, _ in CROSS_REG_EQUIVALENCES
+        if {l[0], r[0]} == {"economic operator", "operator"}
+    }
+    assert op_bridges == {frozenset({_MDR, _AI}), frozenset({_IVDR, _AI})}
+
+
 def test_ai_act_oversight_actors_are_registered_roles():
     for role in ("market surveillance authority", "national competent authority",
                  "notifying authority", "law enforcement authority",
