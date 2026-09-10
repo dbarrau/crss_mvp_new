@@ -516,3 +516,62 @@ def test_build_equivalent_edges_are_classified_as_retrieval_analogies():
     )
 
     assert reverse_edge["mapping_kind"] == "retrieval_analogy"
+
+
+# ── cross-regulation role wiring (Sep 2026): parallel secondary roles + AI Act
+#    oversight actors (see memory actor-role-graph-coverage) ──────────────────
+from domain.ontology.actor_roles import (
+    CANONICAL_ACTOR_ROLES,
+    CROSS_REG_EQUIVALENCES,
+    EXACT_LEGAL_ROLE_SPECS,
+    ROLE_MAPPING_KIND_PARALLEL_ROLE,
+    is_known_actor_role,
+)
+
+_AI, _MDR, _IVDR = "32024R1689", "32017R0745", "32017R0746"
+
+
+def _equiv_pairs(role_term):
+    """Undirected {frozenset(celex, celex)} bridged for role_term."""
+    pairs = set()
+    for left, right, meta in CROSS_REG_EQUIVALENCES:
+        if left[0] == role_term and right[0] == role_term:
+            pairs.add(frozenset({left[1], right[1]}))
+    return pairs
+
+
+def test_secondary_roles_bridged_across_all_three_product_safety_regs():
+    # authorised representative / importer / distributor must connect MDR, IVDR
+    # and AI Act pairwise (previously only manufacturer/provider + user/deployer).
+    want = {frozenset({_AI, _MDR}), frozenset({_AI, _IVDR}), frozenset({_MDR, _IVDR})}
+    for role in ("authorised representative", "importer", "distributor"):
+        assert _equiv_pairs(role) == want, role
+
+
+def test_parallel_role_equivalences_use_the_parallel_mapping_kind():
+    kinds = {
+        meta["mapping_kind"]
+        for l, r, meta in CROSS_REG_EQUIVALENCES
+        if l[0] == "importer" and r[0] == "importer"
+    }
+    assert kinds == {ROLE_MAPPING_KIND_PARALLEL_ROLE}
+
+
+def test_economic_operator_umbrella_bridged_across_regs():
+    # MDR↔IVDR economic operator is the same device-world umbrella (parallel);
+    # both bridge to the AI Act 'operator' analogue.
+    assert _equiv_pairs("economic operator") == {frozenset({_MDR, _IVDR})}
+    op_bridges = {
+        frozenset({l[1], r[1]})
+        for l, r, _ in CROSS_REG_EQUIVALENCES
+        if {l[0], r[0]} == {"economic operator", "operator"}
+    }
+    assert op_bridges == {frozenset({_MDR, _AI}), frozenset({_IVDR, _AI})}
+
+
+def test_ai_act_oversight_actors_are_registered_roles():
+    for role in ("market surveillance authority", "national competent authority",
+                 "notifying authority", "law enforcement authority",
+                 "downstream provider"):
+        assert is_known_actor_role(role, _AI), role
+        assert (_AI, role.replace(" ", "_")) in EXACT_LEGAL_ROLE_SPECS, role

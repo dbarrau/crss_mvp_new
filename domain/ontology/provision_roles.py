@@ -104,6 +104,8 @@ _ACTOR_SUBJECTS: tuple[str, ...] = (
     "national authority", "national authorities",
     "supervisory authority", "supervisory authorities",
     "market surveillance authority", "market surveillance authorities",
+    "notifying authority", "notifying authorities",
+    "law enforcement authority", "law enforcement authorities",
     "authorised representative", "authorised representatives",
     "authorized representative", "authorized representatives",
     "health institution", "health institutions",

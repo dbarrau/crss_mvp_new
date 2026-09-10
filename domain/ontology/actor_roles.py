@@ -21,6 +21,12 @@ ROLE_MAPPING_KIND_RETRIEVAL_ANALOGY = "retrieval_analogy"
 # Same role term carried into an implementing act whose definitions are
 # inherited from the basic act — legal identity, not mere analogy.
 ROLE_MAPPING_KIND_IMPLEMENTING_ACT = "implementing_act_identity"
+# The SAME functional role defined in parallel across the product-safety regimes
+# (MDR / IVDR / AI Act each define their own 'authorised representative',
+# 'importer', 'distributor'). Stronger than a retrieval analogy (it is the same
+# role concept, not a cross-domain mapping like provider↔manufacturer), but not
+# asserted as identity of the same legal person in every case.
+ROLE_MAPPING_KIND_PARALLEL_ROLE = "parallel_role_across_regulations"
 ROLE_SOURCE_TYPE_DEFINED_TERM = "defined_term"
 ROLE_SOURCE_TYPE_DERIVED = "derived_role"
 # Curated role with no DefinedTerm node of its own in that regulation
@@ -63,6 +69,13 @@ CANONICAL_ACTOR_ROLES: dict[str, frozenset[str]] = {
     "controller": frozenset({"32016R0679"}),
     "processor": frozenset({"32016R0679"}),
     "supervisory authority": frozenset({"32016R0679"}),
+    # AI Act oversight/value-chain actors (defined terms category 'body'/'other',
+    # promoted via EXACT_LEGAL_ROLE_SPECS).
+    "market surveillance authority": frozenset({"32024R1689"}),
+    "national competent authority": frozenset({"32024R1689"}),
+    "notifying authority": frozenset({"32024R1689"}),
+    "law enforcement authority": frozenset({"32024R1689"}),
+    "downstream provider": frozenset({"32024R1689"}),
 }
 
 
@@ -101,6 +114,39 @@ EXACT_LEGAL_ROLE_SPECS: dict[tuple[str, str], dict[str, str]] = {
     ("32024R1689", "notified_body"): {
         "term": "notified body",
         "basis_note": "AI Act Article 3(22) definition of notified body",
+        "source_type": ROLE_SOURCE_TYPE_DEFINED_TERM,
+    },
+    # AI Act oversight/value-chain actors: defined terms the parser classified
+    # category='body'/'other' (they lack "natural or legal person"), so they were
+    # never auto-promoted — leaving GDPR's supervisory_authority with a role node
+    # but the AI Act's own authorities with none, and their obligation sets
+    # (Chapter VII market surveillance, Chapter III notification) unlinked.
+    ("32024R1689", "market_surveillance_authority"): {
+        "term": "market surveillance authority",
+        "basis_note": "AI Act Article 3(26) definition of market surveillance authority",
+        "source_type": ROLE_SOURCE_TYPE_DEFINED_TERM,
+    },
+    ("32024R1689", "national_competent_authority"): {
+        "term": "national competent authority",
+        "basis_note": "AI Act Article 3(48) definition of national competent authority",
+        "source_type": ROLE_SOURCE_TYPE_DEFINED_TERM,
+    },
+    ("32024R1689", "notifying_authority"): {
+        "term": "notifying authority",
+        "basis_note": "AI Act Article 3(19) definition of notifying authority",
+        "source_type": ROLE_SOURCE_TYPE_DEFINED_TERM,
+    },
+    ("32024R1689", "law_enforcement_authority"): {
+        "term": "law enforcement authority",
+        "basis_note": "AI Act Article 3(45) definition of law enforcement authority",
+        "source_type": ROLE_SOURCE_TYPE_DEFINED_TERM,
+    },
+    # Downstream provider (Article 3(68)) — a provider that integrates a GPAI
+    # model; a distinct obligation-bearer in the GPAI value chain (Article 25,
+    # Chapter V), not covered by the base 'provider' role.
+    ("32024R1689", "downstream_provider"): {
+        "term": "downstream provider",
+        "basis_note": "AI Act Article 3(68) definition of downstream provider",
         "source_type": ROLE_SOURCE_TYPE_DEFINED_TERM,
     },
 }
@@ -243,6 +289,17 @@ ENTITY_SYNONYMS: dict[str, list[tuple[str, str]]] = {
     "data processors": [("processor", "32016R0679")],
     "supervisory authority": [("supervisory authority", "32016R0679")],
     "supervisory authorities": [("supervisory authority", "32016R0679")],
+    # AI Act oversight/value-chain actors (promoted via EXACT_LEGAL_ROLE_SPECS).
+    "market surveillance authority": [("market surveillance authority", "32024R1689")],
+    "market surveillance authorities": [("market surveillance authority", "32024R1689")],
+    "national competent authority": [("national competent authority", "32024R1689")],
+    "national competent authorities": [("national competent authority", "32024R1689")],
+    "notifying authority": [("notifying authority", "32024R1689")],
+    "notifying authorities": [("notifying authority", "32024R1689")],
+    "law enforcement authority": [("law enforcement authority", "32024R1689")],
+    "law enforcement authorities": [("law enforcement authority", "32024R1689")],
+    "downstream provider": [("downstream provider", "32024R1689")],
+    "downstream providers": [("downstream provider", "32024R1689")],
 }
 
 
@@ -349,6 +406,66 @@ CROSS_REG_EQUIVALENCES: list[tuple[tuple[str, str], tuple[str, str], dict[str, s
         },
     ),
 ]
+
+# The secondary economic-operator roles — authorised representative, importer,
+# distributor — are each defined per-regulation in the MDR, IVDR and AI Act but
+# were previously unbridged, so a cross-regulation question about one of them got
+# no equivalence traversal (only the headline manufacturer↔provider and
+# user↔deployer mappings existed). Add full pairwise parallel-role edges across
+# the three product-safety regimes so a question seeded on any one reaches the
+# other two in a single hop. (_build_equivalent_edges writes both directions.)
+_PARALLEL_SUPPLY_CHAIN_ROLES = ("authorised representative", "importer", "distributor")
+_PRODUCT_SAFETY_REGS = ("32024R1689", "32017R0745", "32017R0746")  # AI Act, MDR, IVDR
+for _role in _PARALLEL_SUPPLY_CHAIN_ROLES:
+    for _i in range(len(_PRODUCT_SAFETY_REGS)):
+        for _j in range(_i + 1, len(_PRODUCT_SAFETY_REGS)):
+            CROSS_REG_EQUIVALENCES.append((
+                (_role, _PRODUCT_SAFETY_REGS[_i]),
+                (_role, _PRODUCT_SAFETY_REGS[_j]),
+                {
+                    "basis_note": (
+                        f"'{_role}' is the same functional role defined in "
+                        "parallel in the MDR, IVDR and AI Act"
+                    ),
+                    "mapping_kind": ROLE_MAPPING_KIND_PARALLEL_ROLE,
+                    "scope": "product_safety_supply_chain",
+                    "confidence": "curated",
+                },
+            ))
+
+# The COMPOSITE containers themselves were unbridged even after their members
+# were: MDR/IVDR 'economic operator' (Art 2(35)/2(28) = manufacturer, authorised
+# representative, importer, distributor) and its AI Act analogue 'operator'
+# (Art 3(8)). A question seeded on the economic-operator umbrella in one regime
+# should surface the parallel umbrella duties in the others (registration, supply-
+# chain cooperation, market-surveillance obligations addressed to the umbrella).
+# MDR↔IVDR is the same device-world concept (PARALLEL_ROLE); the AI Act 'operator'
+# is an ANALOGY (broader membership — provider/deployer/product manufacturer — and
+# a different name), so it is a retrieval analogy, not asserted identity.
+CROSS_REG_EQUIVALENCES.append((
+    ("economic operator", "32017R0745"),
+    ("economic operator", "32017R0746"),
+    {
+        "basis_note": "MDR and IVDR 'economic operator' are the same device-world umbrella role",
+        "mapping_kind": ROLE_MAPPING_KIND_PARALLEL_ROLE,
+        "scope": "product_safety_supply_chain",
+        "confidence": "curated",
+    },
+))
+for _dev_celex in ("32017R0745", "32017R0746"):
+    CROSS_REG_EQUIVALENCES.append((
+        ("economic operator", _dev_celex),
+        ("operator", "32024R1689"),
+        {
+            "basis_note": (
+                "AI Act 'operator' is the analogue umbrella of the MDR/IVDR "
+                "'economic operator' (broader membership; retrieval analogy)"
+            ),
+            "mapping_kind": ROLE_MAPPING_KIND_RETRIEVAL_ANALOGY,
+            "scope": "product_safety_supply_chain",
+            "confidence": "curated",
+        },
+    ))
 
 
 # Curated composite-role structure used when formal definitions describe one
