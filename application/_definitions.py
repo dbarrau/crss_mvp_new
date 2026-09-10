@@ -39,6 +39,29 @@ _ANCHOR_DEFINITION_TERMS: dict[str, str] = {
 }
 
 
+# British/American spelling alternation on the -ise/-ize verb and -isation/
+# -ization noun families — the variants that hit EU actor vocabulary
+# ("authorised" vs "authorized", "organisation" vs "organization"). EU law is
+# written in British spelling, so the graph's term keys are British; an
+# international user typing the American form otherwise fails to match (observed:
+# "authorized representative" missed the MDR/IVDR/AI Act 'authorised
+# representative' term and fell through to the GDPR-only 'representative'). The
+# toggle is applied only to the KNOWN term (real legal vocabulary), never to
+# arbitrary query words, so false friends ("comprise", "exercise") are untouched;
+# each variant is only an added alternative, so the original spelling still hits.
+_SPELL_PAIRS = (("isation", "ization"), ("isations", "izations"),
+                ("ised", "ized"), ("ising", "izing"), ("ise", "ize"))
+
+
+def _spelling_variants(term_lower: str) -> set[str]:
+    variants = {term_lower}
+    for br, am in _SPELL_PAIRS:
+        for t in list(variants):
+            variants.add(re.sub(br + r"\b", am, t))
+            variants.add(re.sub(am + r"\b", br, t))
+    return variants
+
+
 def _term_match_pattern(term_lower: str) -> re.Pattern:
     """Compile a word-boundary regex for *term_lower* that also matches its plural.
 
@@ -50,8 +73,14 @@ def _term_match_pattern(term_lower: str) -> re.Pattern:
     forcing the LLM to backfill it from training memory.  Allowing an optional
     trailing ``s`` on the final token closes that gap without the false
     positives of unbounded substring matching.
+
+    The pattern also matches the British/American spelling variants of the term
+    (see ``_SPELL_PAIRS``), so a US-spelled query hits the British graph key.
     """
-    return re.compile(r"\b" + re.escape(term_lower) + r"s?\b", re.IGNORECASE)
+    alts = sorted(
+        (re.escape(v) for v in _spelling_variants(term_lower)), key=len, reverse=True
+    )
+    return re.compile(r"\b(?:" + "|".join(alts) + r")s?\b", re.IGNORECASE)
 
 
 def _detect_defined_terms(
@@ -88,19 +117,28 @@ def _detect_defined_terms(
                 continue
             seen_terms.add(term_lower)
             results = retriever.find_by_term(term_lower)
-            # Deduplicate: keep one definition per term, preferring
-            # definitions from regulations mentioned in the question.
             if mentioned_regs:
+                # A regulation is named → keep that regulation's definition
+                # (one), preferring a mentioned reg, else one arbitrary.
                 preferred = [
                     r for r in results
                     if r.get("regulation") in mentioned_regs
                 ]
-                if preferred:
-                    results = preferred[:1]
-                else:
-                    results = results[:1]
+                results = (preferred or results)[:1]
             else:
-                results = results[:1]
+                # NO regulation named → a term defined in several regulations
+                # ("authorised representative" in MDR/IVDR/AI Act, "representative"
+                # in the GDPR) is genuinely cross-regulation. Surface EVERY
+                # regulation's definition (one per reg), not one arbitrary pick,
+                # so a bare "what is X?" answers across regimes — and widens scope
+                # to all of them — instead of tunnelling into a single reg. The
+                # overall _MAX_DEFINITIONS cap still bounds the total.
+                seen_celex: set[str] = set()
+                results = [
+                    r for r in results
+                    if r.get("celex") not in seen_celex
+                    and not seen_celex.add(r.get("celex"))
+                ]
             matched.extend(results)
             if len(matched) >= _MAX_DEFINITIONS:
                 break

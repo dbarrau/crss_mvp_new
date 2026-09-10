@@ -146,3 +146,62 @@ def test_detect_defined_terms_matches_plural_in_question():
         retriever,
     )
     assert "AI system" in [d["term"] for d in matched]
+
+
+# ── cross-regulation defined-term detection (spelling + breadth) ─────────────
+from domain.legislation_catalog import MDR_CELEX, IVDR_CELEX, GDPR_CELEX
+
+
+class _MultiRegRepRetriever:
+    """'authorised representative' is defined in MDR/IVDR/AI Act; the GDPR defines
+    the shorter 'representative'. Mirrors the real graph that surfaced the bug."""
+
+    _AR = "authorised representative"
+
+    def get_defined_terms_index(self):
+        return {self._AR: "authorised_representative", "representative": "representative"}
+
+    def find_by_term(self, term):
+        if term == self._AR:
+            return [
+                {"term": self._AR, "celex": MDR_CELEX, "regulation": "MDR 2017/745",
+                 "definition_text": "AR (MDR)"},
+                {"term": self._AR, "celex": IVDR_CELEX, "regulation": "IVDR 2017/746",
+                 "definition_text": "AR (IVDR)"},
+                {"term": self._AR, "celex": AI_ACT_CELEX, "regulation": "EU AI Act",
+                 "definition_text": "AR (AI Act)"},
+            ]
+        if term == "representative":
+            return [{"term": "representative", "celex": GDPR_CELEX,
+                     "regulation": "General Data Protection Regulation (GDPR) 2016/679",
+                     "definition_text": "representative (GDPR)"}]
+        return []
+
+
+def test_us_spelling_matches_british_defined_term():
+    # "authorized" (US) must hit the British "authorised representative" key.
+    matched = _detect_defined_terms(
+        "Explain to me what is an authorized representative", _MultiRegRepRetriever()
+    )
+    celexes = {d["celex"] for d in matched}
+    assert {MDR_CELEX, IVDR_CELEX, AI_ACT_CELEX} <= celexes
+
+
+def test_no_reg_named_surfaces_every_regulations_definition():
+    # A bare "what is X?" for a cross-regulation term must return one definition
+    # per regulation, not one arbitrary pick (the old results[:1] tunnel).
+    matched = _detect_defined_terms(
+        "what is an authorized representative", _MultiRegRepRetriever()
+    )
+    # one 'authorised representative' per MDR/IVDR/AI Act, plus GDPR 'representative'
+    assert len([d for d in matched if d["term"] == "authorised representative"]) == 3
+    assert any(d["celex"] == GDPR_CELEX for d in matched)
+
+
+def test_named_regulation_still_narrows_to_one():
+    # When the question names a regulation, the old single-definition scoping holds.
+    matched = _detect_defined_terms(
+        "what is the authorised representative under the MDR", _MultiRegRepRetriever()
+    )
+    ar = [d for d in matched if d["term"] == "authorised representative"]
+    assert len(ar) == 1 and ar[0]["celex"] == MDR_CELEX
