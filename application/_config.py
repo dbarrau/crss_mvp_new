@@ -252,6 +252,30 @@ _LLM_GPAI_RE = re.compile(
     r"\b(?:LLMs?|large\s+language\s+models?|generative\s+AI|foundation\s+models?|"
     r"general[\s-]?purpose\s+AI|GPAI)\b", re.I)
 
+# In-house / research development of an AI system → AI Act Article 2(6) (sole
+# scientific-R&D purpose) and 2(8) (research, testing or development PRIOR to
+# placing on the market / putting into service). These are the AI Act's own scope
+# exemptions — the counterpart a question must weigh against the MDR Article 5(5)
+# in-house exemption. On an actor-status / obligations framing they are
+# semantically distant, so the dense channel and the top-3 recital supplement
+# never surface them (a "hospital develops an in-house AI system" answer wrongly
+# stated the AI Act has NO equivalent exemption). Force-loading grounds the
+# carve-out so it stops depending on whether the phrasing happens to rank the
+# recital. Two short paragraphs, so a rare over-match is cheap; scope-gated to
+# the AI Act by _match_ref_table (a GDPR-only "train a clinical AI" question does
+# not pull them).
+_AI_RND_EXEMPTION_RE = re.compile(
+    r"\b(?:"
+    r"scientific\s+research"
+    r"|research\s+and\s+development|R\s*&\s*D"
+    r"|research,?\s+testing\s+or\s+development"
+    r"|in[\s-]?house\b[^.?\n]{0,30}\b(?:AI|artificial\s+intelligence|system|model|develop\w*|train\w*)"
+    r"|(?:develop\w*|build\w*|built|creat\w*)\b[^.?\n]{0,40}"
+    r"\b(?:AI|artificial\s+intelligence)\b"
+    r"|(?:prior\s+to|before)\s+(?:being\s+)?(?:placed\s+on\s+the\s+market|"
+    r"placing\s+on\s+the\s+market|put(?:ting)?\s+into\s+service|deployment)"
+    r")", re.I)
+
 _CONTEXT_ANCHOR_REFS: list[tuple[re.Pattern, str, str]] = [
     # Non-medical-purpose / wellbeing framing → MDR Annex XVI, the regime for
     # products *without* an intended medical purpose — the carve-out a wellbeing
@@ -298,6 +322,12 @@ _CONTEXT_ANCHOR_REFS: list[tuple[re.Pattern, str, str]] = [
     # Anchoring grounds the point so it surfaces consistently.
     (_LLM_GPAI_RE, AI_ACT_CELEX, "Article 51"),
     (_LLM_GPAI_RE, AI_ACT_CELEX, "Article 53"),
+    # In-house / research AI development → AI Act scope exemptions (Article 2(6)
+    # sole scientific R&D; Article 2(8) research/testing/development prior to
+    # placing on the market). Paragraph-scoped, not the whole Article 2 (68
+    # definitions — see the _DEFINITIONS_ARTICLE flood note above).
+    (_AI_RND_EXEMPTION_RE, AI_ACT_CELEX, "Article 2(6)"),
+    (_AI_RND_EXEMPTION_RE, AI_ACT_CELEX, "Article 2(8)"),
 ]
 
 # Use-case cue → the specific Annex III point that governs it, registered as
