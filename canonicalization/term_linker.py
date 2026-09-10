@@ -90,7 +90,14 @@ def _build_term_regex(terms: list[dict[str, Any]]) -> re.Pattern | None:
     """Compile a single regex alternation matching all defined terms.
 
     Terms are sorted longest-first so "high-risk AI system" matches before
-    "AI system".  Word boundaries are enforced on both sides.
+    "AI system".  Word boundaries are enforced on both sides, with an optional
+    trailing ``s`` so a term stored singular ("information society service",
+    "specimen receptacle") still matches its plural in the text ("information
+    society services", "specimen receptacles").  Without this a term that
+    appears almost exclusively in the plural gets zero USES_TERM edges and is
+    silently disconnected from every provision that uses it (found by
+    scripts/audit_defined_term_connectivity.py; mirrors the same plural fix in
+    application/_definitions._term_match_pattern).
     """
     if not terms:
         return None
@@ -104,9 +111,14 @@ def _build_term_regex(terms: list[dict[str, Any]]) -> re.Pattern | None:
             seen.add(lower)
             unique_terms.append(t["term"])
 
-    # Build alternation with word boundaries
+    # Build alternation with word boundaries + optional plural on the final token.
+    # The alternation is a CAPTURING group with the ``s?`` OUTSIDE it, so
+    # ``re.findall`` returns the singular term (the group) rather than the whole
+    # match including a trailing plural "s" — otherwise a plural occurrence
+    # ("...services") would be looked up under a key that does not exist (the
+    # index is keyed singular) and silently produce no edge.
     escaped = [re.escape(t) for t in unique_terms]
-    pattern = r"\b(?:" + "|".join(escaped) + r")\b"
+    pattern = r"\b(" + "|".join(escaped) + r")s?\b"
     return re.compile(pattern, re.IGNORECASE)
 
 
