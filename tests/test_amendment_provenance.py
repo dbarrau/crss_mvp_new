@@ -118,6 +118,38 @@ def test_ai_act_citation_kept_when_some_occurrences_are_mdr_scoped():
     assert _amendment_target_in_answer("Annex I", answer)
 
 
+# ── link-CELEX-aware scoping (the inline-link layer already resolved a bare
+#    "Article 6" to its regulation; the amendment box reuses that) ─────────────
+
+_AI = "32024R1689"
+_GDPR_LINK = "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02016R0679-20160504#art_6"
+_AI_LINK = "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32024R1689#art_6"
+
+
+def test_gdpr_linked_article_6_is_not_an_ai_act_citation():
+    # HQ_024: a GDPR lawful-basis answer cites GDPR Article 6 (bare in prose plus
+    # two GDPR-linked occurrences); the AI Act's amended Article 6 (safety
+    # components) must NOT attach — the link layer resolved the ref to the GDPR
+    # CELEX, so the bare prose mentions are GDPR's too.
+    answer = (f"a lawful basis under [Article 6]({_GDPR_LINK}) GDPR is required; "
+              f"Article 6(1)(c) provides the legal-obligation basis, and "
+              f"[Article 6]({_GDPR_LINK}) must be read with Article 9")
+    assert not _amendment_target_in_answer("Article 6", answer, _AI)
+    # Pre-link-aware call (base=None) keeps the old behaviour: bare match wins.
+    assert _amendment_target_in_answer("Article 6", answer, None)
+
+
+def test_ai_act_linked_article_6_keeps_the_amendment():
+    answer = f"the high-risk route in [Article 6]({_AI_LINK}) of the AI Act applies"
+    assert _amendment_target_in_answer("Article 6", answer, _AI)
+
+
+def test_bare_article_in_all_ai_act_answer_still_matches():
+    # An all-AI-Act answer drops the qualifier ('Article 113 …'); with no link to a
+    # DIFFERENT regulation, the bare mention remains the AI Act's — box kept.
+    assert _amendment_target_in_answer("Article 113", "obligations apply under Article 113", _AI)
+
+
 def test_provenance_drops_mdr_only_article_2():
     # Regression for the demo: Article 2 was surfaced (AI Act amendment) but the
     # answer only cites MDR Article 2(30) -> must NOT appear in the footer.
