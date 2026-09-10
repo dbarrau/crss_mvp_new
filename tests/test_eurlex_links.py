@@ -390,3 +390,71 @@ def test_footer_empty_when_nothing_cited():
 def test_footer_falls_back_to_catalog_name_without_reg_name():
     out = build_provisions_footer({(_AI, "art_6"): "Article 6"}, reg_names={})
     assert LEGISLATION[_AI]["name"] in out             # e.g. "EU AI Act"
+
+
+# ── section-heading regulation binding ───────────────────────────────────────
+# A multi-reg answer organises the analysis under "#### EU AI Act" / "#### MDR"
+# blocks and drops the reg qualifier from the bare "Article N" mentions beneath
+# them. The heading is the model's own unambiguous reg declaration, so it binds
+# those bare references (and completes the footer) without a wrong-reg risk.
+
+def test_bare_article_binds_to_its_section_heading():
+    ans = "#### EU AI Act\n- The system is high-risk under **Article 6(1)**."
+    cited: dict = {}
+    out = link_references(ans, in_scope_celexes=frozenset({_AI, _MDR, _GDPR}), cited=cited)
+    assert _links_to(out, _AI, "art_6")
+    assert (_AI, "art_6") in cited
+
+
+def test_section_heading_resets_between_regulations():
+    ans = ("#### MDR 2017/745\n- Manufacturer under **Article 2**.\n"
+           "#### EU AI Act\n- Provider under **Article 3**.")
+    cited: dict = {}
+    out = link_references(ans, in_scope_celexes=frozenset({_AI, _MDR, _GDPR}), cited=cited)
+    assert _links_to(out, _MDR_CONS, "art_2")          # Article 2 → MDR (its section, consolidated)
+    assert _links_to(out, _AI, "art_3")                # Article 3 → AI Act (its section)
+    assert (_MDR, "art_2") in cited and (_AI, "art_3") in cited
+
+
+def test_named_cross_reference_overrides_section_heading():
+    # Under an AI Act heading, an explicitly-named "Article 9 GDPR" must still
+    # resolve to the GDPR — adjacency wins over the section binding.
+    ans = "#### EU AI Act\n- Special-category data engages **Article 9** GDPR here."
+    out = link_references(ans, in_scope_celexes=frozenset({_AI, _GDPR}))
+    assert _links_to(out, _GDPR_CONS, "art_9")     # GDPR links to its consolidation
+    assert f"uri=CELEX:{_AI}&qid=" not in out
+
+
+def test_reg_less_heading_binds_nothing():
+    # A heading naming no regulation ("#### Key Consideration") must not carry a
+    # prior section's binding forward — the bare reference stays bold-only.
+    ans = ("#### EU AI Act\n- Provider under **Article 3**.\n"
+           "#### Key Consideration\n- This turns on **Article 6**.")
+    out = link_references(ans, in_scope_celexes=frozenset({_AI, _MDR}))
+    assert _links_to(out, _AI, "art_3")
+    assert out.rstrip().endswith("**Article 6**.")     # Article 6 left bold-only
+
+
+def test_multi_reg_heading_binds_nothing():
+    # A heading naming two in-scope regulations is ambiguous → no section binding.
+    ans = "#### AI Act vs MDR\n- This turns on **Article 6**."
+    out = link_references(ans, in_scope_celexes=frozenset({_AI, _MDR}))
+    assert out.rstrip().endswith("**Article 6**.")
+
+
+def test_heading_itself_is_never_linked_but_is_footered():
+    # An article named only in the heading: the heading text stays link-free, but
+    # the citation still reaches the "Provisions cited" footer.
+    ans = "### Stage 1 (Development under MDR Article 5(5))\n- Internal use only."
+    cited: dict = {}
+    out = link_references(ans, in_scope_celexes=frozenset({_AI, _MDR}), cited=cited)
+    assert out.startswith("### Stage 1 (Development under MDR Article 5(5))")  # heading unchanged
+    assert "](http" not in out.split("\n", 1)[0]                              # no link in the heading
+    assert (_MDR, "art_5") in cited                                          # but recorded for the footer
+
+
+def test_section_binding_does_not_override_single_target_default():
+    # Single-reg answers keep working: no headings, default_celex still binds.
+    out = link_references("This turns on **Article 6**.",
+                          in_scope_celexes=frozenset({_AI}), default_celex=_AI)
+    assert _links_to(out, _AI, "art_6")

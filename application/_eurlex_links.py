@@ -179,21 +179,24 @@ def _resolve_celex(
     end: int,
     in_scope: frozenset[str],
     default_celex: str | None = None,
+    section_celex: str | None = None,
 ) -> str | None:
     """Recover the CELEX for a reference at ``line[start:end]``.
 
     Nearest regulation name *after* the reference wins ("Article 6 AI Act");
-    then nearest *before* ("the AI Act's Article 6"); then the answer's dominant
-    regulation (*default_celex*, set only when the question targets a single
-    regulation); then, if exactly one regulation is in scope, that one. ``None``
-    when still ambiguous — the caller leaves the reference bold-only.
+    then nearest *before* ("the AI Act's Article 6"); then the regulation the
+    current section heading names (*section_celex* — see :func:`_heading_celex`);
+    then the answer's dominant regulation (*default_celex*, set only when the
+    question targets a single regulation); then, if exactly one regulation is in
+    scope, that one. ``None`` when still ambiguous — the caller leaves the
+    reference bold-only.
 
-    The default is what closes the single-regulation gap: in an all-AI-Act answer
-    the model drops the "AI Act" qualifier after the first mentions ("Article 53
-    …", "Article 96 …"), leaving nothing for adjacency to catch, so those
-    references (and the whole "Provisions cited" footer) fell through. An
-    explicitly-named cross-reference still resolves by adjacency first, so a
-    "Article 9 GDPR" inside an AI-Act answer is never mislabelled.
+    The section heading closes the cross-regulation gap: a multi-reg answer
+    organises the analysis under ``#### EU AI Act`` / ``#### MDR 2017/745`` /
+    ``#### GDPR`` blocks and drops the reg qualifier from the individual article
+    mentions beneath them, so those bare "Article 9" references (and their footer
+    entries) fell through. Adjacency still runs first, so a "Article 9 GDPR"
+    named inside an AI-Act section is never mislabelled.
     """
     after = line[end : end + _ADJACENCY_WINDOW]
     after_l = after.lower()
@@ -217,11 +220,40 @@ def _resolve_celex(
     if best is not None:
         return best
 
+    if section_celex is not None:
+        return section_celex
     if default_celex is not None:
         return default_celex
     if len(in_scope) == 1:
         return next(iter(in_scope))
     return None
+
+
+# Word-boundary match tolerant of names that contain spaces ("ai act") and
+# numbers ("2017/745"); letters are the only characters that must not abut.
+def _names_in(text: str, in_scope: frozenset[str]) -> set[str]:
+    low = text.lower()
+    found: set[str] = set()
+    for pat, celex in _NAME_PATTERNS:
+        if celex in in_scope and re.search(
+            r"(?<![a-z])" + re.escape(pat) + r"(?![a-z])", low
+        ):
+            found.add(celex)
+    return found
+
+
+def _heading_celex(heading_line: str, in_scope: frozenset[str]) -> str | None:
+    """The single in-scope regulation a markdown heading names, else ``None``.
+
+    A section heading like ``#### EU AI Act`` or ``#### MDR 2017/745`` is the
+    model's own explicit, unambiguous statement that the block below concerns one
+    regulation — the same kind of bound act-identifier the inline resolver already
+    trusts. When the heading names exactly one in-scope regulation, that reg binds
+    the bare ``Article N`` references beneath it; zero or several named regs bind
+    nothing (fall back to inline adjacency), keeping the resolver conservative.
+    """
+    names = _names_in(heading_line, in_scope)
+    return next(iter(names)) if len(names) == 1 else None
 
 
 def build_link_scope(
@@ -280,6 +312,7 @@ def link_references(
     inserted_articles = inserted_articles or {}
     qid = int(time.time() * 1000)                   # one fresh EUR-Lex qid per answer
     linked_here: set[tuple[str, str]] = set()       # (celex, anchor) linked in this section
+    section_celex: str | None = None                # reg the current heading binds (if any)
 
     def _sub(m: "re.Match[str]") -> str:
         core = m.group(1)
@@ -289,7 +322,7 @@ def link_references(
         if anchor is None:
             return f"**{ref}**"
         celex = _resolve_celex(
-            m.string, m.start(), m.end(), in_scope_celexes, default_celex
+            m.string, m.start(), m.end(), in_scope_celexes, default_celex, section_celex
         )
         if celex is None or not is_known_celex(celex):
             return f"**{ref}**"
@@ -316,6 +349,15 @@ def link_references(
         stripped = line.lstrip()
         if stripped.startswith("#"):
             linked_here.clear()                     # new section — first mention links again
+            section_celex = _heading_celex(line, in_scope_celexes)
+            # A heading is never itself hyperlinked (a link in a heading reads as
+            # clutter), but an article named ONLY in a heading would otherwise be
+            # absent from the "Provisions cited" footer — so record its refs there.
+            if cited is not None:
+                _record_heading_cited(
+                    line, in_scope_celexes, default_celex, section_celex,
+                    inserted_articles, cited,
+                )
             out.append(line)
             continue
         if stripped.startswith(">"):
@@ -323,6 +365,35 @@ def link_references(
             continue
         out.append(_LINK_REF_RE.sub(_sub, line))
     return "\n".join(out)
+
+
+def _record_heading_cited(
+    line: str,
+    in_scope: frozenset[str],
+    default_celex: str | None,
+    section_celex: str | None,
+    inserted_articles: dict[tuple[str, str], str],
+    cited: dict[tuple[str, str], str],
+) -> None:
+    """Record every resolvable provision reference in a heading into *cited*,
+    without linking the heading (headings stay link-free). Mirrors ``_sub``'s
+    resolution so the footer stays complete when a citation appears only in a
+    section title. Inserted articles are skipped (they surface via the amending-
+    act footer line, exactly as the inline path leaves them bold-only)."""
+    for m in _LINK_REF_RE.finditer(line):
+        anchor = anchor_for_ref(m.group(1))
+        if anchor is None:
+            continue
+        celex = _resolve_celex(
+            line, m.start(), m.end(), in_scope, default_celex, section_celex
+        )
+        if celex is None or not is_known_celex(celex):
+            continue
+        if anchor.startswith("art_") and (celex, anchor[4:]) in inserted_articles:
+            continue
+        key = (celex, anchor)
+        if key not in cited:
+            cited[key] = display_from_anchor(anchor)
 
 
 # ── "Provisions cited" footer (the RA table of authorities) ──────────────────
