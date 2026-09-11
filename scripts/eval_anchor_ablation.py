@@ -151,6 +151,44 @@ def _retrieve(question: str, retriever, client, *, anchor_refs: list[str]):
     return provisions, definitions, det
 
 
+def _budgeted_after_trim(provisions: list[dict], definitions: list[dict], det) -> list[dict]:
+    """Replicate the agent's context-budget trim (application/agent.py ~800).
+
+    Retrieval presence is necessary but not sufficient: the agent reserves budget
+    for the definitions/applicability block, then trims the provision tail to fit
+    _CONTEXT_CHAR_BUDGET, keeping the pinned backbone tier (_direct_ref_match)
+    first. A force-loaded anchor pins its target into that surviving tier; the
+    SAME provision arriving as a lower-tier vector hit (anchor off) can be trimmed
+    out. This returns the provisions that actually survive into the rendered
+    context — the set the LLM really sees.
+    """
+    from datetime import date
+
+    from application.agent import (
+        _CONTEXT_CHAR_BUDGET,
+        _collect_context_celexes,
+        _format_definitions,
+    )
+    from application._context import _SUBJECT_RENDER_ROUTES, _trim_provisions_to_budget
+    from domain.ontology.applicability import applicability_note
+
+    parts: list[str] = []
+    celexes = _collect_context_celexes(provisions, definitions) or set(
+        det.target_celexes or set())
+    note = applicability_note(celexes, date.today())
+    if note:
+        parts.append(note)
+    if definitions:
+        parts.append("LEGAL DEFINITIONS (from the definitions article):\n"
+                     + _format_definitions(definitions))
+    sep = "\n\n---\n\n"
+    reserved = sum(len(p) for p in parts) + len(sep) * len(parts)
+    prov_budget = max(0, _CONTEXT_CHAR_BUDGET - reserved)
+    allow_subject = det.route.id in _SUBJECT_RENDER_ROUTES
+    return _trim_provisions_to_budget(provisions, prov_budget,
+                                      allow_subject_render=allow_subject)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", help="write JSON results (bare name → eval/runs/)")
@@ -186,61 +224,88 @@ def main() -> int:
         det_cache[c["id"]] = det
         fired[c["id"]] = list(det.context_anchor_refs or [])
 
+    def _verdict(on_p: bool, off_p: bool) -> str:
+        if not on_p:
+            return "INEFFECTIVE"
+        return "REDUNDANT" if off_p else "LOAD-BEARING"
+
+    def _aggregate(per_case: list[dict], key: str, firing: list) -> str:
+        if not firing:
+            return "UNTESTED"
+        verdicts = [pc[key] for pc in per_case]
+        if any(v == "LOAD-BEARING" for v in verdicts):
+            return "LOAD-BEARING"
+        if all(v == "INEFFECTIVE" for v in verdicts):
+            return "INEFFECTIVE"
+        return "REDUNDANT"
+
     results: list[dict] = []
     t0 = time.perf_counter()
     for celex, ref in targets:
         firing = [c for c in cases if ref in fired[c["id"]]]
         per_case: list[dict] = []
         for c in firing:
-            on_prov, on_def, _ = _retrieve(
-                c["question"], retriever, client,
-                anchor_refs=fired[c["id"]],
+            on_prov, on_def, on_det = _retrieve(
+                c["question"], retriever, client, anchor_refs=fired[c["id"]],
             )
             ablated = [a for a in fired[c["id"]] if a != ref]
-            off_prov, off_def, _ = _retrieve(
+            off_prov, off_def, off_det = _retrieve(
                 c["question"], retriever, client, anchor_refs=ablated,
             )
-            on_p = _target_present(ref, on_prov, on_def)
-            off_p = _target_present(ref, off_prov, off_def)
-            if not on_p:
-                verdict = "INEFFECTIVE"
-            elif off_p:
-                verdict = "REDUNDANT"
-            else:
-                verdict = "LOAD-BEARING"
-            per_case.append({"case": c["id"], "verdict": verdict,
-                             "present_on": on_p, "present_off": off_p})
+            # retrieval-level: present anywhere in the retrieved bag
+            ret_on = _target_present(ref, on_prov, on_def)
+            ret_off = _target_present(ref, off_prov, off_def)
+            # render-level: survives the context-budget trim (what the LLM sees)
+            on_budg = _budgeted_after_trim(on_prov, on_def, on_det)
+            off_budg = _budgeted_after_trim(off_prov, off_def, off_det)
+            rnd_on = _target_present(ref, on_budg, on_def)
+            rnd_off = _target_present(ref, off_budg, off_def)
+            per_case.append({
+                "case": c["id"],
+                "retrieval_verdict": _verdict(ret_on, ret_off),
+                "render_verdict": _verdict(rnd_on, rnd_off),
+                "ret_on": ret_on, "ret_off": ret_off,
+                "rnd_on": rnd_on, "rnd_off": rnd_off,
+                "trimmed": len(off_prov) - len(off_budg),
+            })
 
-        if not firing:
-            status = "UNTESTED"
-        elif any(pc["verdict"] == "LOAD-BEARING" for pc in per_case):
-            status = "LOAD-BEARING"
-        elif all(pc["verdict"] == "INEFFECTIVE" for pc in per_case):
-            status = "INEFFECTIVE"
-        else:
-            status = "REDUNDANT"
+        retrieval_status = _aggregate(per_case, "retrieval_verdict", firing)
+        render_status = _aggregate(per_case, "render_verdict", firing)
+        results.append({
+            "celex": celex, "ref": ref,
+            "status": render_status,            # render is authoritative for keep/delete
+            "retrieval_status": retrieval_status,
+            "render_status": render_status,
+            "n_firing": len(firing), "cases": per_case,
+        })
+        flag = "  <-- trim-promoted" if (render_status == "LOAD-BEARING"
+                                         and retrieval_status == "REDUNDANT") else ""
+        cases_str = ", ".join(pc["case"] for pc in per_case)
+        detail = f"  cases: {cases_str}" if firing else ""
+        print(f"[render {render_status:12} | retrieval {retrieval_status:12}] "
+              f"{celex}  {ref}  (fires {len(firing)}){detail}{flag}")
 
-        results.append({"celex": celex, "ref": ref, "status": status,
-                        "n_firing": len(firing), "cases": per_case})
-        detail = ""
-        if firing:
-            lb = sum(1 for pc in per_case if pc["verdict"] == "LOAD-BEARING")
-            detail = f"  load-bearing on {lb}/{len(firing)} firing case(s): " \
-                     + ", ".join(pc["case"] for pc in per_case)
-        print(f"[{status:12}] {celex}  {ref}   (fires on {len(firing)}){detail}")
-
-    # Summary
+    # Summary — render status is authoritative (it is what the LLM actually sees)
     order = {"LOAD-BEARING": 0, "REDUNDANT": 1, "INEFFECTIVE": 2, "UNTESTED": 3}
     buckets: dict[str, list[str]] = {}
     for r in results:
-        buckets.setdefault(r["status"], []).append(r["ref"])
+        buckets.setdefault(r["render_status"], []).append(r["ref"])
     print("\n" + "=" * 78)
-    print(f"ANCHOR LOAD-BEARING SUMMARY   ({round(time.perf_counter()-t0)}s)")
+    print(f"ANCHOR LOAD-BEARING SUMMARY (render-level)   ({round(time.perf_counter()-t0)}s)")
     print("=" * 78)
     for status in sorted(buckets, key=lambda s: order.get(s, 9)):
         print(f"\n{status}  ({len(buckets[status])})")
         for ref in buckets[status]:
             print(f"    {ref}")
+
+    promoted = [r for r in results
+                if r["render_status"] == "LOAD-BEARING"
+                and r["retrieval_status"] == "REDUNDANT"]
+    if promoted:
+        print("\nTRIM-PROMOTED (redundant in the retrieved bag, but the anchor pins it")
+        print("into the budget-surviving tier — deleting it would drop it at render):")
+        for r in promoted:
+            print(f"    {r['ref']}")
 
     if args.out:
         out = Path(args.out)
