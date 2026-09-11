@@ -328,15 +328,15 @@ _CONTEXT_ANCHOR_REFS: list[tuple[re.Pattern, str, str]] = [
         r"take\s+effect|come\s+into\s+(?:force|effect)))\b", re.I),
         AI_ACT_CELEX, "Article 113"),
     # LLM / general-purpose-AI framing → AI Act GPAI provisions. An LLM is almost
-    # always a general-purpose AI *model* with its own obligations under
-    # **Article 53** regardless of the high-risk question; **Article 51** is the
-    # test for whether it is a GPAI model. Retrieval otherwise routes these
-    # questions down the Article 6 high-risk path and never surfaces Chapter V, so
-    # the GPAI point can only come from model memory — ungrounded, it flickers and
-    # gets stripped (observed on the "LLM integrated into a device" question).
-    # Anchoring grounds the point so it surfaces consistently.
+    # always a general-purpose AI *model*; **Article 51** is the test for whether
+    # it is a GPAI model, and retrieval otherwise routes these questions down the
+    # Article 6 high-risk path and never surfaces it — so it must be anchored.
+    # (The Article 53 GPAI-obligations anchor was REMOVED: the per-anchor ablation
+    # — scripts/eval_anchor_ablation.py — showed Article 53 is retrieved as its
+    # own complete block on every firing case even without the anchor (it is the
+    # prominent GPAI-obligations article the dense channel reliably surfaces),
+    # whereas Article 51, the classification test, does not. Keep 51, drop 53.)
     (_LLM_GPAI_RE, AI_ACT_CELEX, "Article 51"),
-    (_LLM_GPAI_RE, AI_ACT_CELEX, "Article 53"),
     # In-house / research AI development → AI Act scope exemptions (Article 2(6)
     # sole scientific R&D; Article 2(8) research/testing/development prior to
     # placing on the market). Paragraph-scoped, not the whole Article 2 (68
@@ -360,8 +360,11 @@ _CONTEXT_ANCHOR_REFS: list[tuple[re.Pattern, str, str]] = [
 # HQ_008: two fabrication flags). Point-level display_refs ("Annex III,
 # point 4") are first-class lookup targets under qualified refs.
 _ANNEX_III_POINT_BY_CUE: tuple[tuple[re.Pattern, str], ...] = (
-    (re.compile(r"\b(?:biometric|emotion\s+recognition|emotion\s+inference)\b", re.I),
-     "Annex III, point 1"),
+    # (The biometric → "Annex III, point 1" cue was REMOVED: the per-anchor
+    # ablation showed point 1 is the HEAD point of Annex III and always renders
+    # via the force-loaded Annex III parent, so its content reaches context
+    # without a dedicated point anchor. Point 4 (employment) is NOT the head and
+    # is capped out of the parent render, so it stays load-bearing and remains.)
     (re.compile(r"\b(?:critical\s+infrastructure|road\s+traffic|"
                 r"supply\s+of\s+(?:water|gas|heating|electricity))\b", re.I),
      "Annex III, point 2"),
