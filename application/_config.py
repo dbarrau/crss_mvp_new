@@ -276,6 +276,21 @@ _AI_RND_EXEMPTION_RE = re.compile(
     r"placing\s+on\s+the\s+market|put(?:ting)?\s+into\s+service|deployment)"
     r")", re.I)
 
+# Continuous / online learning of a high-risk AI system → AI Act Article 43(4),
+# the substantial-modification provision written FOR adaptive AI: a system that
+# continues to learn after being placed on the market needs a new conformity
+# assessment on a substantial modification, EXCEPT changes pre-determined by the
+# provider at initial assessment and documented in the technical documentation.
+# The model reasons to the wrong sub-paragraph — Article 43(3) (the MDR-integrated
+# conformity route) — and never states the pre-determined-change safe harbour, so
+# the paragraph must be targeted directly (article-level retrieval samples 43(3),
+# not 43(4)).
+_CONTINUOUS_LEARNING_RE = re.compile(
+    r"\b(?:continuous(?:ly)?[\s-]?learn\w*|continual[\s-]?learn\w*|online[\s-]?learn\w*"
+    r"|continue[sd]?\s+to\s+learn|continuing\s+to\s+learn|self[\s-]?learn\w*"
+    r"|re[\s-]?train\w*|retrain\w*|adaptive\s+(?:AI|system|model|algorithm)"
+    r"|learns?\s+after\s+(?:being\s+)?(?:placed|deployment|deployed))\b", re.I)
+
 _CONTEXT_ANCHOR_REFS: list[tuple[re.Pattern, str, str]] = [
     # Non-medical-purpose / wellbeing framing → MDR Annex XVI, the regime for
     # products *without* an intended medical purpose — the carve-out a wellbeing
@@ -328,6 +343,11 @@ _CONTEXT_ANCHOR_REFS: list[tuple[re.Pattern, str, str]] = [
     # definitions — see the _DEFINITIONS_ARTICLE flood note above).
     (_AI_RND_EXEMPTION_RE, AI_ACT_CELEX, "Article 2(6)"),
     (_AI_RND_EXEMPTION_RE, AI_ACT_CELEX, "Article 2(8)"),
+    # Continuous / online learning of a high-risk AI system → AI Act Article 43(4)
+    # (substantial modification; the pre-determined-change safe harbour for
+    # adaptive AI). Paragraph-scoped so the decisive 43(4) reaches context instead
+    # of the article-level sample landing on 43(3).
+    (_CONTINUOUS_LEARNING_RE, AI_ACT_CELEX, "Article 43(4)"),
 ]
 
 # Use-case cue → the specific Annex III point that governs it, registered as
