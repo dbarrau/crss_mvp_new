@@ -252,6 +252,45 @@ _LLM_GPAI_RE = re.compile(
     r"\b(?:LLMs?|large\s+language\s+models?|generative\s+AI|foundation\s+models?|"
     r"general[\s-]?purpose\s+AI|GPAI)\b", re.I)
 
+# In-house / research development of an AI system → AI Act Article 2(6) (sole
+# scientific-R&D purpose) and 2(8) (research, testing or development PRIOR to
+# placing on the market / putting into service). These are the AI Act's own scope
+# exemptions — the counterpart a question must weigh against the MDR Article 5(5)
+# in-house exemption. On an actor-status / obligations framing they are
+# semantically distant, so the dense channel and the top-3 recital supplement
+# never surface them (a "hospital develops an in-house AI system" answer wrongly
+# stated the AI Act has NO equivalent exemption). Force-loading grounds the
+# carve-out so it stops depending on whether the phrasing happens to rank the
+# recital. Two short paragraphs, so a rare over-match is cheap; scope-gated to
+# the AI Act by _match_ref_table (a GDPR-only "train a clinical AI" question does
+# not pull them).
+_AI_RND_EXEMPTION_RE = re.compile(
+    r"\b(?:"
+    r"scientific\s+research"
+    r"|research\s+and\s+development|R\s*&\s*D"
+    r"|research,?\s+testing\s+or\s+development"
+    r"|in[\s-]?house\b[^.?\n]{0,30}\b(?:AI|artificial\s+intelligence|system|model|develop\w*|train\w*)"
+    r"|(?:develop\w*|build\w*|built|creat\w*)\b[^.?\n]{0,40}"
+    r"\b(?:AI|artificial\s+intelligence)\b"
+    r"|(?:prior\s+to|before)\s+(?:being\s+)?(?:placed\s+on\s+the\s+market|"
+    r"placing\s+on\s+the\s+market|put(?:ting)?\s+into\s+service|deployment)"
+    r")", re.I)
+
+# Continuous / online learning of a high-risk AI system → AI Act Article 43(4),
+# the substantial-modification provision written FOR adaptive AI: a system that
+# continues to learn after being placed on the market needs a new conformity
+# assessment on a substantial modification, EXCEPT changes pre-determined by the
+# provider at initial assessment and documented in the technical documentation.
+# The model reasons to the wrong sub-paragraph — Article 43(3) (the MDR-integrated
+# conformity route) — and never states the pre-determined-change safe harbour, so
+# the paragraph must be targeted directly (article-level retrieval samples 43(3),
+# not 43(4)).
+_CONTINUOUS_LEARNING_RE = re.compile(
+    r"\b(?:continuous(?:ly)?[\s-]?learn\w*|continual[\s-]?learn\w*|online[\s-]?learn\w*"
+    r"|continue[sd]?\s+to\s+learn|continuing\s+to\s+learn|self[\s-]?learn\w*"
+    r"|re[\s-]?train\w*|retrain\w*|adaptive\s+(?:AI|system|model|algorithm)"
+    r"|learns?\s+after\s+(?:being\s+)?(?:placed|deployment|deployed))\b", re.I)
+
 _CONTEXT_ANCHOR_REFS: list[tuple[re.Pattern, str, str]] = [
     # Non-medical-purpose / wellbeing framing → MDR Annex XVI, the regime for
     # products *without* an intended medical purpose — the carve-out a wellbeing
@@ -289,15 +328,26 @@ _CONTEXT_ANCHOR_REFS: list[tuple[re.Pattern, str, str]] = [
         r"take\s+effect|come\s+into\s+(?:force|effect)))\b", re.I),
         AI_ACT_CELEX, "Article 113"),
     # LLM / general-purpose-AI framing → AI Act GPAI provisions. An LLM is almost
-    # always a general-purpose AI *model* with its own obligations under
-    # **Article 53** regardless of the high-risk question; **Article 51** is the
-    # test for whether it is a GPAI model. Retrieval otherwise routes these
-    # questions down the Article 6 high-risk path and never surfaces Chapter V, so
-    # the GPAI point can only come from model memory — ungrounded, it flickers and
-    # gets stripped (observed on the "LLM integrated into a device" question).
-    # Anchoring grounds the point so it surfaces consistently.
+    # always a general-purpose AI *model*; **Article 51** is the test for whether
+    # it is a GPAI model, and retrieval otherwise routes these questions down the
+    # Article 6 high-risk path and never surfaces it — so it must be anchored.
+    # (The Article 53 GPAI-obligations anchor was REMOVED: the per-anchor ablation
+    # — scripts/eval_anchor_ablation.py — showed Article 53 is retrieved as its
+    # own complete block on every firing case even without the anchor (it is the
+    # prominent GPAI-obligations article the dense channel reliably surfaces),
+    # whereas Article 51, the classification test, does not. Keep 51, drop 53.)
     (_LLM_GPAI_RE, AI_ACT_CELEX, "Article 51"),
-    (_LLM_GPAI_RE, AI_ACT_CELEX, "Article 53"),
+    # In-house / research AI development → AI Act scope exemptions (Article 2(6)
+    # sole scientific R&D; Article 2(8) research/testing/development prior to
+    # placing on the market). Paragraph-scoped, not the whole Article 2 (68
+    # definitions — see the _DEFINITIONS_ARTICLE flood note above).
+    (_AI_RND_EXEMPTION_RE, AI_ACT_CELEX, "Article 2(6)"),
+    (_AI_RND_EXEMPTION_RE, AI_ACT_CELEX, "Article 2(8)"),
+    # Continuous / online learning of a high-risk AI system → AI Act Article 43(4)
+    # (substantial modification; the pre-determined-change safe harbour for
+    # adaptive AI). Paragraph-scoped so the decisive 43(4) reaches context instead
+    # of the article-level sample landing on 43(3).
+    (_CONTINUOUS_LEARNING_RE, AI_ACT_CELEX, "Article 43(4)"),
 ]
 
 # Use-case cue → the specific Annex III point that governs it, registered as
@@ -310,8 +360,11 @@ _CONTEXT_ANCHOR_REFS: list[tuple[re.Pattern, str, str]] = [
 # HQ_008: two fabrication flags). Point-level display_refs ("Annex III,
 # point 4") are first-class lookup targets under qualified refs.
 _ANNEX_III_POINT_BY_CUE: tuple[tuple[re.Pattern, str], ...] = (
-    (re.compile(r"\b(?:biometric|emotion\s+recognition|emotion\s+inference)\b", re.I),
-     "Annex III, point 1"),
+    # (The biometric → "Annex III, point 1" cue was REMOVED: the per-anchor
+    # ablation showed point 1 is the HEAD point of Annex III and always renders
+    # via the force-loaded Annex III parent, so its content reaches context
+    # without a dedicated point anchor. Point 4 (employment) is NOT the head and
+    # is capped out of the parent render, so it stays load-bearing and remains.)
     (re.compile(r"\b(?:critical\s+infrastructure|road\s+traffic|"
                 r"supply\s+of\s+(?:water|gas|heating|electricity))\b", re.I),
      "Annex III, point 2"),

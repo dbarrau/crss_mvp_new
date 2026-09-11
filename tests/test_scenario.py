@@ -125,3 +125,54 @@ def test_timing_anchor_stays_off_non_timing_ai_act_questions():
     assert "Article 113" not in _detect(
         "Is my medical device with an integrated LLM high-risk under the EU AI Act?"
     ).context_anchor_refs
+
+def test_in_house_ai_development_anchors_the_rd_scope_exemption():
+    # A question about developing an AI system in-house must force-load the AI
+    # Act's own scope exemptions — Article 2(6) (sole scientific R&D) and 2(8)
+    # (research/testing/development prior to placing on the market) — the
+    # counterpart to the MDR Article 5(5) in-house exemption. On an actor-status
+    # framing the dense channel never surfaces them, and a hospital-develops
+    # answer wrongly stated the AI Act has NO equivalent exemption.
+    det = _detect(
+        "A hospital develops an in-house AI-assisted diagnostic system under the "
+        "MDR 2017/745 Article 5(5) exemption. Under the EU AI Act, does an "
+        "equivalent exemption apply while it is developed and trained internally?"
+    )
+    assert "Article 2(6)" in det.context_anchor_refs
+    assert "Article 2(8)" in det.context_anchor_refs
+    # rides the context channel, must not reclassify the route to provision_lookup
+    assert "Article 2(6)" not in det.explicit_refs
+    assert det.route.id != "provision_lookup"
+
+
+def test_rd_exemption_anchor_stays_off_ordinary_ai_questions():
+    # A deploy/obligations question that merely mentions an AI system must NOT
+    # pull the scope exemptions (no development/research/pre-market signal).
+    for q in (
+        "What are the obligations of a provider under the EU AI Act?",
+        "We deploy a third-party high-risk AI system for CV screening. What are our deployer duties under the EU AI Act?",
+    ):
+        det = _detect(q)
+        assert "Article 2(6)" not in det.context_anchor_refs, q
+        assert "Article 2(8)" not in det.context_anchor_refs, q
+
+
+def test_continuous_learning_anchors_article_43_4_safe_harbour():
+    # A continuous/online-learning high-risk AI question must force-load Article
+    # 43(4) — the substantial-modification provision with the pre-determined-change
+    # safe harbour for adaptive AI. Article-level retrieval samples 43(3) (the
+    # MDR-integrated conformity route), so the decisive paragraph must be targeted.
+    for q in (
+        "Our high-risk AI system uses a continuous-learning model. When does the "
+        "weekly retraining trigger a new conformity assessment under the EU AI Act?",
+        "How is online learning of a high-risk AI system treated for conformity "
+        "under the EU AI Act when the changes are pre-defined?",
+    ):
+        det = _detect(q)
+        assert "Article 43(4)" in det.context_anchor_refs, q
+        assert "Article 43(4)" not in det.explicit_refs, q
+
+
+def test_continuous_learning_anchor_stays_off_static_ai_questions():
+    det = _detect("What are the obligations of a provider of a static high-risk AI system?")
+    assert "Article 43(4)" not in det.context_anchor_refs
